@@ -23,6 +23,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/server"
+	"github.com/victor-akande/weistack/internal/services/vpc"
 	"github.com/victor-akande/weistack/internal/version"
 )
 
@@ -99,6 +100,11 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		<-engineDone
 	}()
 
+	services, err := buildServices(ctx, st, engine, gen, log)
+	if err != nil {
+		return err
+	}
+
 	srv, err := server.New(server.Options{
 		Config:    cfg,
 		ProjectID: projectID,
@@ -106,7 +112,7 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		Store:     st,
 		Engine:    engine,
 		IDs:       gen,
-		Services:  nil, // emulated services register here as they land
+		Services:  services,
 	})
 	if err != nil {
 		return err
@@ -160,6 +166,20 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 	}
 	log.Info("stopped")
 	return nil
+}
+
+// buildServices constructs every emulated service. New services are
+// added here.
+func buildServices(ctx context.Context, st store.Store, engine *lifecycle.Engine, gen *ids.Generator, log *slog.Logger) ([]server.Service, error) {
+	vpcSvc, err := vpc.New(vpc.Deps{Store: st, Engine: engine, IDs: gen, Logger: log})
+	if err != nil {
+		return nil, err
+	}
+	// With persistence on, finish transitions interrupted by the last stop.
+	if err := vpcSvc.Resume(ctx); err != nil {
+		return nil, err
+	}
+	return []server.Service{vpcSvc}, nil
 }
 
 func newLogger(cfg config.Config, w io.Writer) *slog.Logger {

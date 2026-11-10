@@ -1,0 +1,16 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "vpcs": [
+      {"id": "<uuid>", "name": "vpc", "description": "test", "cidr": "192.168.0.0/16", "status": "OK",
+      "block_service_endpoint_states": "off", "enable_network_address_usage_metrics": false,
+      "enterprise_project_id": "0", "routes": [], "tenant_id": "<hex32>",
+      "created_at": "<time>", "updated_at": "<time>"},
+      {"id": "<uuid>", "name": "vpc-2", "description": "", "cidr": "10.0.0.0/8", "status": "OK",
+      "block_service_endpoint_states": "off", "enable_network_address_usage_metrics": false,
+      "enterprise_project_id": "0", "routes": [], "tenant_id": "<hex32>",
+      "created_at": "<time>", "updated_at": "<time>"}
+    ]
+  }
+}

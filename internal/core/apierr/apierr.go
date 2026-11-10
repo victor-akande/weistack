@@ -26,6 +26,12 @@ const (
 	StyleNested
 	// StyleXML is the S3-compatible <Error> document used by OBS.
 	StyleXML
+	// StyleCodeMessage is {"code": "VPC.0101", "message": "..."}.
+	// Used by the VPC v1 API (VPCs, subnets).
+	StyleCodeMessage
+	// StyleFlatRequestID is StyleFlat with a leading "request_id" field.
+	// Used by the VPC v3 API (security groups).
+	StyleFlatRequestID
 )
 
 // Codes for conditions that originate in the emulator rather than in an
@@ -98,6 +104,17 @@ type flatBody struct {
 	Message string `json:"error_msg"`
 }
 
+type codeMessageBody struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+type flatRequestIDBody struct {
+	RequestID string `json:"request_id"`
+	Code      string `json:"error_code"`
+	Message   string `json:"error_msg"`
+}
+
 type nestedBody struct {
 	Error nestedDetail `json:"error"`
 }
@@ -138,6 +155,14 @@ func Write(w http.ResponseWriter, r *http.Request, style Style, err error) {
 			Code: e.Code, Message: e.Message, RequestID: id, HostID: id, Resource: r.URL.Path,
 		})
 		body = append([]byte(xml.Header), body...)
+	case StyleCodeMessage:
+		contentType = "application/json"
+		body, encErr = json.Marshal(codeMessageBody{Code: e.Code, Message: e.Message})
+	case StyleFlatRequestID:
+		contentType = "application/json"
+		body, encErr = json.Marshal(flatRequestIDBody{
+			RequestID: reqctx.From(r.Context()).RequestID, Code: e.Code, Message: e.Message,
+		})
 	default:
 		contentType = "application/json"
 		body, encErr = json.Marshal(flatBody{Code: e.Code, Message: e.Message})
