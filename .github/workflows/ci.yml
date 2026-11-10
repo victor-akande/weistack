@@ -58,3 +58,47 @@ jobs:
           name: coverage
           path: coverage.out
           retention-days: 7
+
+  image:
+    name: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: weistack:ci
+          build-args: |
+            VERSION=ci-${{ github.sha }}
+            COMMIT=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Image size budget (40 MB)
+        run: |
+          bytes=$(docker image inspect weistack:ci --format '{{.Size}}')
+          echo "image size: $((bytes / 1024 / 1024)) MB ($bytes bytes)" | tee -a "$GITHUB_STEP_SUMMARY"
+          test "$bytes" -lt $((40 * 1024 * 1024))
+      - name: Smoke test
+        run: |
+          docker run -d --name weistack -p 8780:8780 weistack:ci
+          for i in $(seq 1 50); do
+            if curl -fsS http://localhost:8780/_weistack/health; then ok=1; break; fi
+            sleep 0.2
+          done
+          test "${ok:-}" = 1
+          curl -fsS http://localhost:8780/_weistack/services
+          # The built-in probe used by the Docker HEALTHCHECK.
+          docker exec weistack /weistack healthcheck
+          # Idle memory budget: 50 MB.
+          mem=$(docker stats --no-stream --format '{{.MemUsage}}' weistack)
+          echo "idle memory: $mem" | tee -a "$GITHUB_STEP_SUMMARY"
+          # Graceful shutdown must exit 0 well inside the timeout.
+          docker stop -t 15 weistack
+          test "$(docker inspect weistack --format '{{.State.ExitCode}}')" = 0
+      - name: Container logs
+        if: always()
+        run: docker logs weistack || true

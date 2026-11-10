@@ -56,6 +56,10 @@ vuln: ## Scan dependencies for known vulnerabilities
 tidy: ## Tidy go.mod and go.sum
 	go mod tidy
 
+.PHONY: docker
+docker: ## Build the Docker image as weistack:dev
+	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg DATE=$(DATE) -t weistack:dev .
+
 .PHONY: check
 check: fmt-check vet lint test ## Everything CI runs, locally
 
