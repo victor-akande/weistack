@@ -23,6 +23,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/server"
+	"github.com/victor-akande/weistack/internal/services/ims"
 	"github.com/victor-akande/weistack/internal/services/vpc"
 	"github.com/victor-akande/weistack/internal/version"
 )
@@ -100,7 +101,7 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		<-engineDone
 	}()
 
-	services, err := buildServices(ctx, st, engine, gen, log)
+	services, err := buildServices(ctx, cfg, projectID, st, engine, gen, log)
 	if err != nil {
 		return err
 	}
@@ -173,7 +174,10 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 
 // buildServices constructs every emulated service. New services are
 // added here.
-func buildServices(ctx context.Context, st store.Store, engine *lifecycle.Engine, gen *ids.Generator, log *slog.Logger) ([]server.Service, error) {
+func buildServices(
+	ctx context.Context, cfg config.Config, projectID string,
+	st store.Store, engine *lifecycle.Engine, gen *ids.Generator, log *slog.Logger,
+) ([]server.Service, error) {
 	vpcSvc, err := vpc.New(vpc.Deps{Store: st, Engine: engine, IDs: gen, Logger: log})
 	if err != nil {
 		return nil, err
@@ -182,7 +186,15 @@ func buildServices(ctx context.Context, st store.Store, engine *lifecycle.Engine
 	if err := vpcSvc.Resume(ctx); err != nil {
 		return nil, err
 	}
-	return []server.Service{vpcSvc}, nil
+
+	imsSvc, err := ims.New(ims.Deps{
+		Store: st, Engine: engine, IDs: gen, Logger: log,
+		DefaultProjectID: projectID, SeedDir: cfg.SeedDir,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return []server.Service{vpcSvc, imsSvc}, nil
 }
 
 // listen opens the server's listeners. The first is always the

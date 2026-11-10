@@ -48,6 +48,7 @@ func TestLoadPrecedence(t *testing.T) {
 		"WEISTACK_PROJECT_ID":      "0123456789abcdef0123456789abcdef",
 		"WEISTACK_PERSIST":         "1",
 		"WEISTACK_DATA_DIR":        "/var/lib/weistack",
+		"WEISTACK_SEED_DIR":        "/etc/weistack/seed",
 		"WEISTACK_LIFECYCLE_DELAY": "0",
 		"WEISTACK_LOG_LEVEL":       "debug",
 		"WEISTACK_LOG_FORMAT":      "TEXT",
@@ -81,6 +82,9 @@ func TestLoadPrecedence(t *testing.T) {
 	}
 	if got.LifecycleDelay != 0 {
 		t.Errorf("LifecycleDelay = %s, want 0", got.LifecycleDelay)
+	}
+	if got.SeedDir != "/etc/weistack/seed" {
+		t.Errorf("SeedDir = %q", got.SeedDir)
 	}
 	if got.LogLevel != slog.LevelDebug {
 		t.Errorf("LogLevel = %s, want debug", got.LogLevel)

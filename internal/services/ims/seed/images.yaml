@@ -1,0 +1,69 @@
+# Public images every WeiStack region starts with.
+#
+# To add your own, put a file named images.yaml with the same format in
+# the directory given by -seed-dir / WEISTACK_SEED_DIR. Entries there are
+# added to this list; an entry with the same name replaces the built-in
+# one.
+#
+# Fields:
+#   name        (required) image name, unique among public images
+#   os_version  (required) for example "Ubuntu 22.04 server 64bit"
+#   platform    (required) Ubuntu, CentOS, EulerOS, Debian, Windows, ...
+#   os_type     Linux (default) or Windows
+#   min_disk    minimum system disk in GB (default 40)
+#   min_ram     minimum memory in MB (default 0)
+#   arch        x86 (default) or arm
+#   firmware    bios (default) or uefi
+#   id          fixed image ID; derived from the name when omitted, so an
+#               image keeps its ID across restarts and machines
+images:
+  - name: Ubuntu 22.04 server 64bit
+    os_version: Ubuntu 22.04 server 64bit
+    platform: Ubuntu
+    min_disk: 40
+    min_ram: 1024
+
+  - name: Ubuntu 20.04 server 64bit
+    os_version: Ubuntu 20.04 server 64bit
+    platform: Ubuntu
+    min_disk: 40
+    min_ram: 1024
+
+  - name: CentOS 7.9 64bit
+    os_version: CentOS 7.9 64bit
+    platform: CentOS
+    min_disk: 40
+    min_ram: 1024
+
+  - name: Debian 12.0.0 64bit
+    os_version: Debian GNU/Linux 12.0.0 64bit
+    platform: Debian
+    min_disk: 40
+    min_ram: 1024
+
+  - name: EulerOS 2.5 64bit
+    os_version: EulerOS 2.5 64bit
+    platform: EulerOS
+    min_disk: 40
+    min_ram: 1024
+
+  - name: Huawei Cloud EulerOS 2.0 Standard 64 bit
+    os_version: Huawei Cloud EulerOS 2.0 Standard 64 bit
+    platform: Huawei Cloud EulerOS
+    min_disk: 40
+    min_ram: 1024
+
+  - name: Huawei Cloud EulerOS 2.0 Standard 64 bit for kAi2p
+    os_version: Huawei Cloud EulerOS 2.0 Standard 64 bit
+    platform: Huawei Cloud EulerOS
+    arch: arm
+    firmware: uefi
+    min_disk: 40
+    min_ram: 1024
+
+  - name: Windows Server 2019 Standard 64bit English
+    os_version: Windows Server 2019 Standard 64bit
+    platform: Windows
+    os_type: Windows
+    min_disk: 40
+    min_ram: 2048

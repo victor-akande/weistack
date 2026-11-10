@@ -46,6 +46,9 @@ type Config struct {
 	Persist bool
 	// DataDir holds persistent state and OBS object bodies.
 	DataDir string
+	// SeedDir optionally holds YAML files that extend the built-in seed
+	// data (for example images.yaml for IMS public images).
+	SeedDir string
 	// LifecycleDelay is how long asynchronous transitions take. 0 is instant.
 	LifecycleDelay time.Duration
 	// LogLevel is the minimum level logged.
@@ -88,6 +91,7 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 	fs.StringVar(&cfg.ProjectID, "project-id", env.str("PROJECT_ID", ""), "default project ID, 32 hex characters (generated when empty)")
 	fs.BoolVar(&cfg.Persist, "persist", env.bool("PERSIST", false), "persist state under the data directory")
 	fs.StringVar(&cfg.DataDir, "data-dir", env.str("DATA_DIR", DefaultDataDir), "directory for persistent state and object bodies")
+	fs.StringVar(&cfg.SeedDir, "seed-dir", env.str("SEED_DIR", ""), "directory of YAML files that extend the built-in seed data")
 	fs.DurationVar(&cfg.LifecycleDelay, "lifecycle-delay", env.duration("LIFECYCLE_DELAY", DefaultLifecycleDelay), "duration of asynchronous state transitions (0 is instant)")
 	fs.StringVar(&logLevel, "log-level", env.str("LOG_LEVEL", "info"), "log level: debug, info, warn or error")
 	fs.StringVar(&cfg.LogFormat, "log-format", env.str("LOG_FORMAT", DefaultLogFormat), "log format: json or text")
