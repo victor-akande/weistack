@@ -194,6 +194,9 @@ func buildServices(
 	if err != nil {
 		return nil, err
 	}
+	if err := imsSvc.Resume(ctx); err != nil {
+		return nil, err
+	}
 	return []server.Service{vpcSvc, imsSvc}, nil
 }
 

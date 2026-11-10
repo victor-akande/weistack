@@ -1,0 +1,12 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {"schema": "/v2/schemas/image", "min_disk": 40, "created_at": "<time-z>", "__image_source_type": "uds",
+      "container_format": "bare", "file": "<string>", "updated_at": "<time-z>", "protected": false,
+      "checksum": "d41d8cd98f00b204e9800998ecf8427e", "id": "<uuid>", "__isregistered": "false", "min_ram": 1024,
+      "owner": "<hex32>", "__os_type": "Linux", "__imagetype": "private",
+      "visibility": "private", "virtual_env_type": "FusionCompute", "tags": [], "__platform": "Ubuntu",
+      "size": 0, "__os_bit": "64", "__os_version": "Ubuntu 22.04 server 64bit", "name": "ims_test_2",
+      "self": "<string>", "disk_format": "zvhd2", "virtual_size": null, "hw_firmware_type": "bios",
+      "status": "active", "active_at": "<time-z>", "__description": "renamed", "__data_origin": "<string>", "enterprise_project_id": "0"}
+}
