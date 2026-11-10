@@ -1,0 +1,11 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "request_id": "<hex32>",
+    "security_groups": [
+      {"id": "<uuid>", "name": "default", "project_id": "<hex32>", "description": "Default security group", "enterprise_project_id": "0", "tags": [], "created_at": "<time-z>", "updated_at": "<time-z>"}
+    ],
+    "page_info": {"previous_marker": "<uuid>", "current_count": 1, "next_marker": "<uuid>"}
+  }
+}

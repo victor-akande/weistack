@@ -1,0 +1,11 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "request_id": "<hex32>",
+    "security_group_rule": {"id": "<uuid>", "project_id": "<hex32>", "security_group_id": "<uuid>", "remote_group_id": null,
+      "direction": "ingress", "protocol": "tcp", "description": "security group rule description",
+      "created_at": "<time-z>", "updated_at": "<time-z>", "ethertype": "IPv4", "remote_ip_prefix": "10.10.0.0/16",
+      "multiport": "33", "remote_address_group_id": null, "action": "allow", "priority": 1, "enabled": true}
+  }
+}

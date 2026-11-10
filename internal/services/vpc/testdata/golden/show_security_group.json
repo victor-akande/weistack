@@ -1,0 +1,28 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "request_id": "<hex32>",
+    "security_group": {"id": "<uuid>", "name": "security_group_1", "project_id": "<hex32>", "description": "security group description",
+      "enterprise_project_id": "0", "tags": [],
+      "security_group_rules": [
+        {"id": "<uuid>", "project_id": "<hex32>", "security_group_id": "<uuid>", "remote_group_id": "<uuid>",
+        "direction": "ingress", "protocol": null, "description": "", "created_at": "<time-z>", "updated_at": "<time-z>",
+        "ethertype": "IPv6", "remote_ip_prefix": null, "multiport": null, "remote_address_group_id": null,
+        "action": "allow", "priority": 100, "enabled": true},
+        {"id": "<uuid>", "project_id": "<hex32>", "security_group_id": "<uuid>", "remote_group_id": null,
+        "direction": "egress", "protocol": null, "description": "", "created_at": "<time-z>", "updated_at": "<time-z>",
+        "ethertype": "IPv6", "remote_ip_prefix": null, "multiport": null, "remote_address_group_id": null,
+        "action": "allow", "priority": 100, "enabled": true},
+        {"id": "<uuid>", "project_id": "<hex32>", "security_group_id": "<uuid>", "remote_group_id": null,
+        "direction": "egress", "protocol": null, "description": "", "created_at": "<time-z>", "updated_at": "<time-z>",
+        "ethertype": "IPv4", "remote_ip_prefix": null, "multiport": null, "remote_address_group_id": null,
+        "action": "allow", "priority": 100, "enabled": true},
+        {"id": "<uuid>", "project_id": "<hex32>", "security_group_id": "<uuid>", "remote_group_id": "<uuid>",
+        "direction": "ingress", "protocol": null, "description": "", "created_at": "<time-z>", "updated_at": "<time-z>",
+        "ethertype": "IPv4", "remote_ip_prefix": null, "multiport": null, "remote_address_group_id": null,
+        "action": "allow", "priority": 100, "enabled": true}
+      ],
+      "created_at": "<time-z>", "updated_at": "<time-z>"}
+  }
+}
