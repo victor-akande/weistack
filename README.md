@@ -18,7 +18,7 @@ place. Per-service coverage tables:
 | Milestone | Scope | State |
 | --- | --- | --- |
 | M1 | Core framework: server, routing, errors, store, lifecycle, admin API, CI, image | Done |
-| M2 | VPC: VPCs, subnets, security groups and rules | Done (SDK-driven tests pending) |
+| M2 | VPC: VPCs, subnets, security groups and rules | Done |
 | M3 | IMS: images | Planned |
 | M4 | ECS: servers, flavors, jobs | Planned |
 | M5 | OBS: buckets, objects, multipart | Planned |
@@ -55,6 +55,26 @@ in order, by:
 Anything else gets the API gateway's own `APIGW.0101` 404. An operation that
 a service does not emulate yet returns `501` with code `WeiStack.0501` and a
 message naming the operation, so a gap is never mistaken for a bug.
+
+## Pointing a client at WeiStack
+
+Clients differ in what they let you override:
+
+| Client can set | Use | Example |
+| --- | --- | --- |
+| A full endpoint per service | `{service}.localhost` | `http://vpc.localhost:8780` |
+| Only a base URL, path kept | Path prefix | `http://localhost:8780/vpc` |
+| Nothing but the real host name | Map `{service}.{region}.myhuaweicloud.com` to the emulator (hosts file) | |
+
+The official Go SDK discards any path in its endpoint, so use the first
+form with it:
+
+```go
+client := vpc.NewVpcClient(vpc.VpcClientBuilder().
+    WithEndpoints([]string{"http://vpc.localhost:8780"}).
+    WithCredential(credentials). // any AK/SK; project ID from /_weistack/services
+    Build())
+```
 
 ## Configuration
 
@@ -100,7 +120,8 @@ Conventional Commits) and [docs/adding-a-service.md](docs/adding-a-service.md)
 for how a service plugs into the core.
 
 ```bash
-make check   # gofmt, vet, golangci-lint, tests with the race detector
+make check      # gofmt, vet, golangci-lint, tests with the race detector
+make test-sdk   # drive a real emulator with Huawei's official Go SDK
 ```
 
 ## Licence

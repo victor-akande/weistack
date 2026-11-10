@@ -59,6 +59,22 @@ jobs:
           path: coverage.out
           retention-days: 7
 
+  sdk:
+    name: sdk
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          # The SDK is a very large module: cache it on its own lock file.
+          cache-dependency-path: |
+            go.sum
+            test/sdk/go.sum
+      - name: Tests driven by the official Huawei Cloud Go SDK
+        run: make test-sdk
+
   image:
     name: image
     runs-on: ubuntu-latest

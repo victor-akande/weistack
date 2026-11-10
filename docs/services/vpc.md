@@ -124,6 +124,13 @@ Errors of the v3 API (security groups) are
 | `VPC.9902` | 409 | Duplicate rule; deleting the default security group |
 | `VPC.9904` | 404 | Security group, rule, remote group or address group does not exist |
 
+## Client compatibility
+
+Every operation marked **Yes** above is exercised through Huawei Cloud's
+official Go SDK (`huaweicloud-sdk-go-v3`, `vpc/v2` and `vpc/v3` clients) by
+the suite in `test/sdk`, including the SDK's own decoding of error codes,
+timestamps and enum values.
+
 ## Fidelity notes
 
 Golden files under `internal/services/vpc/testdata/golden` are provisional:
