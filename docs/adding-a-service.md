@@ -37,7 +37,11 @@ Optional interfaces:
 - `server.BodyLimiter`: override the JSON body limit; return `0` for
   unlimited (OBS uploads).
 
-Then add the service to the `Services` list in `internal/app/app.go`.
+Then construct the service in `buildServices` in `internal/app/app.go`.
+
+Some APIs do not put the project ID in the path (IMS, for example). Take it
+from `auth.FromContext(ctx).ProjectID`, the `X-Project-Id` header the SDKs
+send, and fall back to the emulator's default project.
 
 ## 2. Use the core packages
 

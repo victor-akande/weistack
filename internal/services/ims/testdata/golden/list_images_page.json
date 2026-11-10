@@ -1,0 +1,17 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "images": [
+      {"schema": "/v2/schemas/image", "min_disk": 40, "created_at": "<time-z>", "__image_source_type": "uds",
+      "container_format": "bare", "file": "<string>", "updated_at": "<time-z>", "protected": true,
+      "checksum": "d41d8cd98f00b204e9800998ecf8427e", "id": "<uuid>", "__isregistered": "true", "min_ram": 1024,
+      "__lazyloading": "true", "owner": "<hex32>", "__os_type": "Linux", "__imagetype": "gold",
+      "visibility": "public", "virtual_env_type": "FusionCompute", "tags": [], "__platform": "CentOS",
+      "size": 0, "__os_bit": "64", "__os_version": "CentOS 7.9 64bit", "name": "CentOS 7.9 64bit",
+      "self": "<string>", "disk_format": "zvhd2", "virtual_size": null, "hw_firmware_type": "bios",
+      "status": "active", "active_at": "<time-z>"}
+    ],
+    "page_info": {"next_marker": "<uuid>"}
+  }
+}

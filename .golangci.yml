@@ -26,6 +26,7 @@ linters:
           - bodyclose # test helpers close bodies; the linter cannot see through them
           - gosec
           - noctx
+          - unparam # test helpers are general on purpose
 
 formatters:
   enable:

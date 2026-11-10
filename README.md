@@ -12,14 +12,14 @@ sponsored by Huawei.
 ## Status
 
 Early development. The **core framework** (M1) and **VPC** (M2) are in
-place. Per-service coverage tables:
-[VPC](docs/services/vpc.md).
+place and **IMS** (M3) is in progress. Per-service coverage tables:
+[VPC](docs/services/vpc.md), [IMS](docs/services/ims.md).
 
 | Milestone | Scope | State |
 | --- | --- | --- |
 | M1 | Core framework: server, routing, errors, store, lifecycle, admin API, CI, image | Done |
 | M2 | VPC: VPCs, subnets, security groups and rules | Done |
-| M3 | IMS: images | Planned |
+| M3 | IMS: images | In progress |
 | M4 | ECS: servers, flavors, jobs | Planned |
 | M5 | OBS: buckets, objects, multipart | Planned |
 | M6 | RDS: MySQL/PostgreSQL instances | Planned |
@@ -89,6 +89,7 @@ defaults. Run `weistack -h` for the full list.
 | `-project-id` | `WEISTACK_PROJECT_ID` | generated | Default project, 32 hex characters |
 | `-persist` | `WEISTACK_PERSIST` | off | Keep state on disk across restarts |
 | `-data-dir` | `WEISTACK_DATA_DIR` | `/data` | Where persistent state lives |
+| `-seed-dir` | `WEISTACK_SEED_DIR` | none | Directory of YAML files extending built-in seed data ([images](docs/services/ims.md#adding-your-own)) |
 | `-lifecycle-delay` | `WEISTACK_LIFECYCLE_DELAY` | `2s` | Duration of async transitions; `0` is instant |
 | `-log-level` | `WEISTACK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `-log-format` | `WEISTACK_LOG_FORMAT` | `json` | `json` or `text` |
