@@ -28,6 +28,10 @@ run: ## Run the emulator from source
 test: ## Run all tests with the race detector and coverage
 	go test -race -shuffle=on -coverprofile=coverage.out -covermode=atomic ./...
 
+.PHONY: test-sdk
+test-sdk: ## Run the suite driven by Huawei's official Go SDK
+	cd test/sdk && go vet ./... && go test -count=1 -timeout 5m ./...
+
 .PHONY: cover
 cover: test ## Print the coverage summary
 	go tool cover -func=coverage.out | tail -n 1

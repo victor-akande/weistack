@@ -6,6 +6,12 @@ updates:
       interval: weekly
     commit-message:
       prefix: "chore(deps)"
+  - package-ecosystem: gomod
+    directory: /test/sdk
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "test(deps)"
   - package-ecosystem: github-actions
     directory: /
     schedule:
