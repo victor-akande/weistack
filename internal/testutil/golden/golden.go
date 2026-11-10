@@ -19,6 +19,9 @@
 //	"<time-z>"   2006-01-02T15:04:05Z
 //	"<string>"   any string
 //	"<any>"      anything, including null
+//
+// A placeholder can also stand for an object key that varies, such as
+// the VPC ID that keys a server's addresses: {"<uuid>": [...]}.
 package golden
 
 import (
@@ -125,18 +128,41 @@ func diff(path string, want, got any) []string {
 			return []string{fmt.Sprintf("%s is %s, want an object", path, kind(got))}
 		}
 		var out []string
+		// Keys of the response not named in the golden file; a
+		// placeholder key in the golden file may claim one of them.
+		var spare []string
+		for _, k := range sortedKeys(g) {
+			if _, named := w[k]; !named {
+				spare = append(spare, k)
+			}
+		}
 		for _, k := range sortedKeys(w) {
 			gv, present := g[k]
+			if re, isPlaceholder := placeholders[k]; isPlaceholder && !present {
+				claimed := -1
+				for i, candidate := range spare {
+					if re.MatchString(candidate) {
+						claimed = i
+						break
+					}
+				}
+				if claimed < 0 {
+					out = append(out, fmt.Sprintf("%s has no key matching %s", path, k))
+					continue
+				}
+				name := spare[claimed]
+				spare = append(spare[:claimed], spare[claimed+1:]...)
+				out = append(out, diff(path+"."+name, w[k], g[name])...)
+				continue
+			}
 			if !present {
 				out = append(out, fmt.Sprintf("%s.%s is missing", path, k))
 				continue
 			}
 			out = append(out, diff(path+"."+k, w[k], gv)...)
 		}
-		for _, k := range sortedKeys(g) {
-			if _, expected := w[k]; !expected {
-				out = append(out, fmt.Sprintf("%s.%s is not in the real response (value %s)", path, k, show(g[k])))
-			}
+		for _, k := range spare {
+			out = append(out, fmt.Sprintf("%s.%s is not in the real response (value %s)", path, k, show(g[k])))
 		}
 		return out
 	case []any:

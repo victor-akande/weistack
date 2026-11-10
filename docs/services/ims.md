@@ -76,8 +76,7 @@ entry.
 - Only `active` images can be updated. An update is all-or-nothing.
 - Images that are `queued` or `saving`, protected images and public images
   cannot be deleted.
-- **Until ECS is emulated no server exists, so every `CreateImage` fails
-  with `IMG.0005`.**
+- `instance_id` must be an [ECS](ecs.md) server of the same project.
 
 ## ListImages
 
@@ -125,9 +124,9 @@ A failed creation job reports `error_code` `IMG.0014`.
 
 `ListImages` (filters, sorting, paging) and `GlanceShowImage` are exercised
 through the official Go SDK (`huaweicloud-sdk-go-v3`, `ims/v2` client) in
-`test/sdk`. `CreateImage`, `UpdateImage`, `GlanceDeleteImage` and `ShowJob`
-are exercised through the SDK on their error paths only; their success paths
-need a server and will be covered with ECS.
+`test/sdk`, and so are `CreateImage`, `UpdateImage`, `GlanceDeleteImage` and
+`ShowJob`: `TestServerEndToEnd` makes an image of a server, renames it,
+launches a second server from it and deletes it.
 
 ## Fidelity notes
 

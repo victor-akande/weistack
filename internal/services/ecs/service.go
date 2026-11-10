@@ -9,11 +9,14 @@ package ecs
 import (
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/store"
+	"github.com/victor-akande/weistack/internal/services/ims"
+	"github.com/victor-akande/weistack/internal/services/vpc"
 )
 
 // Tenant identifies whose resources a call operates on.
@@ -28,12 +31,32 @@ type Deps struct {
 	Engine *lifecycle.Engine
 	IDs    *ids.Generator
 	Logger *slog.Logger
+	// Network resolves VPCs, subnets and security groups and hands out
+	// private IP addresses.
+	Network *vpc.Service
+	// Images resolves imageRef.
+	Images *ims.Service
+	// Quota bounds what one project may hold. Zero fields get defaults.
+	Quota Quota
 	// SeedDir optionally holds flavors.yaml, extending the built-in
 	// flavors.
 	SeedDir string
 	// Now defaults to time.Now.
 	Now func() time.Time
 }
+
+// Quota is the per-project ECS quota.
+type Quota struct {
+	Servers int
+	VCPUs   int
+}
+
+// Default quotas, those of a new Huawei Cloud account's order of
+// magnitude.
+const (
+	DefaultMaxServers = 20
+	DefaultMaxVCPUs   = 80
+)
 
 // Service is the ECS emulator.
 type Service struct {
@@ -43,14 +66,28 @@ type Service struct {
 	log    *slog.Logger
 	now    func() time.Time
 
+	network *vpc.Service
+	images  *ims.Service
+	quota   Quota
+
+	// mu serialises operations that check then write across records:
+	// quota accounting on create, and delete.
+	mu sync.Mutex
+
 	flavors      []FlavorSpec
 	flavorByName map[string]FlavorSpec
 }
 
 // New returns the ECS service. It fails if the seed data is invalid.
 func New(d Deps) (*Service, error) {
-	if d.Store == nil || d.Engine == nil || d.IDs == nil || d.Logger == nil {
-		return nil, errors.New("ecs: Store, Engine, IDs and Logger are required")
+	if d.Store == nil || d.Engine == nil || d.IDs == nil || d.Logger == nil || d.Network == nil || d.Images == nil {
+		return nil, errors.New("ecs: Store, Engine, IDs, Logger, Network and Images are required")
+	}
+	if d.Quota.Servers == 0 {
+		d.Quota.Servers = DefaultMaxServers
+	}
+	if d.Quota.VCPUs == 0 {
+		d.Quota.VCPUs = DefaultMaxVCPUs
 	}
 	if d.Now == nil {
 		d.Now = time.Now
@@ -61,6 +98,7 @@ func New(d Deps) (*Service, error) {
 	}
 	s := &Service{
 		store: d.Store, engine: d.Engine, ids: d.IDs, log: d.Logger, now: d.Now,
+		network: d.Network, images: d.Images, quota: d.Quota,
 		flavors:      flavors,
 		flavorByName: make(map[string]FlavorSpec, len(flavors)),
 	}

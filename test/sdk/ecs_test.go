@@ -5,6 +5,9 @@ import (
 
 	ecsv2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2"
 	ecs "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2/model"
+	ims "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ims/v2/model"
+	v2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2/model"
+	v3 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v3/model"
 )
 
 func newECS(t *testing.T) *ecsv2.EcsClient {
@@ -70,4 +73,225 @@ func TestFlavorsAndZones(t *testing.T) {
 
 	_, err = c.ListFlavors(&ecs.ListFlavorsRequest{Marker: ptr("no.such.flavor")})
 	wantError(t, err, 400, "Ecs.0005")
+}
+
+// TestServerEndToEnd is end-to-end scenarios 1 and 2 of the plan, driven
+// entirely by the official SDK across three services:
+//
+//	VPC -> subnet -> security group -> server from a public image ->
+//	wait for ACTIVE -> private image of the server -> second server from
+//	that image -> delete everything in reverse order.
+func TestServerEndToEnd(t *testing.T) {
+	net2 := newV2(t, realEndpoint)
+	net3 := newV3(t)
+	compute := newECS(t)
+	images := newIMS(t)
+
+	// --- Network ------------------------------------------------------
+	vc, err := net2.CreateVpc(&v2.CreateVpcRequest{Body: &v2.CreateVpcRequestBody{Vpc: &v2.CreateVpcOption{
+		Name: ptr("e2e-vpc"), Cidr: ptr("172.16.0.0/16"),
+	}}})
+	if err != nil {
+		t.Fatalf("CreateVpc: %v", err)
+	}
+	vpcID := vc.Vpc.Id
+	eventually(t, "the VPC to become OK", func() bool {
+		s, err := net2.ShowVpc(&v2.ShowVpcRequest{VpcId: vpcID})
+		return err == nil && s.Vpc.Status.Value() == "OK"
+	})
+	sc, err := net2.CreateSubnet(&v2.CreateSubnetRequest{Body: &v2.CreateSubnetRequestBody{Subnet: &v2.CreateSubnetOption{
+		Name: "e2e-subnet", Cidr: "172.16.10.0/24", GatewayIp: "172.16.10.1", VpcId: vpcID,
+	}}})
+	if err != nil {
+		t.Fatalf("CreateSubnet: %v", err)
+	}
+	subnetID := sc.Subnet.Id
+	eventually(t, "the subnet to become ACTIVE", func() bool {
+		s, err := net2.ShowSubnet(&v2.ShowSubnetRequest{SubnetId: subnetID})
+		return err == nil && s.Subnet.Status.Value() == "ACTIVE"
+	})
+	gc, err := net3.CreateSecurityGroup(&v3.CreateSecurityGroupRequest{Body: &v3.CreateSecurityGroupRequestBody{
+		SecurityGroup: &v3.CreateSecurityGroupOption{Name: "e2e-sg"},
+	}})
+	if err != nil {
+		t.Fatalf("CreateSecurityGroup: %v", err)
+	}
+	groupID := gc.SecurityGroup.Id
+
+	// --- Image and flavor ---------------------------------------------
+	listed, err := images.ListImages(&ims.ListImagesRequest{Name: ptr("Ubuntu 22.04 server 64bit")})
+	if err != nil || listed.Images == nil || len(*listed.Images) != 1 {
+		t.Fatalf("finding the Ubuntu image: %+v, %v", listed, err)
+	}
+	publicImage := (*listed.Images)[0].Id
+
+	// --- First server ---------------------------------------------------
+	create := func(name, imageID string) (jobID, serverID string) {
+		t.Helper()
+		res, err := compute.CreatePostPaidServers(&ecs.CreatePostPaidServersRequest{Body: &ecs.CreatePostPaidServersRequestBody{
+			Server: &ecs.PostPaidServer{
+				Name:           name,
+				ImageRef:       imageID,
+				FlavorRef:      "s6.large.2",
+				Vpcid:          vpcID,
+				Nics:           []ecs.PostPaidServerNic{{SubnetId: &subnetID}},
+				RootVolume:     &ecs.PostPaidServerRootVolume{Volumetype: ecs.GetPostPaidServerRootVolumeVolumetypeEnum().GPSSD},
+				SecurityGroups: &[]ecs.PostPaidServerSecurityGroup{{Id: &groupID}},
+				ServerTags:     &[]ecs.PostPaidServerTag{{Key: "suite", Value: "sdk"}},
+			},
+		}})
+		if err != nil {
+			t.Fatalf("CreatePostPaidServers(%s): %v", name, err)
+		}
+		if res.JobId == nil || res.ServerIds == nil || len(*res.ServerIds) != 1 {
+			t.Fatalf("CreatePostPaidServers(%s) = %+v", name, res)
+		}
+		return *res.JobId, (*res.ServerIds)[0]
+	}
+	waitJob := func(jobID string) *ecs.ShowJobResponse {
+		t.Helper()
+		var last *ecs.ShowJobResponse
+		eventually(t, "job "+jobID+" to finish", func() bool {
+			job, err := compute.ShowJob(&ecs.ShowJobRequest{JobId: jobID})
+			if err != nil {
+				t.Fatalf("ShowJob: %v", err)
+			}
+			last = job
+			return job.Status != nil && job.Status.Value() != "RUNNING" && job.Status.Value() != "INIT"
+		})
+		if last.Status.Value() != "SUCCESS" {
+			t.Fatalf("job %s ended %s: %v", jobID, last.Status.Value(), last.FailReason)
+		}
+		return last
+	}
+
+	jobID, serverID := create("e2e-server", publicImage)
+
+	building, err := compute.ShowServer(&ecs.ShowServerRequest{ServerId: serverID})
+	if err != nil {
+		t.Fatalf("ShowServer: %v", err)
+	}
+	if building.Server.Status != "BUILD" {
+		t.Errorf("new server status = %q, want BUILD", building.Server.Status)
+	}
+
+	job := waitJob(jobID)
+	if job.JobType == nil || *job.JobType != "createServer" || job.Entities == nil || job.Entities.SubJobs == nil ||
+		len(*job.Entities.SubJobs) != 1 || (*job.Entities.SubJobs)[0].Entities == nil ||
+		*(*job.Entities.SubJobs)[0].Entities.ServerId != serverID {
+		t.Errorf("create job = %+v", job)
+	}
+
+	shown, err := compute.ShowServer(&ecs.ShowServerRequest{ServerId: serverID})
+	if err != nil {
+		t.Fatalf("ShowServer: %v", err)
+	}
+	srv := shown.Server
+	addrs := srv.Addresses[vpcID]
+	if srv.Status != "ACTIVE" || srv.Name != "e2e-server" || srv.Flavor == nil || srv.Flavor.Id != "s6.large.2" ||
+		srv.Flavor.Vcpus != "2" || srv.Image == nil || srv.Image.Id != publicImage || srv.OSEXTSTSpowerState != 1 ||
+		srv.OSEXTSTSvmState != "active" || srv.TenantId != projectID {
+		t.Errorf("active server = %+v", srv)
+	}
+	if len(addrs) != 1 || addrs[0].Addr != "172.16.10.2" || addrs[0].Version != "4" {
+		t.Errorf("addresses = %+v, want the subnet's first free address 172.16.10.2", addrs)
+	}
+	if len(srv.SecurityGroups) != 1 || srv.SecurityGroups[0].Id != groupID || srv.SecurityGroups[0].Name != "e2e-sg" {
+		t.Errorf("security groups = %+v", srv.SecurityGroups)
+	}
+	if srv.Tags == nil || len(*srv.Tags) != 1 || (*srv.Tags)[0] != "suite=sdk" {
+		t.Errorf("tags = %v", srv.Tags)
+	}
+	if srv.Metadata["image_name"] != "Ubuntu 22.04 server 64bit" || srv.Metadata["vpc_id"] != vpcID {
+		t.Errorf("metadata = %v", srv.Metadata)
+	}
+
+	list, err := compute.ListServersDetails(&ecs.ListServersDetailsRequest{Name: ptr("e2e-"), Status: ptr("ACTIVE")})
+	if err != nil || list.Count == nil || *list.Count != 1 || list.Servers == nil || (*list.Servers)[0].Id != serverID {
+		t.Fatalf("ListServersDetails = %+v, %v", list, err)
+	}
+
+	// --- Dependency errors (scenario 5) --------------------------------
+	_, err = net2.DeleteSubnet(&v2.DeleteSubnetRequest{VpcId: vpcID, SubnetId: subnetID})
+	wantError(t, err, 500, "VPC.0208") // an address of the subnet is in use
+	_, err = compute.CreatePostPaidServers(&ecs.CreatePostPaidServersRequest{Body: &ecs.CreatePostPaidServersRequestBody{
+		Server: &ecs.PostPaidServer{
+			Name: "wrong-subnet", ImageRef: publicImage, FlavorRef: "s6.large.2", Vpcid: vpcID,
+			Nics:       []ecs.PostPaidServerNic{{SubnetId: ptr(unknownID)}},
+			RootVolume: &ecs.PostPaidServerRootVolume{Volumetype: ecs.GetPostPaidServerRootVolumeVolumetypeEnum().SSD},
+		},
+	}})
+	wantError(t, err, 400, "Ecs.0038")
+	_, err = compute.ShowServer(&ecs.ShowServerRequest{ServerId: unknownID})
+	wantError(t, err, 404, "Ecs.0114")
+	_, err = compute.ShowJob(&ecs.ShowJobRequest{JobId: "00000000000000000000000000000000"})
+	wantError(t, err, 400, "Common.0011")
+
+	// --- Private image of the server (scenario 2) -----------------------
+	ic, err := images.CreateImage(&ims.CreateImageRequest{Body: &ims.CreateImageRequestBody{
+		Name: ptr("e2e-image"), InstanceId: &serverID, Description: ptr("made by the SDK suite"),
+	}})
+	if err != nil || ic.JobId == nil {
+		t.Fatalf("CreateImage: %+v, %v", ic, err)
+	}
+	var imageID string
+	eventually(t, "the image job to succeed", func() bool {
+		ij, err := images.ShowJob(&ims.ShowJobRequest{JobId: *ic.JobId})
+		if err != nil {
+			t.Fatalf("IMS ShowJob: %v", err)
+		}
+		if ij.Entities != nil && ij.Entities.ImageId != nil {
+			imageID = *ij.Entities.ImageId
+		}
+		return ij.Status != nil && ij.Status.Value() == "SUCCESS"
+	})
+	img, err := images.GlanceShowImage(&ims.GlanceShowImageRequest{ImageId: imageID})
+	if err != nil || img.Status == nil || img.Status.Value() != "active" || img.Name == nil || *img.Name != "e2e-image" ||
+		img.Visibility == nil || img.Visibility.Value() != "private" || img.OsVersion == nil || *img.OsVersion != "Ubuntu 22.04 server 64bit" {
+		t.Fatalf("private image = %+v, %v", img, err)
+	}
+
+	replace := ims.GetUpdateImageRequestBodyOpEnum().REPLACE
+	renamed, err := images.UpdateImage(&ims.UpdateImageRequest{ImageId: imageID, Body: &[]ims.UpdateImageRequestBody{
+		{Op: replace, Path: "/name", Value: "e2e-image-renamed"},
+	}})
+	if err != nil || renamed.Name == nil || *renamed.Name != "e2e-image-renamed" {
+		t.Fatalf("UpdateImage = %+v, %v", renamed, err)
+	}
+
+	// --- Second server, from the private image --------------------------
+	jobID, cloneID := create("e2e-clone", imageID)
+	waitJob(jobID)
+	clone, err := compute.ShowServer(&ecs.ShowServerRequest{ServerId: cloneID})
+	if err != nil || clone.Server.Status != "ACTIVE" || clone.Server.Image.Id != imageID ||
+		clone.Server.Addresses[vpcID][0].Addr != "172.16.10.3" {
+		t.Fatalf("clone = %+v, %v", clone, err)
+	}
+
+	// --- Teardown in reverse order ---------------------------------------
+	del, err := compute.DeleteServers(&ecs.DeleteServersRequest{Body: &ecs.DeleteServersRequestBody{
+		Servers: []ecs.ServerId{{Id: serverID}, {Id: cloneID}},
+	}})
+	if err != nil || del.JobId == nil {
+		t.Fatalf("DeleteServers: %+v, %v", del, err)
+	}
+	dj := waitJob(*del.JobId)
+	if dj.Entities == nil || dj.Entities.SubJobsTotal == nil || *dj.Entities.SubJobsTotal != 2 {
+		t.Errorf("delete job = %+v", dj)
+	}
+	_, err = compute.ShowServer(&ecs.ShowServerRequest{ServerId: serverID})
+	wantError(t, err, 404, "Ecs.0114")
+
+	if _, err := images.GlanceDeleteImage(&ims.GlanceDeleteImageRequest{ImageId: imageID}); err != nil {
+		t.Fatalf("GlanceDeleteImage: %v", err)
+	}
+	if _, err := net3.DeleteSecurityGroup(&v3.DeleteSecurityGroupRequest{SecurityGroupId: groupID}); err != nil {
+		t.Fatalf("DeleteSecurityGroup: %v", err)
+	}
+	if _, err := net2.DeleteSubnet(&v2.DeleteSubnetRequest{VpcId: vpcID, SubnetId: subnetID}); err != nil {
+		t.Fatalf("DeleteSubnet after the servers are gone: %v", err)
+	}
+	if _, err := net2.DeleteVpc(&v2.DeleteVpcRequest{VpcId: vpcID}); err != nil {
+		t.Fatalf("DeleteVpc: %v", err)
+	}
 }

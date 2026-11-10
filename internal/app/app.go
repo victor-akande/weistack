@@ -199,10 +199,20 @@ func buildServices(
 		return nil, err
 	}
 
-	ecsSvc, err := ecs.New(ecs.Deps{Store: st, Engine: engine, IDs: gen, Logger: log, SeedDir: cfg.SeedDir})
+	ecsSvc, err := ecs.New(ecs.Deps{
+		Store: st, Engine: engine, IDs: gen, Logger: log, SeedDir: cfg.SeedDir,
+		Network: vpcSvc, Images: imsSvc,
+		Quota: ecs.Quota{Servers: cfg.ECSMaxServers, VCPUs: cfg.ECSMaxVCPUs},
+	})
 	if err != nil {
 		return nil, err
 	}
+	if err := ecsSvc.Resume(ctx); err != nil {
+		return nil, err
+	}
+	// IMS makes images of ECS servers; ECS reads IMS images. The cycle
+	// is closed here, after both exist.
+	imsSvc.SetServers(ecsSvc)
 	return []server.Service{vpcSvc, imsSvc, ecsSvc}, nil
 }
 
