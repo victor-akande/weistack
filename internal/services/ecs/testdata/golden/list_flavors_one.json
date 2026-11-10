@@ -1,0 +1,15 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "flavors": [
+      {"id": "s6.large.2", "name": "s6.large.2", "vcpus": "2", "ram": 4096, "disk": "0", "swap": "",
+       "links": [{"rel": "self", "href": "<string>", "type": null}, {"rel": "bookmark", "href": "<string>", "type": null}],
+       "OS-FLV-EXT-DATA:ephemeral": 0, "rxtx_factor": 1, "OS-FLV-DISABLED:disabled": false,
+       "rxtx_quota": null, "rxtx_cap": null, "os-flavor-access:is_public": true,
+       "os_extra_specs": {"ecs:performancetype": "normal", "resource_type": "IOoptimizedS6", "ecs:generation": "s6",
+         "ecs:virtualization_env_types": "CloudCompute", "cond:operation:status": "normal",
+         "cond:operation:az": "ap-southeast-1a(normal),ap-southeast-1b(normal),ap-southeast-1c(normal)"}}
+    ]
+  }
+}

@@ -23,6 +23,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/server"
+	"github.com/victor-akande/weistack/internal/services/ecs"
 	"github.com/victor-akande/weistack/internal/services/ims"
 	"github.com/victor-akande/weistack/internal/services/vpc"
 	"github.com/victor-akande/weistack/internal/version"
@@ -197,7 +198,12 @@ func buildServices(
 	if err := imsSvc.Resume(ctx); err != nil {
 		return nil, err
 	}
-	return []server.Service{vpcSvc, imsSvc}, nil
+
+	ecsSvc, err := ecs.New(ecs.Deps{Store: st, Engine: engine, IDs: gen, Logger: log, SeedDir: cfg.SeedDir})
+	if err != nil {
+		return nil, err
+	}
+	return []server.Service{vpcSvc, imsSvc, ecsSvc}, nil
 }
 
 // listen opens the server's listeners. The first is always the
