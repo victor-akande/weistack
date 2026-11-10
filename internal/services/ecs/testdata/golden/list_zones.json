@@ -1,0 +1,11 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "availabilityZoneInfo": [
+      {"zoneState": {"available": true}, "hosts": null, "zoneName": "ap-southeast-1a"},
+      {"zoneState": {"available": true}, "hosts": null, "zoneName": "ap-southeast-1b"},
+      {"zoneState": {"available": true}, "hosts": null, "zoneName": "ap-southeast-1c"}
+    ]
+  }
+}

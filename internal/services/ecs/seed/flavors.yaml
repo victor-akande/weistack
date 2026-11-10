@@ -1,0 +1,42 @@
+# ECS flavors every WeiStack region offers. vCPU and memory values are
+# those of the real flavors.
+#
+# To add your own, put a file named flavors.yaml with the same format in
+# the directory given by -seed-dir / WEISTACK_SEED_DIR. Entries there are
+# added to this list; an entry with the same name replaces the built-in
+# one.
+#
+# Fields:
+#   name              (required) flavor name, which is also its ID
+#   vcpus             (required) number of vCPUs
+#   ram               (required) memory in MiB
+#   performance_type  ecs:performancetype (default "normal")
+#   arch              x86 (default) or arm
+flavors:
+  # General computing (s6)
+  - {name: s6.small.1,   vcpus: 1, ram: 1024}
+  - {name: s6.medium.2,  vcpus: 1, ram: 2048}
+  - {name: s6.medium.4,  vcpus: 1, ram: 4096}
+  - {name: s6.large.2,   vcpus: 2, ram: 4096}
+  - {name: s6.large.4,   vcpus: 2, ram: 8192}
+  - {name: s6.xlarge.2,  vcpus: 4, ram: 8192}
+  - {name: s6.xlarge.4,  vcpus: 4, ram: 16384}
+  - {name: s6.2xlarge.2, vcpus: 8, ram: 16384}
+  - {name: s6.2xlarge.4, vcpus: 8, ram: 32768}
+
+  # General computing-plus (c7)
+  - {name: c7.large.2,   vcpus: 2, ram: 4096,  performance_type: computingv3}
+  - {name: c7.large.4,   vcpus: 2, ram: 8192,  performance_type: computingv3}
+  - {name: c7.xlarge.2,  vcpus: 4, ram: 8192,  performance_type: computingv3}
+  - {name: c7.xlarge.4,  vcpus: 4, ram: 16384, performance_type: computingv3}
+  - {name: c7.2xlarge.2, vcpus: 8, ram: 16384, performance_type: computingv3}
+  - {name: c7.2xlarge.4, vcpus: 8, ram: 32768, performance_type: computingv3}
+
+  # Memory-optimized (m7)
+  - {name: m7.large.8,   vcpus: 2, ram: 16384, performance_type: highmem}
+  - {name: m7.xlarge.8,  vcpus: 4, ram: 32768, performance_type: highmem}
+  - {name: m7.2xlarge.8, vcpus: 8, ram: 65536, performance_type: highmem}
+
+  # Kunpeng general computing-plus (kc1), for ARM images
+  - {name: kc1.large.2,  vcpus: 2, ram: 4096,  performance_type: kunpeng_computing, arch: arm}
+  - {name: kc1.xlarge.2, vcpus: 4, ram: 8192,  performance_type: kunpeng_computing, arch: arm}
