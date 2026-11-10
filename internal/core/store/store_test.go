@@ -467,3 +467,17 @@ func BenchmarkStore(b *testing.B) {
 		_ = s.Close()
 	}
 }
+
+func TestParseScope(t *testing.T) {
+	t.Parallel()
+
+	got, err := ParseScope(scope.String())
+	if err != nil || got != scope {
+		t.Fatalf("ParseScope(%q) = %+v, %v; want %+v", scope.String(), got, err, scope)
+	}
+	for _, bad := range []string{"", "a/b", "a/b/c/d", "a//c"} {
+		if _, err := ParseScope(bad); !errors.Is(err, ErrInvalidScope) {
+			t.Errorf("ParseScope(%q): err = %v, want ErrInvalidScope", bad, err)
+		}
+	}
+}

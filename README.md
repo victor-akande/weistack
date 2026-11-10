@@ -11,13 +11,14 @@ sponsored by Huawei.
 
 ## Status
 
-Early development. The **core framework** (milestone M1) is in place; no
-Huawei service is emulated yet.
+Early development. The **core framework** (milestone M1) is in place and
+VPC (M2) is in progress. Per-service coverage tables:
+[VPC](docs/services/vpc.md).
 
 | Milestone | Scope | State |
 | --- | --- | --- |
 | M1 | Core framework: server, routing, errors, store, lifecycle, admin API, CI, image | Done |
-| M2 | VPC: VPCs, subnets, security groups and rules | Next |
+| M2 | VPC: VPCs, subnets, security groups and rules | In progress |
 | M3 | IMS: images | Planned |
 | M4 | ECS: servers, flavors, jobs | Planned |
 | M5 | OBS: buckets, objects, multipart | Planned |

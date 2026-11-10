@@ -157,6 +157,18 @@ func TestPersistenceSurvivesRestart(t *testing.T) {
 
 	first := startInstance(t, vars)
 	id := first.projectID(t)
+
+	// A resource created before the restart...
+	res, err := http.Post("http://"+first.addr+"/vpc/v1/"+id+"/vpcs", "application/json",
+		strings.NewReader(`{"vpc": {"name": "survivor", "cidr": "192.168.0.0/16"}}`))
+	if err != nil {
+		t.Fatalf("creating VPC: %v", err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("creating VPC: status %d", res.StatusCode)
+	}
+
 	if err := first.stop(t); err != nil {
 		t.Fatalf("first run: %v", err)
 	}
@@ -169,6 +181,19 @@ func TestPersistenceSurvivesRestart(t *testing.T) {
 	second := startInstance(t, vars)
 	if got := second.projectID(t); got != id {
 		t.Fatalf("project ID changed across restart: %q then %q", id, got)
+	}
+
+	// ...is still there afterwards, and has finished creating.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		status, body := second.get(t, "/vpc/v1/"+id+"/vpcs")
+		if status == http.StatusOK && strings.Contains(body, `"name":"survivor"`) && strings.Contains(body, `"status":"OK"`) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("VPC did not survive the restart in status OK: %d %s", status, body)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -215,7 +240,7 @@ func TestStartupErrors(t *testing.T) {
 	}{
 		{"invalid flag value", []string{"-port", "99999"}, nil, "out of range"},
 		{"port in use", []string{"-port", busyPort}, nil, "listening"},
-		{"unknown service", []string{"-port", "0", "-services", "nope"}, nil, `unknown service "nope"`},
+		{"unknown service", []string{"-port", "0", "-services", "vpc,nope"}, nil, `unknown service "nope"`},
 		{"unusable data dir", []string{"-port", "0", "-persist", "-data-dir", notADir}, nil, "store"},
 	}
 	for _, tt := range tests {

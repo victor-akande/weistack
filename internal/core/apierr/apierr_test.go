@@ -53,6 +53,22 @@ func TestWriteStyles(t *testing.T) {
 				`<RequestId>` + reqID + `</RequestId><HostId>` + reqID + `</HostId><Resource>/photos/cat.png</Resource></Error>`,
 		},
 		{
+			name:       "code and message",
+			style:      StyleCodeMessage,
+			err:        New(http.StatusConflict, "VPC.0104", "vpc has subnets"),
+			wantStatus: http.StatusConflict,
+			wantType:   "application/json",
+			wantBody:   `{"code":"VPC.0104","message":"vpc has subnets"}`,
+		},
+		{
+			name:       "flat with request id",
+			style:      StyleFlatRequestID,
+			err:        New(http.StatusNotFound, "VPC.9904", "security group not found"),
+			wantStatus: http.StatusNotFound,
+			wantType:   "application/json",
+			wantBody:   `{"request_id":"` + reqID + `","error_code":"VPC.9904","error_msg":"security group not found"}`,
+		},
+		{
 			name:       "wrapped api error keeps its code",
 			style:      StyleFlat,
 			err:        fmt.Errorf("creating subnet: %w", New(http.StatusConflict, "VPC.0208", "cidr overlaps")),

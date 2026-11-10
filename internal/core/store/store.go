@@ -46,6 +46,19 @@ func (s Scope) String() string {
 	return s.Region + scopeSep + s.ProjectID + scopeSep + s.Kind
 }
 
+// ParseScope is the inverse of Scope.String.
+func ParseScope(key string) (Scope, error) {
+	parts := strings.Split(key, scopeSep)
+	if len(parts) != 3 {
+		return Scope{}, fmt.Errorf("%w: %q", ErrInvalidScope, key)
+	}
+	s := Scope{Region: parts[0], ProjectID: parts[1], Kind: parts[2]}
+	if _, err := s.key(); err != nil {
+		return Scope{}, err
+	}
+	return s, nil
+}
+
 func (s Scope) key() (string, error) {
 	for _, part := range []string{s.Region, s.ProjectID, s.Kind} {
 		if part == "" || strings.Contains(part, scopeSep) {
