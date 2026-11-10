@@ -26,6 +26,36 @@ Behaviour:
   of 8 to 24 bits, outside `0.0.0.0/8`, `100.64.0.0/10`, `127.0.0.0/8`,
   `169.254.0.0/16`, `198.18.0.0/15`, `214.0.0.0/7` and `240.0.0.0/4`.
 
+## Subnets (v1)
+
+| Operation | Method and path | Status | Notes |
+| --- | --- | --- | --- |
+| CreateSubnet | `POST /v1/{project_id}/subnets` | Yes | `tags` accepted and ignored |
+| ShowSubnet | `GET /v1/{project_id}/subnets/{subnet_id}` | Yes | |
+| ListSubnets | `GET /v1/{project_id}/subnets` | Yes | Filter `vpc_id`; `marker`/`limit` |
+| UpdateSubnet | `PUT /v1/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}` | Yes | Returns `id` and `status` only, as the real API does |
+| DeleteSubnet | `DELETE /v1/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}` | Yes | |
+| Private IP API | `/v1/{project_id}/privateips...` | No | Addresses are allocated internally for ECS and RDS |
+
+Behaviour:
+
+- A new subnet is `UNKNOWN` and becomes `ACTIVE` after the lifecycle delay.
+- `name`, `cidr`, `gateway_ip` and `vpc_id` are required. The CIDR must be a
+  canonical IPv4 block with a mask of at most 29 bits, inside the VPC's block
+  and not overlapping a sibling subnet. The gateway must be inside the
+  subnet and not its network or broadcast address.
+- A subnet's `id` equals its `neutron_network_id`, as in the real v1 API.
+- `ipv6_enable` adds `cidr_v6`, `gateway_ip_v6` and `neutron_subnet_id_v6`
+  with values from the documentation prefix `2001:db8::/32`. Nothing is
+  routed.
+- **Private IP allocation.** Each subnet reserves its network address, its
+  gateway, its broadcast address and the two addresses below the broadcast
+  address, so a `/24` has 251 usable addresses. Addresses are handed out
+  lowest-free-first and `available_ip_address_count` tracks them.
+- A VPC cannot be deleted while it has subnets, and its CIDR cannot be
+  changed to a block that no longer covers them. A subnet cannot be deleted
+  while any of its addresses is allocated.
+
 ## Error codes
 
 Errors of the v1 API are `{"code": "...", "message": "..."}`.
@@ -36,6 +66,17 @@ Errors of the v1 API are `{"code": "...", "message": "..."}`.
 | `VPC.0115` | 400 | VPC name already used in the project |
 | `VPC.0105` | 404 | VPC does not exist |
 | `VPC.0103` | 409 | VPC is still being created |
+| `VPC.0104` | 409 | Deleting a VPC that has subnets |
+| `VPC.0117` | 400 | New VPC CIDR does not cover an existing subnet |
+| `VPC.0003` | 404 | `vpc_id` of a new subnet does not exist |
+| `VPC.0201` | 400 | Invalid subnet body, field, ID, `limit` or `marker` |
+| `VPC.0212` | 400 | Subnet CIDR malformed or mask longer than 29 bits |
+| `VPC.0203` | 400 | Subnet CIDR outside the VPC CIDR |
+| `VPC.0204` | 400 | Subnet CIDR overlaps a sibling subnet |
+| `VPC.0207` | 400 | Subnet does not belong to the VPC in the path |
+| `VPC.0202` | 404 | Subnet does not exist |
+| `VPC.0205` | 500 | Subnet is still being created |
+| `VPC.0208` | 500 | Deleting a subnet with private IPs in use |
 
 ## Fidelity notes
 
@@ -45,5 +86,10 @@ traffic. Known open points:
 
 - Which code a missing VPC returns (`VPC.0105` chosen from the error table's
   grouping) and the exact message texts are unverified.
+- The API reference lists `VPC.0205` and `VPC.0208` with HTTP 500 and
+  `VPC.0202` with 500; the emulator follows it for the first two and returns
+  404 for a missing subnet, which is what clients test for.
+- The longest subnet mask is given as both 28 and 29 bits in the reference;
+  the emulator accepts up to 29.
 - Real Huawei Cloud enforces a per-project VPC quota (`VPC.0114`); the
   emulator has no VPC quota yet.

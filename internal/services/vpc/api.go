@@ -21,6 +21,12 @@ func (s *Service) Routes(r chi.Router) {
 		r.Get("/vpcs/{vpc_id}", s.v1("ShowVpc", s.handleShowVPC))
 		r.Put("/vpcs/{vpc_id}", s.v1("UpdateVpc", s.handleUpdateVPC))
 		r.Delete("/vpcs/{vpc_id}", s.v1("DeleteVpc", s.handleDeleteVPC))
+
+		r.Post("/subnets", s.v1("CreateSubnet", s.handleCreateSubnet))
+		r.Get("/subnets", s.v1("ListSubnets", s.handleListSubnets))
+		r.Get("/subnets/{subnet_id}", s.v1("ShowSubnet", s.handleShowSubnet))
+		r.Put("/vpcs/{vpc_id}/subnets/{subnet_id}", s.v1("UpdateSubnet", s.handleUpdateSubnet))
+		r.Delete("/vpcs/{vpc_id}/subnets/{subnet_id}", s.v1("DeleteSubnet", s.handleDeleteSubnet))
 	})
 }
 
@@ -123,6 +129,69 @@ func (s *Service) handleUpdateVPC(w http.ResponseWriter, r *http.Request, t Tena
 
 func (s *Service) handleDeleteVPC(w http.ResponseWriter, r *http.Request, t Tenant) error {
 	if err := s.DeleteVPC(r.Context(), t, chi.URLParam(r, "vpc_id")); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+func (s *Service) handleCreateSubnet(w http.ResponseWriter, r *http.Request, t Tenant) error {
+	var req createSubnetRequest
+	if err := decode(r, &req, errInvalidSubnet); err != nil {
+		return err
+	}
+	if req.Subnet == nil {
+		return errInvalidSubnet("the request body must contain a subnet object")
+	}
+	sn, err := s.CreateSubnet(r.Context(), t, *req.Subnet)
+	if err != nil {
+		return err
+	}
+	return httpx.WriteJSON(w, http.StatusOK, subnetResponse{Subnet: sn})
+}
+
+func (s *Service) handleShowSubnet(w http.ResponseWriter, r *http.Request, t Tenant) error {
+	sn, err := s.GetSubnet(r.Context(), t, chi.URLParam(r, "subnet_id"))
+	if err != nil {
+		return err
+	}
+	return httpx.WriteJSON(w, http.StatusOK, subnetResponse{Subnet: sn})
+}
+
+func (s *Service) handleListSubnets(w http.ResponseWriter, r *http.Request, t Tenant) error {
+	q := r.URL.Query()
+	page, err := pagination.ParseMarker(q, v1ListLimits)
+	if err != nil {
+		return errInvalidSubnet("%s", err)
+	}
+	all, err := s.ListSubnets(r.Context(), t, ListSubnetsFilter{VPCID: q.Get("vpc_id")})
+	if err != nil {
+		return err
+	}
+	out, err := pagination.ByMarker(all, func(sn Subnet) string { return sn.ID }, page)
+	if err != nil {
+		return errInvalidSubnet("%s", err)
+	}
+	return httpx.WriteJSON(w, http.StatusOK, listSubnetsResponse{Subnets: out})
+}
+
+func (s *Service) handleUpdateSubnet(w http.ResponseWriter, r *http.Request, t Tenant) error {
+	var req updateSubnetRequest
+	if err := decode(r, &req, errInvalidSubnet); err != nil {
+		return err
+	}
+	if req.Subnet == nil {
+		return errInvalidSubnet("the request body must contain a subnet object")
+	}
+	sn, err := s.UpdateSubnet(r.Context(), t, chi.URLParam(r, "vpc_id"), chi.URLParam(r, "subnet_id"), *req.Subnet)
+	if err != nil {
+		return err
+	}
+	return httpx.WriteJSON(w, http.StatusOK, updateSubnetResponse{Subnet: subnetResult{ID: sn.ID, Status: sn.Status}})
+}
+
+func (s *Service) handleDeleteSubnet(w http.ResponseWriter, r *http.Request, t Tenant) error {
+	if err := s.DeleteSubnet(r.Context(), t, chi.URLParam(r, "vpc_id"), chi.URLParam(r, "subnet_id")); err != nil {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)

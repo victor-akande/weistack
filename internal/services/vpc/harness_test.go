@@ -151,3 +151,17 @@ func (e *env) mustCreateVPC(t *testing.T, name, cidr string) VPC {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// mustCreateSubnet creates a subnet over HTTP and waits for ACTIVE.
+func (e *env) mustCreateSubnet(t *testing.T, vpcID, name, cidr, gateway string) Subnet {
+	t.Helper()
+	body, _ := json.Marshal(map[string]any{"subnet": map[string]any{
+		"name": name, "cidr": cidr, "gateway_ip": gateway, "vpc_id": vpcID,
+	}})
+	status, out := e.call(t, http.MethodPost, "/subnets", string(body))
+	if status != http.StatusOK {
+		t.Fatalf("creating subnet %q: %d %s", name, status, out)
+	}
+	e.settle(t)
+	return decodeInto[subnetResponse](t, out).Subnet
+}

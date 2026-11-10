@@ -23,12 +23,14 @@ import (
 
 // Store kinds owned by this service.
 const (
-	kindVPC = "vpc.vpc"
+	kindVPC    = "vpc.vpc"
+	kindSubnet = "vpc.subnet"
 )
 
 // Lifecycle task kinds, matched by fault injection.
 const (
-	taskVPCCreate = "vpc.vpc.create"
+	taskVPCCreate    = "vpc.vpc.create"
+	taskSubnetCreate = "vpc.subnet.create"
 )
 
 // Tenant identifies whose resources a call operates on.
@@ -59,6 +61,10 @@ type Service struct {
 	// records (name uniqueness, CIDR overlap), which a single-record
 	// compare-and-swap cannot protect.
 	mu sync.Mutex
+	// ipamMu serialises private IP allocation. Correctness comes from
+	// the store's compare-and-swap; the mutex only spares a burst of
+	// concurrent allocations from retrying against each other.
+	ipamMu sync.Mutex
 }
 
 // New returns the VPC service.
@@ -82,6 +88,10 @@ func (s *Service) vpcs(t Tenant) store.Collection[VPC] {
 	return store.Of[VPC](s.store, store.Scope{Region: t.Region, ProjectID: t.ProjectID, Kind: kindVPC})
 }
 
+func (s *Service) subnets(t Tenant) store.Collection[subnetRecord] {
+	return store.Of[subnetRecord](s.store, store.Scope{Region: t.Region, ProjectID: t.ProjectID, Kind: kindSubnet})
+}
+
 // timestamp returns the current time truncated to the second, the
 // resolution of the API's timestamps.
 func (s *Service) timestamp() Time {
@@ -98,17 +108,27 @@ func (s *Service) Resume(ctx context.Context) error {
 	}
 	for key, recs := range dump {
 		scope, err := store.ParseScope(key)
-		if err != nil || scope.Kind != kindVPC {
+		if err != nil {
 			continue
 		}
 		t := Tenant{Region: scope.Region, ProjectID: scope.ProjectID}
 		for _, rec := range recs {
-			var v VPC
-			if err := json.Unmarshal(rec.Data, &v); err != nil {
+			// Both kinds carry "id" and "status"; that is all resuming needs.
+			var r struct {
+				ID     string `json:"id"`
+				Status string `json:"status"`
+			}
+			if scope.Kind != kindVPC && scope.Kind != kindSubnet {
+				break
+			}
+			if err := json.Unmarshal(rec.Data, &r); err != nil {
 				return fmt.Errorf("vpc: decoding %s/%s: %w", key, rec.ID, err)
 			}
-			if v.Status == VPCStatusCreating {
-				s.scheduleVPCActivation(t, v.ID)
+			switch {
+			case scope.Kind == kindVPC && r.Status == VPCStatusCreating:
+				s.scheduleVPCActivation(t, r.ID)
+			case scope.Kind == kindSubnet && r.Status == SubnetStatusUnknown:
+				s.scheduleSubnetActivation(t, r.ID)
 			}
 		}
 	}
