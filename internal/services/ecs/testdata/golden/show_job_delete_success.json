@@ -1,0 +1,9 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {"status": "SUCCESS", "entities": {"sub_jobs_total": 1, "sub_jobs": [
+      {"status": "SUCCESS", "entities": {"server_id": "<uuid>"}, "job_id": "<hex32>", "job_type": "deleteSingleServer",
+       "begin_time": "<string>", "end_time": "<string>", "error_code": null, "fail_reason": null}]},
+    "job_id": "<hex32>", "job_type": "deleteServer", "begin_time": "<string>", "end_time": "<string>",
+    "error_code": null, "fail_reason": null}
+}

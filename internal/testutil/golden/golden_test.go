@@ -120,3 +120,28 @@ func TestCompareRejectsBadGoldenFiles(t *testing.T) {
 		t.Errorf("missing file: problems = %v", problems)
 	}
 }
+
+func TestPlaceholderKeys(t *testing.T) {
+	t.Parallel()
+
+	path := write(t, `{"source": "docs", "status": 200, "body": {"addresses": {"<uuid>": [{"addr": "<string>"}]}, "name": "a"}}`)
+	const id = "99d9d709-8478-4b46-9f3f-2206b1023fd3"
+
+	ok := `{"addresses": {"` + id + `": [{"addr": "10.0.0.2"}]}, "name": "a"}`
+	if problems := Compare(path, 200, []byte(ok)); len(problems) != 0 {
+		t.Fatalf("unexpected problems: %v", problems)
+	}
+
+	tests := map[string]string{
+		`{"addresses": {}, "name": "a"}`:                                          "body.addresses has no key matching <uuid>",
+		`{"addresses": {"not-a-uuid": [{"addr": "x"}]}, "name": "a"}`:             "body.addresses has no key matching <uuid>",
+		`{"addresses": {"` + id + `": [{"addr": 5}]}, "name": "a"}`:               "body.addresses." + id + "[0].addr",
+		`{"addresses": {"` + id + `": [{"addr": "x"}], "extra": 1}, "name": "a"}`: "body.addresses.extra is not in the real response",
+	}
+	for body, wantSub := range tests {
+		problems := Compare(path, 200, []byte(body))
+		if !strings.Contains(strings.Join(problems, "\n"), wantSub) {
+			t.Errorf("%s: problems %v do not mention %q", body, problems, wantSub)
+		}
+	}
+}

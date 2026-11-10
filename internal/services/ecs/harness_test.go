@@ -17,6 +17,8 @@ import (
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/server"
+	"github.com/victor-akande/weistack/internal/services/ims"
+	"github.com/victor-akande/weistack/internal/services/vpc"
 	"github.com/victor-akande/weistack/internal/testutil/golden"
 )
 
@@ -36,6 +38,8 @@ var (
 // clock.
 type env struct {
 	svc     *Service
+	network *vpc.Service
+	images  *ims.Service
 	store   store.Store
 	engine  *lifecycle.Engine
 	clock   *lifecycle.FakeClock
@@ -46,9 +50,25 @@ func newEnv(t *testing.T) *env { return newEnvWith(t, store.NewMemory(), "") }
 
 func newEnvWith(t *testing.T, st store.Store, seedDir string) *env {
 	t.Helper()
+	return newEnvFull(t, st, seedDir, Quota{})
+}
+
+func newEnvFull(t *testing.T, st store.Store, seedDir string, quota Quota) *env {
+	t.Helper()
+	return newEnvOpts(t, st, seedDir, quota, nil)
+}
+
+// newEnvFaulty returns an env whose lifecycle engine injects faults.
+func newEnvFaulty(t *testing.T, faults lifecycle.FaultInjector) *env {
+	t.Helper()
+	return newEnvOpts(t, store.NewMemory(), "", Quota{}, faults)
+}
+
+func newEnvOpts(t *testing.T, st store.Store, seedDir string, quota Quota, faults lifecycle.FaultInjector) *env {
+	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	clock := lifecycle.NewFakeClock(testEpoch)
-	engine := lifecycle.New(lifecycle.Options{Delay: testDelay, Clock: clock, Logger: log})
+	engine := lifecycle.New(lifecycle.Options{Delay: testDelay, Clock: clock, Logger: log, Faults: faults})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -60,10 +80,22 @@ func newEnvWith(t *testing.T, st store.Store, seedDir string) *env {
 	})
 
 	gen := ids.NewSeeded(13)
-	svc, err := New(Deps{Store: st, Engine: engine, IDs: gen, Logger: log, Now: clock.Now, SeedDir: seedDir})
+	network, err := vpc.New(vpc.Deps{Store: st, Engine: engine, IDs: gen, Logger: log, Now: clock.Now})
+	if err != nil {
+		t.Fatalf("vpc.New: %v", err)
+	}
+	images, err := ims.New(ims.Deps{Store: st, Engine: engine, IDs: gen, Logger: log, Now: clock.Now, DefaultProjectID: testProject})
+	if err != nil {
+		t.Fatalf("ims.New: %v", err)
+	}
+	svc, err := New(Deps{
+		Store: st, Engine: engine, IDs: gen, Logger: log, Now: clock.Now, SeedDir: seedDir,
+		Network: network, Images: images, Quota: quota,
+	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	images.SetServers(svc)
 	cfg, err := config.Load(nil, func(string) string { return "" }, io.Discard)
 	if err != nil {
 		t.Fatalf("config: %v", err)
@@ -75,7 +107,7 @@ func newEnvWith(t *testing.T, st store.Store, seedDir string) *env {
 	if err != nil {
 		t.Fatalf("server.New: %v", err)
 	}
-	return &env{svc: svc, store: st, engine: engine, clock: clock, handler: srv.Handler()}
+	return &env{svc: svc, network: network, images: images, store: st, engine: engine, clock: clock, handler: srv.Handler()}
 }
 
 // call sends a request to the ECS endpoint host. path starts at the API

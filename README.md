@@ -20,7 +20,7 @@ coverage tables: [VPC](docs/services/vpc.md), [IMS](docs/services/ims.md),
 | --- | --- | --- |
 | M1 | Core framework: server, routing, errors, store, lifecycle, admin API, CI, image | Done |
 | M2 | VPC: VPCs, subnets, security groups and rules | Done |
-| M3 | IMS: images | Done (image creation needs ECS) |
+| M3 | IMS: images | Done |
 | M4 | ECS: servers, flavors, jobs | In progress |
 | M5 | OBS: buckets, objects, multipart | Planned |
 | M6 | RDS: MySQL/PostgreSQL instances | Planned |
@@ -91,6 +91,8 @@ defaults. Run `weistack -h` for the full list.
 | `-persist` | `WEISTACK_PERSIST` | off | Keep state on disk across restarts |
 | `-data-dir` | `WEISTACK_DATA_DIR` | `/data` | Where persistent state lives |
 | `-seed-dir` | `WEISTACK_SEED_DIR` | none | Directory of YAML files extending built-in seed data ([images](docs/services/ims.md#adding-your-own), [flavors](docs/services/ecs.md#adding-your-own)) |
+| `-ecs-max-servers` | `WEISTACK_ECS_MAX_SERVERS` | `20` | ECS server quota per project |
+| `-ecs-max-vcpus` | `WEISTACK_ECS_MAX_VCPUS` | `80` | ECS vCPU quota per project |
 | `-lifecycle-delay` | `WEISTACK_LIFECYCLE_DELAY` | `2s` | Duration of async transitions; `0` is instant |
 | `-log-level` | `WEISTACK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `-log-format` | `WEISTACK_LOG_FORMAT` | `json` | `json` or `text` |

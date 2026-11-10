@@ -13,7 +13,71 @@ Legend: **Yes** implemented, **Partial** implemented with the listed gaps,
 | --- | --- | --- | --- |
 | ListFlavors | `GET /v1/{project_id}/cloudservers/flavors` | Yes | `availability_zone`, `flavor_id`, `marker`, `limit` |
 | NovaListAvailabilityZones | `GET /v2.1/{project_id}/os-availability-zone` | Yes | |
-| Servers, actions, jobs, tags | | No | Next |
+| CreatePostPaidServers | `POST /v1/{project_id}/cloudservers` | Partial | See "Creating servers" |
+| CreateServers | `POST /v1.1/{project_id}/cloudservers` | Partial | Same body and behaviour; pay-per-use only |
+| ShowServer | `GET /v1/{project_id}/cloudservers/{server_id}` | Yes | |
+| ListServersDetails | `GET /v1/{project_id}/cloudservers/detail` | Yes | See "Listing servers" |
+| DeleteServers | `POST /v1/{project_id}/cloudservers/delete` | Yes | `delete_publicip`, `delete_volume` accepted; disks and EIPs are data only |
+| ShowJob | `GET /v1/{project_id}/jobs/{job_id}` | Yes | |
+| UpdateServer, start/stop/reboot, resize, tags | | No | Next |
+| Nova-native server API (`/v2.1/{project_id}/servers...`) | | No | |
+
+## Creating servers
+
+A create request is validated completely before anything is written; a
+rejected request creates no server and consumes no address.
+
+- **Required:** `name`, `imageRef`, `flavorRef`, `vpcid`, `nics` (1 to 12,
+  each with a `subnet_id` of that VPC), `root_volume.volumetype`.
+- **Image:** must exist, be `active` and match the flavor's CPU
+  architecture. Private images of the project can be used.
+- **Network:** each NIC takes a private address from its subnet, the lowest
+  free one or the requested `ip_address`. Without `security_groups` the
+  project's `default` group is used.
+- **Disks:** `volumetype` is one of `SATA`, `SAS`, `GPSSD`, `SSD`, `ESSD`,
+  `GPSSD2`, `ESSD2`. The root disk defaults to the image's `min_disk` and
+  cannot be smaller; up to 23 data disks of 10 to 32768 GB.
+- **`count`:** 1 to 500. With more than one, names get the suffixes `-0001`,
+  `-0002`, ... and `ip_address` cannot be given.
+- **`availability_zone`:** optional; the region's first zone when omitted.
+- **`adminPass`:** checked for complexity, then discarded. It is never
+  stored or returned.
+- **`publicip`:** the server shows a `floating` address from
+  `198.51.100.0/24`. No EIP service stands behind it.
+- **`key_name`, `user_data`, `metadata`:** stored and returned as given. Key
+  pairs are not emulated, so any key name is accepted.
+- **Tags:** `server_tags` (`key`/`value`) or the older `tags` (`key.value`),
+  at most 10, shown as `key=value`.
+- **Quota:** 20 servers and 80 vCPUs per project by default
+  (`-ecs-max-servers`, `-ecs-max-vcpus`).
+- `dry_run` is not emulated (`501`).
+
+The response carries a `job_id` and the `serverIds`. Each server is `BUILD`
+and becomes `ACTIVE` after the lifecycle delay; the job (`createServer`, with
+one `createSingleServer` sub-job per server) then reports `SUCCESS`.
+
+## Deleting servers
+
+`DeleteServers` takes a list and returns a job. Every listed server must
+exist, or none is touched. Servers show `OS-EXT-STS:task_state: deleting`
+until the lifecycle delay passes; then they are gone and their addresses are
+free. A server can be deleted while still `BUILD`: the build is abandoned and
+its create job fails.
+
+## Listing servers
+
+- Filters: `name` (substring), `status`, `flavor`, `ip` (prefix), `ip_eq`,
+  `server_id`, `reservation_id`, `enterprise_project_id`, `tags` and
+  `not-tags` (comma-separated; `key` or `key=value`).
+- `offset` is a **page number** starting at 1 (0 means 1); `limit` is the
+  page size, 25 by default and at most 1000. `count` is the total number of
+  matching servers.
+
+## Images of servers
+
+`CreateImage` in [IMS](ims.md) with a server's ID as `instance_id` now
+works: the image inherits the server's operating system, and its `min_disk`
+is the server's root disk size.
 
 ## Availability zones
 
@@ -53,18 +117,53 @@ ECS errors are `{"error": {"code": "...", "message": "..."}}`.
 
 | Code | HTTP | When |
 | --- | --- | --- |
-| `Ecs.0005` | 400 | Invalid `limit` or `marker` |
+| `Ecs.0005` | 400 | Malformed body or invalid parameter value |
+| `Ecs.0001` | 400 | Server or vCPU quota exceeded |
+| `Ecs.0007` | 400 | Image and flavor have different CPU architectures |
+| `Ecs.0010` | 400 | Requested private IP already in use |
+| `Ecs.0011` | 400 | `adminPass` too simple |
+| `Ecs.0012` | 400 | Subnet has too few free addresses |
+| `Ecs.0014` | 400 | VPC or security group does not exist |
+| `Ecs.0029` | 400 | Flavor does not exist |
+| `Ecs.0031` | 400 | Image does not exist |
+| `Ecs.0032` | 400 | Image is not `active` |
+| `Ecs.0038` | 400 | Subnet does not exist |
+| `Ecs.0039` | 400 | Requested private IP not usable in the subnet |
+| `Ecs.0042` | 400 | More than 23 data disks |
+| `Ecs.0043` | 400 | Unknown disk type |
+| `Ecs.0050` | 400 | More than 12 NICs |
+| `Ecs.0064` | 400 | Subnet belongs to another VPC |
+| `Ecs.0114` | 404 | Server does not exist |
+| `Ecs.0905` to `Ecs.0908` | 400 | Too many tags; invalid tag; forbidden character; duplicate key |
+| `Ecs.0913` | 400 | `count` above 500 |
+| `Ecs.0914`, `Ecs.0915` | 400 | Name too long; name empty or with invalid characters |
+| `Common.0011` | 400 | Job does not exist |
+
+A failed job reports `error_code` `Ecs.0000`.
 
 ## Client compatibility
 
-`ListFlavors` and `NovaListAvailabilityZones` are exercised through the
+Every operation marked **Yes** or **Partial** is exercised through the
 official Go SDK (`huaweicloud-sdk-go-v3`, `ecs/v2` client) in `test/sdk`.
+`TestServerEndToEnd` runs the whole path across three services: network,
+server from a public image, private image of that server, second server from
+the image, and teardown in reverse order.
 
 ## Fidelity notes
 
 Golden files are provisional (SDK models and API reference, not recorded
 traffic). Known open points:
 
+- The server detail is the common subset of what real servers return. Values
+  such as `hostId`, `OS-EXT-SRV-ATTR:host` and the system `metadata` keys
+  are plausible stand-ins.
+- Real Huawei Cloud names the servers of a multi-server request by its own
+  rules, which depend on `isAutoRename`; the emulator always uses `-0001`
+  style suffixes.
+- Whether deleting a list containing an unknown server fails the request
+  (as here) or only that sub-job is unverified.
+- Job types for deletion (`deleteServer`, `deleteSingleServer`) are assumed
+  by analogy with creation.
 - Real flavors carry many more `os_extra_specs` keys, and which zones sell a
   flavor varies; the emulator returns a common subset and sells everything
   everywhere.
