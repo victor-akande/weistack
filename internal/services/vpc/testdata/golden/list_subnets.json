@@ -1,0 +1,17 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "subnets": [
+      {"id": "<uuid>", "name": "subnet", "description": "", "cidr": "192.168.20.0/24", "gateway_ip": "192.168.20.1",
+      "ipv6_enable": false, "dhcp_enable": true,
+      "primary_dns": "114.114.114.114", "secondary_dns": "114.114.115.115",
+      "dnsList": ["114.114.114.114", "114.114.115.115"],
+      "availability_zone": "ap-southeast-1a", "vpc_id": "<uuid>", "status": "ACTIVE",
+      "neutron_network_id": "<uuid>", "neutron_subnet_id": "<uuid>",
+      "extra_dhcp_opts": [{"opt_name": "ntp", "opt_value": "10.100.0.33,10.100.0.34"}],
+      "tenant_id": "<hex32>", "created_at": "<time>", "updated_at": "<time>",
+      "enable_network_address_usage_metrics": false, "available_ip_address_count": 251}
+    ]
+  }
+}

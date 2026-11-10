@@ -1,0 +1,14 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "subnet": {"id": "<uuid>", "name": "subnet6", "description": "", "cidr": "192.168.30.0/24", "gateway_ip": "192.168.30.1",
+      "ipv6_enable": true, "cidr_v6": "<string>", "gateway_ip_v6": "<string>", "dhcp_enable": true,
+      "primary_dns": "", "secondary_dns": "", "dnsList": [],
+      "availability_zone": "", "vpc_id": "<uuid>", "status": "UNKNOWN",
+      "neutron_network_id": "<uuid>", "neutron_subnet_id": "<uuid>", "neutron_subnet_id_v6": "<uuid>",
+      "extra_dhcp_opts": [],
+      "tenant_id": "<hex32>", "created_at": "<time>", "updated_at": "<time>",
+      "enable_network_address_usage_metrics": false, "available_ip_address_count": 251}
+  }
+}

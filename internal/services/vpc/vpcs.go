@@ -170,6 +170,19 @@ func (s *Service) UpdateVPC(ctx context.Context, t Tenant, id string, opt Update
 			return VPC{}, err
 		}
 	}
+	if opt.CIDR != nil {
+		// Shrinking or moving the block must not orphan a subnet.
+		block, _ := parseIPv4CIDR(*opt.CIDR) // validated above
+		subnets, err := s.subnetsOfVPC(ctx, t, id)
+		if err != nil {
+			return VPC{}, err
+		}
+		for _, sn := range subnets {
+			if inner, err := parseIPv4CIDR(sn.CIDR); err == nil && !contains(block, inner) {
+				return VPC{}, errVPCCIDRExcludesSubnet(*opt.CIDR, sn.CIDR)
+			}
+		}
+	}
 	now := s.timestamp()
 	v, err := s.vpcs(t).Update(ctx, id, func(v *VPC) error {
 		if opt.Name != nil {
@@ -214,6 +227,13 @@ func (s *Service) DeleteVPC(ctx context.Context, t Tenant, id string) error {
 	}
 	if v.Status == VPCStatusCreating {
 		return errVPCBusy(id)
+	}
+	subnets, err := s.subnetsOfVPC(ctx, t, id)
+	if err != nil {
+		return err
+	}
+	if len(subnets) > 0 {
+		return errVPCHasSubnets(id)
 	}
 	if err := s.vpcs(t).Delete(ctx, id); err != nil && !errors.Is(err, store.ErrNotFound) {
 		return err
