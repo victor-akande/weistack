@@ -28,6 +28,18 @@ func (s *Service) Routes(r chi.Router) {
 		r.Put("/vpcs/{vpc_id}/subnets/{subnet_id}", s.v1("UpdateSubnet", s.handleUpdateSubnet))
 		r.Delete("/vpcs/{vpc_id}/subnets/{subnet_id}", s.v1("DeleteSubnet", s.handleDeleteSubnet))
 	})
+	r.Route("/v3/{project_id}/vpc", func(r chi.Router) {
+		r.Post("/security-groups", s.v3("CreateSecurityGroup", s.handleCreateSecurityGroup))
+		r.Get("/security-groups", s.v3("ListSecurityGroups", s.handleListSecurityGroups))
+		r.Get("/security-groups/{security_group_id}", s.v3("ShowSecurityGroup", s.handleShowSecurityGroup))
+		r.Put("/security-groups/{security_group_id}", s.v3("UpdateSecurityGroup", s.handleUpdateSecurityGroup))
+		r.Delete("/security-groups/{security_group_id}", s.v3("DeleteSecurityGroup", s.handleDeleteSecurityGroup))
+
+		r.Post("/security-group-rules", s.v3("CreateSecurityGroupRule", s.handleCreateSecurityGroupRule))
+		r.Get("/security-group-rules", s.v3("ListSecurityGroupRules", s.handleListSecurityGroupRules))
+		r.Get("/security-group-rules/{security_group_rule_id}", s.v3("ShowSecurityGroupRule", s.handleShowSecurityGroupRule))
+		r.Delete("/security-group-rules/{security_group_rule_id}", s.v3("DeleteSecurityGroupRule", s.handleDeleteSecurityGroupRule))
+	})
 }
 
 // v1ListLimits bounds "limit" on v1 list operations: 0 to the maximum
@@ -40,6 +52,11 @@ type handler func(w http.ResponseWriter, r *http.Request, t Tenant) error
 // resolves the tenant and renders errors in the v1 envelope.
 func (s *Service) v1(op string, fn handler) http.HandlerFunc {
 	return s.adapt(op, apierr.StyleCodeMessage, fn)
+}
+
+// v3 adapts a handler of the v3 API.
+func (s *Service) v3(op string, fn handler) http.HandlerFunc {
+	return s.adapt(op, apierr.StyleFlatRequestID, fn)
 }
 
 func (s *Service) adapt(op string, style apierr.Style, fn handler) http.HandlerFunc {

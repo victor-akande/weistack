@@ -105,7 +105,30 @@ func (e *env) callAs(t *testing.T, project, method, path, body string) (int, []b
 	if body != "" {
 		rd = strings.NewReader(body)
 	}
-	r := httptest.NewRequest(method, "/v1/"+project+path, rd)
+	return e.send(t, method, "/v1/"+project+path, rd)
+}
+
+// call3 sends a request to the v3 API.
+func (e *env) call3(t *testing.T, method, path, body string) (int, []byte) {
+	t.Helper()
+	var rd io.Reader
+	if body != "" {
+		rd = strings.NewReader(body)
+	}
+	return e.send(t, method, "/v3/"+testProject+"/vpc"+path, rd)
+}
+
+// expect3 is expect for the v3 API.
+func (e *env) expect3(t *testing.T, goldenName, method, path, body string) []byte {
+	t.Helper()
+	status, out := e.call3(t, method, path, body)
+	golden.Assert(t, filepath.Join("testdata", "golden", goldenName+".json"), status, out)
+	return out
+}
+
+func (e *env) send(t *testing.T, method, path string, rd io.Reader) (int, []byte) {
+	t.Helper()
+	r := httptest.NewRequest(method, path, rd)
 	r.Host = testHost
 	w := httptest.NewRecorder()
 	e.handler.ServeHTTP(w, r)

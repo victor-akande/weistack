@@ -23,8 +23,10 @@ import (
 
 // Store kinds owned by this service.
 const (
-	kindVPC    = "vpc.vpc"
-	kindSubnet = "vpc.subnet"
+	kindVPC          = "vpc.vpc"
+	kindSubnet       = "vpc.subnet"
+	kindSecGroup     = "vpc.secgroup"
+	kindSecGroupRule = "vpc.secgroup-rule"
 )
 
 // Lifecycle task kinds, matched by fault injection.
@@ -82,7 +84,7 @@ func New(d Deps) (*Service, error) {
 func (s *Service) Name() string { return "vpc" }
 
 // Version implements server.Service.
-func (s *Service) Version() string { return "v1" }
+func (s *Service) Version() string { return "v1, v3" }
 
 func (s *Service) vpcs(t Tenant) store.Collection[VPC] {
 	return store.Of[VPC](s.store, store.Scope{Region: t.Region, ProjectID: t.ProjectID, Kind: kindVPC})
@@ -90,6 +92,14 @@ func (s *Service) vpcs(t Tenant) store.Collection[VPC] {
 
 func (s *Service) subnets(t Tenant) store.Collection[subnetRecord] {
 	return store.Of[subnetRecord](s.store, store.Scope{Region: t.Region, ProjectID: t.ProjectID, Kind: kindSubnet})
+}
+
+func (s *Service) secGroups(t Tenant) store.Collection[SecurityGroup] {
+	return store.Of[SecurityGroup](s.store, store.Scope{Region: t.Region, ProjectID: t.ProjectID, Kind: kindSecGroup})
+}
+
+func (s *Service) secGroupRules(t Tenant) store.Collection[SecurityGroupRule] {
+	return store.Of[SecurityGroupRule](s.store, store.Scope{Region: t.Region, ProjectID: t.ProjectID, Kind: kindSecGroupRule})
 }
 
 // timestamp returns the current time truncated to the second, the

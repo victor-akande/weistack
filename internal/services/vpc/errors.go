@@ -96,3 +96,35 @@ func errSubnetInUse(id string, n int) *apierr.Error {
 func errInvalidSubnetCIDR(format string, args ...any) *apierr.Error {
 	return apierr.New(http.StatusBadRequest, "VPC.0212", format, args...)
 }
+
+// The v3 API (security groups and rules) renders errors as
+// {"request_id", "error_code", "error_msg"}. The reference documents
+// VPC.9902 for rejected requests (400 for a bad value, 409 for a
+// conflict) and VPC.9904 for anything that does not exist.
+
+// errInvalidSecGroup is VPC.9902 with 400: a v3 request is invalid.
+func errInvalidSecGroup(format string, args ...any) *apierr.Error {
+	return apierr.New(http.StatusBadRequest, "VPC.9902", format, args...)
+}
+
+// errSecGroupConflict is VPC.9902 with 409: the request conflicts with
+// existing state (duplicate rule, group that cannot be deleted).
+func errSecGroupConflict(format string, args ...any) *apierr.Error {
+	return apierr.New(http.StatusConflict, "VPC.9902", format, args...)
+}
+
+// errSecGroupNotFound is VPC.9904.
+func errSecGroupNotFound(id string) *apierr.Error {
+	return apierr.New(http.StatusNotFound, "VPC.9904", "Security group %s does not exist.", id)
+}
+
+// errSecGroupRuleNotFound is VPC.9904.
+func errSecGroupRuleNotFound(id string) *apierr.Error {
+	return apierr.New(http.StatusNotFound, "VPC.9904", "Security group rule %s does not exist.", id)
+}
+
+// errAddressGroupNotFound is VPC.9904. IP address groups are not
+// emulated, so no remote_address_group_id can exist.
+func errAddressGroupNotFound(id string) *apierr.Error {
+	return apierr.New(http.StatusNotFound, "VPC.9904", "IP address group %s does not exist.", id)
+}
