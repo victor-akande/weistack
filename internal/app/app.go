@@ -118,11 +118,11 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		return err
 	}
 
-	var lc net.ListenConfig
-	ln, err := lc.Listen(ctx, "tcp", net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)))
+	listeners, err := listen(ctx, cfg, log)
 	if err != nil {
-		return fmt.Errorf("listening: %w", err)
+		return err
 	}
+	ln := listeners[0]
 
 	httpSrv := &http.Server{
 		Handler: srv.Handler(),
@@ -137,6 +137,7 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 	log.Info("weistack started",
 		"version", version.Version,
 		"address", ln.Addr().String(),
+		"ipv6_loopback", len(listeners) > 1,
 		"region", cfg.Region,
 		"project_id", projectID,
 		"persist", cfg.Persist,
@@ -147,8 +148,10 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		env.OnReady(ln.Addr())
 	}
 
-	serveErr := make(chan error, 1)
-	go func() { serveErr <- httpSrv.Serve(ln) }()
+	serveErr := make(chan error, len(listeners))
+	for _, l := range listeners {
+		go func() { serveErr <- httpSrv.Serve(l) }()
+	}
 
 	select {
 	case err := <-serveErr:
@@ -180,6 +183,34 @@ func buildServices(ctx context.Context, st store.Store, engine *lifecycle.Engine
 		return nil, err
 	}
 	return []server.Service{vpcSvc}, nil
+}
+
+// listen opens the server's listeners. The first is always the
+// configured address. When that is the default IPv4 loopback, the IPv6
+// loopback is opened on the same port as well, because many systems
+// resolve "localhost" and "{service}.localhost" to ::1. That second
+// listener is best effort: a machine without IPv6 simply does not get it.
+func listen(ctx context.Context, cfg config.Config, log *slog.Logger) ([]net.Listener, error) {
+	var lc net.ListenConfig
+	primary, err := lc.Listen(ctx, "tcp", net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)))
+	if err != nil {
+		return nil, fmt.Errorf("listening: %w", err)
+	}
+	listeners := []net.Listener{primary}
+	if cfg.Host != config.DefaultHost {
+		return listeners, nil
+	}
+
+	tcp, ok := primary.Addr().(*net.TCPAddr)
+	if !ok {
+		return listeners, nil
+	}
+	v6, err := lc.Listen(ctx, "tcp6", net.JoinHostPort("::1", strconv.Itoa(tcp.Port)))
+	if err != nil {
+		log.Debug("not listening on the IPv6 loopback", "error", err)
+		return listeners, nil
+	}
+	return append(listeners, v6), nil
 }
 
 func newLogger(cfg config.Config, w io.Writer) *slog.Logger {

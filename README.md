@@ -63,7 +63,7 @@ defaults. Run `weistack -h` for the full list.
 
 | Flag | Environment variable | Default | Meaning |
 | --- | --- | --- | --- |
-| `-host` | `WEISTACK_HOST` | `127.0.0.1` (`0.0.0.0` in the image) | Address to bind |
+| `-host` | `WEISTACK_HOST` | `127.0.0.1` (`0.0.0.0` in the image) | Address to bind. The default also listens on `::1` |
 | `-port` | `WEISTACK_PORT` | `8780` | Port to listen on |
 | `-region` | `WEISTACK_REGION` | `ap-southeast-1` | Region when a request names none |
 | `-project-id` | `WEISTACK_PROJECT_ID` | generated | Default project, 32 hex characters |
