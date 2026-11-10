@@ -17,7 +17,11 @@ import (
 // Routes implements server.Service. Paths are those of the real API.
 func (s *Service) Routes(r chi.Router) {
 	r.Get("/v2/cloudimages", s.handle("ListImages", s.handleListImages))
+	r.Post("/v2/cloudimages/action", s.handle("CreateImage", s.handleCreateImage))
+	r.Patch("/v2/cloudimages/{image_id}", s.handle("UpdateImage", s.handleUpdateImage))
 	r.Get("/v2/images/{image_id}", s.handle("GlanceShowImage", s.handleShowImage))
+	r.Delete("/v2/images/{image_id}", s.handle("GlanceDeleteImage", s.handleDeleteImage))
+	r.Get("/v1/{project_id}/jobs/{job_id}", s.handle("ShowJob", s.handleShowJob))
 }
 
 // listLimits bounds "limit" on ListImages: 1 to 1000, 1000 when omitted.
@@ -109,4 +113,61 @@ func (s *Service) handleShowImage(w http.ResponseWriter, r *http.Request, t Tena
 		return err
 	}
 	return httpx.WriteJSON(w, http.StatusOK, img)
+}
+
+// decode reads a JSON body, mapping failures to IMS error codes.
+func decode(r *http.Request, dst any) error {
+	err := httpx.DecodeJSON(r, dst)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, httpx.ErrEmptyBody):
+		return errEmptyBody
+	default:
+		return errInvalidRequest("%s", err)
+	}
+}
+
+func (s *Service) handleCreateImage(w http.ResponseWriter, r *http.Request, t Tenant) error {
+	var opt CreateImageOption
+	if err := decode(r, &opt); err != nil {
+		return err
+	}
+	job, err := s.CreateImage(r.Context(), t, opt)
+	if err != nil {
+		return err
+	}
+	return httpx.WriteJSON(w, http.StatusOK, createImageResponse{JobID: job.JobID})
+}
+
+func (s *Service) handleUpdateImage(w http.ResponseWriter, r *http.Request, t Tenant) error {
+	var ops []PatchOp
+	if err := decode(r, &ops); err != nil {
+		return err
+	}
+	img, err := s.UpdateImage(r.Context(), t, chi.URLParam(r, "image_id"), ops)
+	if err != nil {
+		return err
+	}
+	return httpx.WriteJSON(w, http.StatusOK, img)
+}
+
+func (s *Service) handleDeleteImage(w http.ResponseWriter, r *http.Request, t Tenant) error {
+	// The optional body ({"delete_backup": ...}) concerns full-ECS
+	// images, which are not emulated; it is ignored.
+	if err := s.DeleteImage(r.Context(), t, chi.URLParam(r, "image_id")); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+func (s *Service) handleShowJob(w http.ResponseWriter, r *http.Request, t Tenant) error {
+	// This is the one IMS path that names the project.
+	t.ProjectID = chi.URLParam(r, "project_id")
+	job, err := s.GetJob(r.Context(), t, chi.URLParam(r, "job_id"))
+	if err != nil {
+		return err
+	}
+	return httpx.WriteJSON(w, http.StatusOK, job)
 }

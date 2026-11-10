@@ -108,3 +108,37 @@ func TestImagePaging(t *testing.T) {
 		}
 	}
 }
+
+// TestPrivateImageErrors covers the private image operations as far as
+// they go without a server to make an image of. The full create ->
+// active -> update -> delete flow is exercised with ECS.
+func TestPrivateImageErrors(t *testing.T) {
+	c := newIMS(t)
+
+	listed, err := c.ListImages(&ims.ListImagesRequest{Name: ptr("CentOS 7.9 64bit")})
+	if err != nil || listed.Images == nil || len(*listed.Images) != 1 {
+		t.Fatalf("ListImages = %+v, %v", listed, err)
+	}
+	public := (*listed.Images)[0].Id
+
+	_, err = c.CreateImage(&ims.CreateImageRequest{Body: &ims.CreateImageRequestBody{
+		Name: ptr("from-nowhere"), InstanceId: ptr(unknownID),
+	}})
+	wantError(t, err, 400, "IMG.0005")
+	_, err = c.CreateImage(&ims.CreateImageRequest{Body: &ims.CreateImageRequestBody{InstanceId: ptr(unknownID)}})
+	wantError(t, err, 400, "IMG.0013")
+
+	replace := ims.GetUpdateImageRequestBodyOpEnum().REPLACE
+	_, err = c.UpdateImage(&ims.UpdateImageRequest{ImageId: public, Body: &[]ims.UpdateImageRequestBody{
+		{Op: replace, Path: "/name", Value: "mine-now"},
+	}})
+	wantError(t, err, 400, "IMG.0047")
+
+	_, err = c.GlanceDeleteImage(&ims.GlanceDeleteImageRequest{ImageId: public})
+	wantError(t, err, 400, "IMG.0094")
+	_, err = c.GlanceDeleteImage(&ims.GlanceDeleteImageRequest{ImageId: unknownID})
+	wantError(t, err, 404, "IMG.0027")
+
+	_, err = c.ShowJob(&ims.ShowJobRequest{JobId: "00000000000000000000000000000000"})
+	wantError(t, err, 400, "IMG.0023")
+}

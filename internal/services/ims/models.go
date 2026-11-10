@@ -1,6 +1,7 @@
 package ims
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -118,4 +119,72 @@ type pageInfo struct {
 type listImagesResponse struct {
 	Images   []Image   `json:"images"`
 	PageInfo *pageInfo `json:"page_info,omitempty"`
+}
+
+// CreateImageOption mirrors the SDK model ims/v2 CreateImageRequestBody,
+// limited to creating a system disk image from a server.
+type CreateImageOption struct {
+	Name                string        `json:"name"`
+	Description         string        `json:"description"`
+	InstanceID          string        `json:"instance_id"`
+	EnterpriseProjectID string        `json:"enterprise_project_id"`
+	Tags                []string      `json:"tags"`
+	ImageTags           []TagKeyValue `json:"image_tags"`
+	MaxRAM              *int          `json:"max_ram"`
+	MinRAM              *int          `json:"min_ram"`
+	// The fields below select creation modes the emulator does not
+	// support; they are decoded so the gap can be reported by name.
+	ImageURL   *string         `json:"image_url"`
+	VolumeID   *string         `json:"volume_id"`
+	DataImages json.RawMessage `json:"data_images"`
+}
+
+// TagKeyValue mirrors the SDK model ims/v2 TagKeyValue.
+type TagKeyValue struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+// PatchOp mirrors the SDK model ims/v2 UpdateImageRequestBody: one
+// JSON-patch-like operation of an image update. Value is a string in
+// the SDK; numbers are accepted too.
+type PatchOp struct {
+	Op    string          `json:"op"`
+	Path  string          `json:"path"`
+	Value json.RawMessage `json:"value"`
+}
+
+type createImageResponse struct {
+	JobID string `json:"job_id"`
+}
+
+// Job statuses.
+const (
+	JobRunning = "RUNNING"
+	JobSuccess = "SUCCESS"
+	JobFail    = "FAIL"
+)
+
+// jobTypeCreateImage is the job_type of an image created from a server.
+const jobTypeCreateImage = "createImageByInstance"
+
+// jobTimeLayout is the timestamp format of job records.
+const jobTimeLayout = "2006-01-02T15:04:05.000Z"
+
+// Job mirrors the SDK model ims/v2 ShowJobResponse. It is both the
+// stored record and the response body.
+type Job struct {
+	Status     string      `json:"status"`
+	Entities   JobEntities `json:"entities"`
+	JobID      string      `json:"job_id"`
+	JobType    string      `json:"job_type"`
+	BeginTime  string      `json:"begin_time"`
+	EndTime    string      `json:"end_time"`
+	ErrorCode  *string     `json:"error_code"`
+	FailReason *string     `json:"fail_reason"`
+}
+
+// JobEntities mirrors the SDK model ims/v2 JobEntities.
+type JobEntities struct {
+	ImageID string `json:"image_id"`
 }

@@ -1,0 +1,14 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "status": "SUCCESS",
+    "entities": {"image_id": "<uuid>"},
+    "job_id": "<hex32>",
+    "job_type": "createImageByInstance",
+    "begin_time": "<string>",
+    "end_time": "<string>",
+    "error_code": null,
+    "fail_reason": null
+  }
+}
