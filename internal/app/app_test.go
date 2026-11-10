@@ -353,3 +353,52 @@ func TestTextLogFormat(t *testing.T) {
 		t.Fatalf("text logs = %q", logs)
 	}
 }
+
+// Many systems resolve localhost, and {service}.localhost, to ::1 only.
+func TestDefaultHostAlsoListensOnIPv6Loopback(t *testing.T) {
+	t.Parallel()
+
+	probe, err := net.Listen("tcp6", "[::1]:0")
+	if err != nil {
+		t.Skipf("no IPv6 loopback on this machine: %v", err)
+	}
+	probe.Close()
+
+	inst := startInstance(t, nil)
+	_, port, _ := net.SplitHostPort(inst.addr)
+
+	res, err := http.Get("http://[::1]:" + port + "/_weistack/health")
+	if err != nil {
+		t.Fatalf("GET over the IPv6 loopback: %v", err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", res.StatusCode)
+	}
+
+	if err := inst.stop(t); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	if conn, err := net.DialTimeout("tcp6", "[::1]:"+port, time.Second); err == nil {
+		conn.Close()
+		t.Fatal("the IPv6 listener is still accepting connections after shutdown")
+	}
+}
+
+// An explicitly chosen bind address is honoured exactly: nothing extra.
+func TestExplicitHostDoesNotAddListeners(t *testing.T) {
+	t.Parallel()
+
+	probe, err := net.Listen("tcp6", "[::1]:0")
+	if err != nil {
+		t.Skipf("no IPv6 loopback on this machine: %v", err)
+	}
+	probe.Close()
+
+	inst := startInstance(t, map[string]string{"WEISTACK_HOST": "127.0.0.2"})
+	_, port, _ := net.SplitHostPort(inst.addr)
+	if conn, err := net.DialTimeout("tcp6", "[::1]:"+port, time.Second); err == nil {
+		conn.Close()
+		t.Fatal("an explicit host also opened the IPv6 loopback")
+	}
+}
