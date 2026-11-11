@@ -307,8 +307,9 @@ func TestDataDirectory(t *testing.T) {
 	if err := e.svc.Reset(t.Context()); err != nil {
 		t.Fatalf("Reset: %v", err)
 	}
+	// Only the scratch directory for uploads in progress remains.
 	entries, err := os.ReadDir(dir)
-	if err != nil || len(entries) != 0 {
+	if err != nil || len(entries) != 1 || entries[0].Name() != blobTempDir {
 		t.Fatalf("after Reset: %v, %v", entries, err)
 	}
 

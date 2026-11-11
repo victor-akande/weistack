@@ -82,6 +82,13 @@ func (s *Service) DeleteBucket(ctx context.Context, owner, name string) error {
 	if _, err := s.bucketFor(ctx, owner, name); err != nil {
 		return err
 	}
+	page, err := s.listObjects(ctx, name, "", "", "", 1)
+	if err != nil {
+		return err
+	}
+	if len(page.Objects) > 0 {
+		return errBucketNotEmpty
+	}
 	return s.buckets().Delete(ctx, name)
 }
 

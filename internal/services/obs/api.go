@@ -87,6 +87,7 @@ var bucketSubresources = []string{
 	"acl", "policy", "versioning", "versions", "lifecycle", "cors", "tagging", "website", "logging",
 	"notification", "encryption", "replication", "quota", "storageinfo", "storagePolicy", "storageClass",
 	"metadata", "inventory", "customdomain", "requestPayment", "object-lock", "directcoldaccess", "uploads",
+	"append", "restore",
 }
 
 type handlerFunc func(*call) error
@@ -118,21 +119,67 @@ func (s *Service) route(c *call) (string, handlerFunc) {
 			if c.subresource("location") != "" {
 				return "GetBucketLocation", s.handleGetBucketLocation
 			}
-			return "ListObjects", func(*call) error { return errNotImplemented("ListObjects") }
+			if c.r.URL.Query().Get("list-type") == "2" {
+				return "ListObjectsV2", s.handleListObjects
+			}
+			return "ListObjects", s.handleListObjects
+		case http.MethodPost:
+			if c.subresource("delete") != "" {
+				return "DeleteObjects", s.handleDeleteObjects
+			}
+			return "PostObject", func(*call) error { return errNotImplemented("browser-based POST uploads") }
 		}
 		return "Bucket", notAllowed
 	}
-	return "Object", func(*call) error { return errNotImplemented("object operations") }
+
+	// An object.
+	if sub := c.subresource(objectSubresources...); sub != "" {
+		return "Object?" + sub, func(*call) error { return errNotImplemented("object " + sub) }
+	}
+	if v := c.r.URL.Query().Get("versionId"); v != "" && v != "null" {
+		return "Object?versionId", func(*call) error { return errNotImplemented("object versions") }
+	}
+	switch m {
+	case http.MethodPut:
+		if c.vendorHeader("copy-source") != "" {
+			return "CopyObject", s.handlePutObject
+		}
+		return "PutObject", s.handlePutObject
+	case http.MethodGet:
+		return "GetObject", s.handleGetObject
+	case http.MethodHead:
+		return "HeadObject", s.handleGetObject
+	case http.MethodDelete:
+		return "DeleteObject", s.handleDeleteObject
+	}
+	return "Object", notAllowed
 }
 
-// writeXML sends an XML document with the standard declaration.
-func (c *call) writeXML(status int, v any) error {
+// objectSubresources are object-level features addressed by a query
+// parameter that the emulator does not implement.
+var objectSubresources = []string{
+	"acl", "tagging", "restore", "append", "modify", "truncate", "rename", "metadata", "select", "torrent",
+	"retention", "legal-hold", "uploads", "uploadId", "partNumber",
+}
+
+// vendorHeader returns a vendor header of the request in whichever
+// dialect it was sent: clients are not always consistent.
+func (c *call) vendorHeader(name string) string {
+	if v := c.r.Header.Get("x-obs-" + name); v != "" {
+		return v
+	}
+	return c.r.Header.Get("x-amz-" + name)
+}
+
+// writeXML sends a 200 response carrying an XML document with the
+// standard declaration.
+func (c *call) writeXML(v any) error {
 	body, err := xml.Marshal(v)
 	if err != nil {
 		return err
 	}
 	c.w.Header().Set("Content-Type", "application/xml")
-	c.w.WriteHeader(status)
+	c.w.WriteHeader(http.StatusOK)
 	_, _ = io.WriteString(c.w, xml.Header)
 	_, _ = c.w.Write(body)
 	return nil
@@ -158,7 +205,7 @@ func (s *Service) handleListBuckets(c *call) error {
 		}
 		res.Buckets = append(res.Buckets, xb)
 	}
-	return c.writeXML(http.StatusOK, res)
+	return c.writeXML(res)
 }
 
 func (s *Service) handleCreateBucket(c *call) error {
@@ -213,9 +260,9 @@ func (s *Service) handleGetBucketLocation(c *call) error {
 		return err
 	}
 	if c.dialect == dialectS3 {
-		return c.writeXML(http.StatusOK, locationS3{XMLNS: namespaceS3, LocationConstraint: b.Region})
+		return c.writeXML(locationS3{XMLNS: namespaceS3, LocationConstraint: b.Region})
 	}
-	return c.writeXML(http.StatusOK, locationOBS{XMLNS: namespaceOBS, Value: b.Region})
+	return c.writeXML(locationOBS{XMLNS: namespaceOBS, Value: b.Region})
 }
 
 func (s *Service) handleDeleteBucket(c *call) error {

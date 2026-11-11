@@ -13,8 +13,17 @@ Legend: **Yes** implemented, **No** returns `501 NotImplemented`.
 | CreateBucket | `PUT /{bucket}` | Yes | Optional location body |
 | HeadBucket | `HEAD /{bucket}` | Yes | |
 | GetBucketLocation | `GET /{bucket}?location` | Yes | |
-| DeleteBucket | `DELETE /{bucket}` | Yes | |
-| Objects, multipart uploads, listing | | No | Next |
+| DeleteBucket | `DELETE /{bucket}` | Yes | Must be empty |
+| PutObject | `PUT /{bucket}/{key}` | Yes | Streamed to disk; `Content-MD5` checked; `aws-chunked` decoded |
+| GetObject | `GET /{bucket}/{key}` | Yes | Single `Range`; conditional headers; `response-*` overrides |
+| HeadObject | `HEAD /{bucket}/{key}` | Yes | |
+| CopyObject | `PUT /{bucket}/{key}` with `x-obs-copy-source` | Yes | `COPY` or `REPLACE` metadata directive |
+| DeleteObject | `DELETE /{bucket}/{key}` | Yes | |
+| DeleteObjects | `POST /{bucket}?delete` | Yes | Up to 1000 keys; quiet mode |
+| ListObjects | `GET /{bucket}` | Yes | `prefix`, `delimiter`, `marker`, `max-keys`, `encoding-type` |
+| ListObjectsV2 | `GET /{bucket}?list-type=2` | Yes | `continuation-token`, `start-after`, `fetch-owner` |
+| Multipart uploads | `?uploads`, `?uploadId=` | No | Next |
+| Browser POST uploads, appendable objects, object ACLs and tags, versions | | No | |
 | ACLs, policies, versioning, lifecycle, CORS, tags, website, logging, quota, storage info, encryption, replication | `?acl`, `?policy`, ... | No | |
 
 ## Addressing
@@ -58,6 +67,44 @@ dialect with `obs.WithSignature(obs.SignatureObs)`.
   Requests without credentials share one `anonymous` identity. The owner ID
   shown in listings is derived from the access key, never the key itself.
 
+## Objects
+
+- Keys are at most 1024 bytes. Any character may appear in a key; encode it
+  in the URL as usual.
+- **Upload.** The body is written to a temporary file as it arrives and moved
+  into place only when complete, so a failed or aborted upload leaves
+  nothing behind and nothing large is held in memory. The ETag is the MD5 of
+  the body. A `Content-MD5` header is checked (`BadDigest`). AWS SDK uploads
+  in `aws-chunked` encoding (signed or unsigned, with or without trailing
+  checksums) have their framing removed, and `aws-chunked` is dropped from
+  the stored `Content-Encoding`.
+- **Stored with the object:** `Content-Type` (default
+  `binary/octet-stream`), `Cache-Control`, `Content-Disposition`,
+  `Content-Encoding`, `Content-Language`, `Expires`, and user metadata from
+  `x-obs-meta-*` or `x-amz-meta-*` headers. Metadata names are lowercased
+  and returned with the caller's dialect prefix.
+- **Overwrite** replaces the body and all metadata.
+- **Download.** One byte range is honoured (`bytes=a-b`, `bytes=a-`,
+  `bytes=-n`); a malformed range or several ranges serve the whole object, as
+  S3 does, and a range starting past the end is `InvalidRange` (416).
+  `If-Match`, `If-None-Match`, `If-Modified-Since` and `If-Unmodified-Since`
+  give 412 or 304. `response-content-type` and the other `response-*` query
+  parameters override the response headers.
+- **Copy** within or across the caller's buckets. With the default `COPY`
+  directive the source's metadata is kept; with `REPLACE` it is taken from
+  the request. Copying an object onto itself is only allowed with
+  `REPLACE`, which is how metadata is edited. The copy is independent of its
+  source.
+- **Delete** of a missing key succeeds, as in S3. `DeleteObjects` reports
+  every key, or with `<Quiet>true</Quiet>` only failures.
+- **List.** Keys come back in byte order. A `delimiter` rolls keys that
+  contain it after the `prefix` into one `CommonPrefixes` entry, which
+  counts as one entry towards `max-keys` (at most 1000, the default). Both
+  listing versions page correctly with any page size: v1 by `NextMarker`,
+  v2 by `NextContinuationToken`. With `encoding-type=url`, keys, prefixes
+  and delimiters are percent-encoded, slashes kept.
+- A bucket can only be deleted when it holds no objects (`BucketNotEmpty`).
+
 ## Storage
 
 Bucket and object metadata are in the emulator's store. Object bodies are
@@ -76,20 +123,43 @@ A `HEAD` error has no body; the code and message are in the
 | --- | --- | --- |
 | `InvalidBucketName` | 400 | Name breaks the naming rules |
 | `InvalidLocationConstraint` | 400 | Location differs from the endpoint's region |
-| `MalformedXML` | 400 | Request body is not valid XML |
+| `MalformedXML` | 400 | Request body is not valid XML, or a batch delete names no key or more than 1000 |
+| `InvalidArgument` | 400 | Bad `max-keys`, `encoding-type`, continuation token, copy source or metadata directive |
+| `InvalidRequest` | 400 | Copying an object onto itself without `REPLACE` |
+| `InvalidDigest` | 400 | `Content-MD5` is not a base64 MD5 |
+| `BadDigest` | 400 | Body does not match `Content-MD5` |
+| `IncompleteBody` | 400 | Chunked body malformed or shorter than declared |
+| `KeyTooLongError` | 400 | Key longer than 1024 bytes |
 | `AccessDenied` | 403 | Bucket belongs to another access key |
 | `NoSuchBucket` | 404 | Bucket does not exist |
+| `NoSuchKey` | 404 | Object does not exist |
 | `MethodNotAllowed` | 405 | Method not valid for the resource |
 | `BucketAlreadyOwnedByYou` | 409 | You already own a bucket of that name |
 | `BucketAlreadyExists` | 409 | Another caller owns a bucket of that name |
+| `BucketNotEmpty` | 409 | Deleting a bucket that still has objects |
+| `PreconditionFailed` | 412 | `If-Match` or `If-Unmodified-Since` failed |
+| `InvalidRange` | 416 | Range starts past the end of the object |
 | `NotImplemented` | 501 | Feature not emulated; the message names it |
 | `InternalError` | 500 | Unexpected failure in the emulator |
 
 ## Client compatibility
 
-`TestOBSBuckets` in `test/sdk` runs every bucket operation through Huawei's
-OBS Go SDK (`huaweicloud-sdk-go-obs`) with OBS, v2 and v4 signatures, in
-virtual-hosted and path style.
+Two SDKs drive the emulator in `test/sdk`:
+
+- **Huawei's OBS Go SDK** (`huaweicloud-sdk-go-obs`). `TestOBSBuckets` runs
+  every bucket operation with OBS, v2 and v4 signatures, virtual-hosted and
+  path style. `TestOBSObjects` runs plan scenario 3 (multipart aside) in
+  both dialects: upload with metadata, list by prefix and delimiter, page
+  by marker, download whole and by range, copy, the `BucketNotEmpty`
+  dependency error, batch delete and bucket deletion.
+- **The AWS SDK for Go v2.** `TestS3Compatibility` covers the same ground
+  with signature v4, a 1 MiB upload, `ListObjectsV2` through the SDK's
+  paginator with URL-encoded keys, and the error codes as the SDK decodes
+  them.
+
+The AWS SDK only sends `aws-chunked` uploads over TLS, which the emulator
+does not serve yet; that decoding is covered by unit tests built from the
+documented wire format.
 
 ## Fidelity notes
 
@@ -97,5 +167,10 @@ virtual-hosted and path style.
   the access key stands in for the account.
 - The values of `x-obs-id-2`, `x-obs-version` and the owner ID are
   stand-ins.
+- Real OBS serves `ListObjects` beyond 1000 entries per page in some
+  configurations and reports `Location` in listings; the emulator caps at
+  1000 and omits it.
+- Listing reads every key of the bucket for each page. That is fine for
+  thousands of objects; it is not built for millions.
 - Real OBS redirects a request for a bucket sent to another region's
   endpoint; the emulator serves it.

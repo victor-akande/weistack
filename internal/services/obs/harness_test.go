@@ -1,6 +1,8 @@
 package obs
 
 import (
+	"crypto/md5"
+	"hash"
 	"io"
 	"log/slog"
 	"net/http"
@@ -148,3 +150,25 @@ func mustStatus(t *testing.T, got resp, want int) resp {
 }
 
 func newMemory() store.Store { return store.NewMemory() }
+
+func openBolt(path string) (store.Store, error) { return store.OpenBolt(path) }
+
+// discardRecorder is a ResponseWriter that hashes and counts a body
+// instead of keeping it, for tests with large objects.
+type discardRecorder struct {
+	header http.Header
+	status int
+	n      int
+	hash   hash.Hash
+}
+
+func newDiscardRecorder() *discardRecorder {
+	return &discardRecorder{header: http.Header{}, status: http.StatusOK, hash: md5.New()}
+}
+
+func (d *discardRecorder) Header() http.Header { return d.header }
+func (d *discardRecorder) WriteHeader(s int)   { d.status = s }
+func (d *discardRecorder) Write(p []byte) (int, error) {
+	d.n += len(p)
+	return d.hash.Write(p)
+}
