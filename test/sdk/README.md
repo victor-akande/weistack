@@ -20,6 +20,13 @@ image:
 WEISTACK_ADDR=127.0.0.1:8780 WEISTACK_PROJECT_ID=<its project id> make test-sdk
 ```
 
+`TestPersistenceAcrossRestarts` starts emulators of its own with
+`-persist`, so it is skipped when `WEISTACK_ADDR` names an existing one. It
+stops one in the middle of server and database creation and of a multipart
+upload, and checks that everything finishes after the restart. It also
+kills one and checks that acknowledged writes survived. The CI `image` job
+checks the same for a container restarted with its `/data` volume.
+
 ## Adding a test
 
 Every operation an emulated service supports must be called at least once

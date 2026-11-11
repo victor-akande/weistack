@@ -140,6 +140,38 @@ jobs:
           # Graceful shutdown must exit 0 well inside the timeout.
           docker stop -t 15 weistack
           test "$(docker inspect weistack --format '{{.State.ExitCode}}')" = 0
+      - name: Persistence across a container restart
+        run: |
+          docker volume create weistack-data
+          docker run -d --name persisted -p 8781:8780 -e WEISTACK_PERSIST=1 -v weistack-data:/data weistack:ci
+          wait_healthy() {
+            for i in $(seq 1 50); do
+              curl -fsS http://localhost:8781/_weistack/health >/dev/null 2>&1 && return 0
+              sleep 0.2
+            done
+            return 1
+          }
+          wait_healthy
+          project=$(curl -fsS http://localhost:8781/_weistack/services | jq -r .project_id)
+          vpc=$(curl -fsS -X POST "http://localhost:8781/vpc/v1/$project/vpcs" \
+            -d '{"vpc": {"name": "survivor", "cidr": "10.0.0.0/16"}}' | jq -r .vpc.id)
+          echo "created VPC $vpc in project $project"
+          ca=$(curl -fsS http://localhost:8781/_weistack/ca)
+          docker restart -t 15 persisted
+          wait_healthy
+          # Same project, same VPC, and its creation finished.
+          test "$(curl -fsS http://localhost:8781/_weistack/services | jq -r .project_id)" = "$project"
+          for i in $(seq 1 50); do
+            status=$(curl -fsS "http://localhost:8781/vpc/v1/$project/vpcs/$vpc" | jq -r .vpc.status)
+            [ "$status" = OK ] && break
+            sleep 0.2
+          done
+          test "$status" = OK
+          # The CA is kept in the volume too, so clients trust it once.
+          test "$(curl -fsS http://localhost:8781/_weistack/ca)" = "$ca"
+          docker stop -t 15 persisted
       - name: Container logs
         if: always()
-        run: docker logs weistack || true
+        run: |
+          docker logs weistack || true
+          docker logs persisted || true
