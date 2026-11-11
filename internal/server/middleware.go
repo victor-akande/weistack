@@ -48,6 +48,9 @@ func (s *Server) observe(next http.Handler) http.Handler {
 		}
 		s.log.LogAttrs(r.Context(), level, "request",
 			slog.String("method", r.Method),
+			// The host names the bucket of a virtual-hosted OBS request
+			// and the endpoint a proxied client used.
+			slog.String("host", r.Host),
 			slog.String("path", r.URL.Path),
 			slog.String("service", info.Service),
 			slog.String("operation", info.Operation()),

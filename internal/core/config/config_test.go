@@ -5,7 +5,9 @@ import (
 	"flag"
 	"io"
 	"log/slog"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -26,7 +28,6 @@ func TestLoadDefaults(t *testing.T) {
 		Host:             "127.0.0.1",
 		Port:             8780,
 		Region:           "ap-southeast-1",
-		DataDir:          "/data",
 		ProxyDomains:     []string{"myhuaweicloud.com"},
 		ProxyPassthrough: "loopback",
 		ECSMaxServers:    20,
@@ -34,7 +35,7 @@ func TestLoadDefaults(t *testing.T) {
 		RDSMaxInstances:  20,
 		LifecycleDelay:   2 * time.Second,
 		LogLevel:         slog.LevelInfo,
-		LogFormat:        "json",
+		LogFormat:        "auto",
 		MaxBodyBytes:     10 << 20,
 		ShutdownTimeout:  10 * time.Second,
 	}
@@ -140,7 +141,7 @@ func TestLoadErrors(t *testing.T) {
 		{"port out of range", []string{"-port", "70000"}, nil, "out of range"},
 		{"bad region", []string{"-region", "Mars"}, nil, "region"},
 		{"bad project id", []string{"-project-id", "abc"}, nil, "32 lowercase hex"},
-		{"empty data dir", []string{"-data-dir", ""}, nil, "data directory"},
+		{"persist without a data dir", []string{"-persist", "-data-dir", ""}, nil, "data directory"},
 		{"negative delay", []string{"-lifecycle-delay", "-1s"}, nil, "negative"},
 		{"zero server quota", []string{"-ecs-max-servers", "0"}, nil, "ECS quotas"},
 		{"zero rds quota", []string{"-rds-max-instances", "0"}, nil, "RDS instance quota"},
@@ -192,7 +193,7 @@ func TestLoadHelp(t *testing.T) {
 func TestValidateReportsEveryProblem(t *testing.T) {
 	t.Parallel()
 
-	err := Config{Port: -1, Region: "x", LogFormat: "yaml", ECSMaxServers: 1, ECSMaxVCPUs: 1, RDSMaxInstances: 1, ProxyPassthrough: "none"}.Validate()
+	err := Config{Port: -1, Region: "x", LogFormat: "yaml", ECSMaxServers: 1, ECSMaxVCPUs: 1, RDSMaxInstances: 1, ProxyPassthrough: "none", Persist: true}.Validate()
 	if err == nil {
 		t.Fatal("Validate succeeded, want error")
 	}
@@ -228,5 +229,49 @@ func TestServiceEnabled(t *testing.T) {
 	some := Config{Services: []string{"vpc", "ecs"}}
 	if !some.ServiceEnabled("ecs") || some.ServiceEnabled("rds") {
 		t.Error("subset list not honoured")
+	}
+}
+
+func TestDefaultDataDir(t *testing.T) {
+	t.Parallel()
+	if got := DefaultDataDir(env(map[string]string{"XDG_DATA_HOME": "/xdg", "HOME": "/home/u"})); got != filepath.Join("/xdg", "weistack") {
+		t.Errorf("with XDG_DATA_HOME: %q", got)
+	}
+	home := DefaultDataDir(env(map[string]string{"HOME": "/home/u"}))
+	want := map[string]string{
+		"linux":   filepath.Join("/home/u", ".local", "share", "weistack"),
+		"darwin":  filepath.Join("/home/u", "Library", "Application Support", "weistack"),
+		"windows": "", // from LocalAppData, not HOME
+	}[runtime.GOOS]
+	if w, known := want, runtime.GOOS == "linux" || runtime.GOOS == "darwin" || runtime.GOOS == "windows"; known && home != w {
+		t.Errorf("from HOME on %s: %q, want %q", runtime.GOOS, home, w)
+	}
+	if runtime.GOOS != "windows" {
+		if got := DefaultDataDir(env(nil)); got != "" {
+			t.Errorf("without HOME: %q, want empty", got)
+		}
+	}
+
+	// It is the -data-dir default; the environment variable still wins.
+	cfg, err := Load(nil, env(map[string]string{"XDG_DATA_HOME": "/xdg"}), io.Discard)
+	if err != nil || cfg.DataDir != filepath.Join("/xdg", "weistack") {
+		t.Errorf("Load default data dir = %q, %v", cfg.DataDir, err)
+	}
+	cfg, err = Load(nil, env(map[string]string{"XDG_DATA_HOME": "/xdg", "WEISTACK_DATA_DIR": "/data"}), io.Discard)
+	if err != nil || cfg.DataDir != "/data" {
+		t.Errorf("WEISTACK_DATA_DIR = %q, %v", cfg.DataDir, err)
+	}
+	// Without persistence no directory is needed.
+	if _, err := Load([]string{"-data-dir", ""}, env(nil), io.Discard); err != nil {
+		t.Errorf("an empty data dir without -persist: %v", err)
+	}
+}
+
+func TestLogFormats(t *testing.T) {
+	t.Parallel()
+	for _, f := range []string{"json", "text", "auto", "TEXT"} {
+		if _, err := Load([]string{"-log-format", f}, env(nil), io.Discard); err != nil {
+			t.Errorf("-log-format %s: %v", f, err)
+		}
 	}
 }

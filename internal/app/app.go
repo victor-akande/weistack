@@ -184,6 +184,9 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		"lifecycle_delay", cfg.LifecycleDelay.String(),
 		"services", srv.ServiceNames(),
 	)
+	if isTerminal(env.Stdout) {
+		printBanner(env.Stdout, cfg, ln.Addr().String(), projectID)
+	}
 	if env.OnReady != nil {
 		env.OnReady(ln.Addr())
 	}
@@ -302,14 +305,12 @@ func objectDataDir(cfg config.Config) (dir string, cleanup func(), err error) {
 }
 
 // tlsDir returns where the local CA lives: the configured directory,
-// the data directory with persistence (so a container keeps its CA in
-// its volume), or the user's config directory.
+// else the user's config directory. It does not depend on -persist, so
+// clients that trust the CA keep working whichever way WeiStack runs; the
+// image keeps its CA in its volume by setting WEISTACK_TLS_DIR.
 func tlsDir(cfg config.Config) string {
-	switch {
-	case cfg.TLSDir != "":
+	if cfg.TLSDir != "" {
 		return cfg.TLSDir
-	case cfg.Persist:
-		return filepath.Join(cfg.DataDir, "tls")
 	}
 	if dir, err := os.UserConfigDir(); err == nil {
 		return filepath.Join(dir, "weistack", "tls")
@@ -405,9 +406,41 @@ func listen(ctx context.Context, cfg config.Config, port int, log *slog.Logger) 
 	return append(listeners, v6), nil
 }
 
+// isTerminal reports whether w is a terminal, where a person rather than
+// a log collector reads the output.
+func isTerminal(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := f.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
+// printBanner tells a person at a terminal how to use the emulator that
+// just started. Logs carry the same facts for machines.
+func printBanner(w io.Writer, cfg config.Config, addr, projectID string) {
+	base := "http://" + addr
+	project := "new on every start; -persist keeps it"
+	if cfg.Persist {
+		project = "kept in " + cfg.DataDir
+	}
+	fmt.Fprintf(w, "\n  WeiStack %s is ready on %s\n\n", version.Version, base)
+	for _, line := range [][2]string{
+		{"Project ID", projectID + "  (" + project + ")"},
+		{"As a proxy", "export HTTPS_PROXY=" + base},
+		{"Trust its CA", "curl -o weistack-ca.pem " + base + "/_weistack/ca"},
+		{"Directly", base + "/vpc/v1/" + projectID + "/vpcs, or /ecs, /ims, /evs, /obs, /rds"},
+		{"Guide", "https://github.com/victor-akande/weistack/blob/main/docs/getting-started.md"},
+	} {
+		fmt.Fprintf(w, "    %-14s%s\n", line[0], line[1])
+	}
+	fmt.Fprintln(w)
+}
+
 func newLogger(cfg config.Config, w io.Writer) *slog.Logger {
 	opts := &slog.HandlerOptions{Level: cfg.LogLevel}
-	if cfg.LogFormat == "text" {
+	if cfg.LogFormat == "text" || cfg.LogFormat == "auto" && isTerminal(w) {
 		return slog.New(slog.NewTextHandler(w, opts))
 	}
 	return slog.New(slog.NewJSONHandler(w, opts))
