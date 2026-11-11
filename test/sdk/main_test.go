@@ -14,6 +14,7 @@ package sdk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -35,7 +36,10 @@ const (
 var (
 	// emulatorAddr is the host:port every SDK connection is dialled to.
 	emulatorAddr string
-	projectID    = defaultProjectID
+	// emulatorBin is the binary the suite built, empty when it tests an
+	// emulator that was already running (WEISTACK_ADDR).
+	emulatorBin string
+	projectID   = defaultProjectID
 )
 
 func TestMain(m *testing.M) {
@@ -48,7 +52,7 @@ func run(m *testing.M) int {
 		if id := os.Getenv("WEISTACK_PROJECT_ID"); id != "" {
 			projectID = id
 		}
-		if err := waitHealthy(10 * time.Second); err != nil {
+		if err := waitHealthy(emulatorAddr, 10*time.Second); err != nil {
 			fmt.Fprintln(os.Stderr, "sdk tests:", err)
 			return 1
 		}
@@ -65,63 +69,101 @@ func run(m *testing.M) int {
 }
 
 // startEmulator builds the emulator from the repository root and runs it
-// on a free loopback port.
+// on a free loopback port as the suite's shared instance.
 func startEmulator() (stop func(), err error) {
-	root, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		return nil, err
-	}
 	dir, err := os.MkdirTemp("", "weistack-sdk-")
 	if err != nil {
 		return nil, err
 	}
 	cleanup := func() { _ = os.RemoveAll(dir) }
 
-	bin := filepath.Join(dir, "weistack")
-	build := exec.Command("go", "build", "-o", bin, "./cmd/weistack")
-	build.Dir = root
-	if out, err := build.CombinedOutput(); err != nil {
+	emulatorBin, err = buildEmulator(dir)
+	if err != nil {
 		cleanup()
-		return nil, fmt.Errorf("building the emulator: %w\n%s", err, out)
+		return nil, err
 	}
-
 	port, err := freePort()
 	if err != nil {
 		cleanup()
 		return nil, err
 	}
-	emulatorAddr = net.JoinHostPort("127.0.0.1", port)
-
-	cmd := exec.Command(bin)
-	cmd.Env = append(os.Environ(),
+	e, err := launch(emulatorBin, port,
 		"WEISTACK_TLS_DIR="+filepath.Join(dir, "tls"),
+		"WEISTACK_LIFECYCLE_DELAY="+lifecycleDelay.String(),
+	)
+	if err != nil {
+		cleanup()
+		return nil, err
+	}
+	emulatorAddr = e.addr
+	return func() { _ = e.stop(); cleanup() }, nil
+}
+
+// buildEmulator builds the emulator from the repository root into dir.
+func buildEmulator(dir string) (string, error) {
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		return "", err
+	}
+	bin := filepath.Join(dir, "weistack")
+	build := exec.Command("go", "build", "-o", bin, "./cmd/weistack")
+	build.Dir = root
+	if out, err := build.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("building the emulator: %w\n%s", err, out)
+	}
+	return bin, nil
+}
+
+// emulator is a running emulator process.
+type emulator struct {
+	cmd  *exec.Cmd
+	addr string
+	done chan struct{}
+}
+
+// launch runs bin on a loopback port with the suite's project and
+// region, plus env, and waits until it is healthy.
+func launch(bin, port string, env ...string) (*emulator, error) {
+	cmd := exec.Command(bin)
+	cmd.Env = append(append(os.Environ(),
 		"WEISTACK_PORT="+port,
 		"WEISTACK_PROJECT_ID="+projectID,
 		"WEISTACK_REGION="+region,
-		"WEISTACK_LIFECYCLE_DELAY="+lifecycleDelay.String(),
 		"WEISTACK_LOG_LEVEL=warn",
-	)
+	), env...)
 	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
 	if err := cmd.Start(); err != nil {
-		cleanup()
 		return nil, fmt.Errorf("starting the emulator: %w", err)
 	}
-	stop = func() {
-		_ = cmd.Process.Signal(os.Interrupt)
-		done := make(chan struct{})
-		go func() { _ = cmd.Wait(); close(done) }()
-		select {
-		case <-done:
-		case <-time.After(10 * time.Second):
-			_ = cmd.Process.Kill()
-		}
-		cleanup()
-	}
-	if err := waitHealthy(15 * time.Second); err != nil {
-		stop()
+	e := &emulator{cmd: cmd, addr: net.JoinHostPort("127.0.0.1", port), done: make(chan struct{})}
+	go func() { _ = cmd.Wait(); close(e.done) }()
+	if err := waitHealthy(e.addr, 15*time.Second); err != nil {
+		e.kill()
 		return nil, err
 	}
-	return stop, nil
+	return e, nil
+}
+
+// stop shuts the emulator down gracefully, as SIGINT or SIGTERM does,
+// and reports whether it exited in time.
+func (e *emulator) stop() error {
+	_ = e.cmd.Process.Signal(os.Interrupt)
+	select {
+	case <-e.done:
+		if code := e.cmd.ProcessState.ExitCode(); code != 0 {
+			return fmt.Errorf("emulator exited %d", code)
+		}
+		return nil
+	case <-time.After(15 * time.Second):
+		e.kill()
+		return errors.New("emulator did not stop within 15s")
+	}
+}
+
+// kill ends the emulator at once, as a crash or an OOM kill would.
+func (e *emulator) kill() {
+	_ = e.cmd.Process.Kill()
+	<-e.done
 }
 
 func freePort() (string, error) {
@@ -134,9 +176,9 @@ func freePort() (string, error) {
 	return port, err
 }
 
-func waitHealthy(timeout time.Duration) error {
+func waitHealthy(addr string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
-	url := "http://" + emulatorAddr + "/_weistack/health"
+	url := "http://" + addr + "/_weistack/health"
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -149,7 +191,7 @@ func waitHealthy(timeout time.Duration) error {
 			}
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("emulator at %s did not become healthy: %v", emulatorAddr, err)
+			return fmt.Errorf("emulator at %s did not become healthy: %v", addr, err)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}

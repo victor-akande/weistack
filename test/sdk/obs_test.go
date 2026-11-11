@@ -26,10 +26,15 @@ const obsEndpoint = "http://obs." + region + ".myhuaweicloud.com"
 // the others speak the S3 dialect.
 func newOBS(t *testing.T, accessKey string, signature obs.SignatureType, pathStyle bool) *obs.ObsClient {
 	t.Helper()
+	return newOBSAt(t, emulatorAddr, accessKey, signature, pathStyle)
+}
+
+func newOBSAt(t *testing.T, addr, accessKey string, signature obs.SignatureType, pathStyle bool) *obs.ObsClient {
+	t.Helper()
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
 			var d net.Dialer
-			return d.DialContext(ctx, network, emulatorAddr)
+			return d.DialContext(ctx, network, addr)
 		},
 		ResponseHeaderTimeout: 10 * time.Second,
 	}

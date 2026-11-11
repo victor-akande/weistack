@@ -22,12 +22,15 @@ import (
 // are exactly what the real service would receive.
 const realEndpoint = "http://vpc." + region + ".myhuaweicloud.com"
 
-func httpConfig() *config.HttpConfig {
+func httpConfig() *config.HttpConfig { return httpConfigAt(emulatorAddr) }
+
+// httpConfigAt dials addr for every connection.
+func httpConfigAt(addr string) *config.HttpConfig {
 	return config.DefaultHttpConfig().
 		WithTimeout(10 * time.Second).
 		WithDialContext(func(ctx context.Context, network, _ string) (net.Conn, error) {
 			var d net.Dialer
-			return d.DialContext(ctx, network, emulatorAddr)
+			return d.DialContext(ctx, network, addr)
 		})
 }
 
@@ -46,10 +49,15 @@ func credentials(t *testing.T) *basic.Credentials {
 
 func newV2(t *testing.T, endpoint string) *vpcv2.VpcClient {
 	t.Helper()
+	return newV2At(t, emulatorAddr, endpoint)
+}
+
+func newV2At(t *testing.T, addr, endpoint string) *vpcv2.VpcClient {
+	t.Helper()
 	hc, err := vpcv2.VpcClientBuilder().
 		WithEndpoints([]string{endpoint}).
 		WithCredential(credentials(t)).
-		WithHttpConfig(httpConfig()).
+		WithHttpConfig(httpConfigAt(addr)).
 		SafeBuild()
 	if err != nil {
 		t.Fatalf("building v2 client: %v", err)
@@ -59,10 +67,15 @@ func newV2(t *testing.T, endpoint string) *vpcv2.VpcClient {
 
 func newV3(t *testing.T) *vpcv3.VpcClient {
 	t.Helper()
+	return newV3At(t, emulatorAddr)
+}
+
+func newV3At(t *testing.T, addr string) *vpcv3.VpcClient {
+	t.Helper()
 	hc, err := vpcv3.VpcClientBuilder().
 		WithEndpoints([]string{realEndpoint}).
 		WithCredential(credentials(t)).
-		WithHttpConfig(httpConfig()).
+		WithHttpConfig(httpConfigAt(addr)).
 		SafeBuild()
 	if err != nil {
 		t.Fatalf("building v3 client: %v", err)

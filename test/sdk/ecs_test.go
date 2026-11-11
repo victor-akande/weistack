@@ -12,10 +12,15 @@ import (
 
 func newECS(t *testing.T) *ecsv2.EcsClient {
 	t.Helper()
+	return newECSAt(t, emulatorAddr)
+}
+
+func newECSAt(t *testing.T, addr string) *ecsv2.EcsClient {
+	t.Helper()
 	hc, err := ecsv2.EcsClientBuilder().
 		WithEndpoints([]string{"http://ecs." + region + ".myhuaweicloud.com"}).
 		WithCredential(credentials(t)).
-		WithHttpConfig(httpConfig()).
+		WithHttpConfig(httpConfigAt(addr)).
 		SafeBuild()
 	if err != nil {
 		t.Fatalf("building ECS client: %v", err)
