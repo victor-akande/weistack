@@ -89,6 +89,13 @@ func (s *Service) DeleteBucket(ctx context.Context, owner, name string) error {
 	if len(page.Objects) > 0 {
 		return errBucketNotEmpty
 	}
+	// OBS also refuses to delete a bucket that holds parts of uploads in
+	// progress; they must be completed or aborted first.
+	if pending, err := s.hasUploads(ctx, name); err != nil {
+		return err
+	} else if pending {
+		return errBucketNotEmpty
+	}
 	return s.buckets().Delete(ctx, name)
 }
 

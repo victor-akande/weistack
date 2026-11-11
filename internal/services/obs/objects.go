@@ -158,14 +158,37 @@ func (s *Service) handlePutObject(c *call) error {
 		return errKeyTooLong
 	}
 
+	blob, size, sum, err := s.receive(c)
+	if err != nil {
+		return err
+	}
+	obj := Object{Key: c.target.Key, Blob: blob, Size: size, ETag: sum, Modified: s.now().UTC()}
+	describe(&obj, c.r.Header)
+	if err := s.putObject(ctx, c.target.Bucket, obj); err != nil {
+		s.discard(ctx, blob)
+		return err
+	}
+	c.w.Header().Set("ETag", quote(obj.ETag))
+	c.w.WriteHeader(http.StatusOK)
+	return nil
+}
+
+// receive streams a request body into a new blob and returns the blob,
+// its size and hex MD5. It decodes aws-chunked bodies and checks the
+// body against Content-MD5, any declared decoded length and the size
+// limit. On any failure nothing is left on disk.
+func (s *Service) receive(c *call) (blob string, size int64, sum string, err error) {
 	// Validate what can be validated before reading the body.
 	var wantMD5 string
 	if raw := c.r.Header.Get("Content-MD5"); raw != "" {
-		sum, err := base64.StdEncoding.DecodeString(raw)
-		if err != nil || len(sum) != 16 {
-			return errInvalidDigest
+		decoded, err := base64.StdEncoding.DecodeString(raw)
+		if err != nil || len(decoded) != 16 {
+			return "", 0, "", errInvalidDigest
 		}
-		wantMD5 = hex.EncodeToString(sum)
+		wantMD5 = hex.EncodeToString(decoded)
+	}
+	if c.r.ContentLength > s.maxObjectSize && !isAWSChunked(c.r) {
+		return "", 0, "", errEntityTooLarge
 	}
 
 	var body io.Reader = c.r.Body
@@ -173,42 +196,48 @@ func (s *Service) handlePutObject(c *call) error {
 	if isAWSChunked(c.r) {
 		body = newAWSChunkedReader(c.r.Body)
 		if raw := c.r.Header.Get("x-amz-decoded-content-length"); raw != "" {
-			n, err := strconv.ParseInt(raw, 10, 64)
-			if err != nil || n < 0 {
-				return errInvalidArgument("x-amz-decoded-content-length is not a valid length")
+			n, ok := nonNegative(raw)
+			if !ok {
+				return "", 0, "", errInvalidArgument("x-amz-decoded-content-length is not a valid length")
+			}
+			if n > s.maxObjectSize {
+				return "", 0, "", errEntityTooLarge
 			}
 			wantSize = n
 		}
 	}
+	// One byte over the limit is enough to know the body is too large,
+	// without writing all of it.
+	body = io.LimitReader(body, s.maxObjectSize+1)
 
-	obj := Object{Key: c.target.Key, Blob: s.ids.UUID(), Modified: s.now().UTC()}
-	size, sum, err := s.blobs.put(obj.Blob, body)
+	blob = s.ids.UUID()
+	size, sum, err = s.blobs.put(blob, body)
 	if err != nil {
 		if errors.Is(err, errBadChunk) || errors.Is(err, io.ErrUnexpectedEOF) {
-			return errIncompleteBody
+			return "", 0, "", errIncompleteBody
 		}
-		return err
+		return "", 0, "", err
 	}
-	discard := func(e error) error {
-		if rmErr := s.blobs.remove(obj.Blob); rmErr != nil {
-			s.log.WarnContext(ctx, "removing a rejected upload failed", "error", rmErr)
-		}
-		return e
+	switch {
+	case size > s.maxObjectSize:
+		err = errEntityTooLarge
+	case wantSize >= 0 && size != wantSize:
+		err = errIncompleteBody
+	case wantMD5 != "" && wantMD5 != sum:
+		err = errBadDigest
 	}
-	if wantSize >= 0 && size != wantSize {
-		return discard(errIncompleteBody)
+	if err != nil {
+		s.discard(c.r.Context(), blob)
+		return "", 0, "", err
 	}
-	if wantMD5 != "" && wantMD5 != sum {
-		return discard(errBadDigest)
+	return blob, size, sum, nil
+}
+
+// discard removes a blob that will not be used, logging any failure.
+func (s *Service) discard(ctx context.Context, blob string) {
+	if err := s.blobs.remove(blob); err != nil {
+		s.log.WarnContext(ctx, "removing an unused object body failed", "error", err)
 	}
-	obj.Size, obj.ETag = size, sum
-	describe(&obj, c.r.Header)
-	if err := s.putObject(ctx, c.target.Bucket, obj); err != nil {
-		return discard(err)
-	}
-	c.w.Header().Set("ETag", quote(obj.ETag))
-	c.w.WriteHeader(http.StatusOK)
-	return nil
 }
 
 type copyObjectResult struct {

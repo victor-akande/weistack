@@ -46,9 +46,20 @@ type Service struct {
 	now   func() time.Time
 	blobs *blobStore
 
+	// maxObjectSize bounds a single upload, object or part.
+	maxObjectSize int64
+
 	// mu serialises bucket creation and deletion, which check then write.
 	mu sync.Mutex
+	// uploadMu serialises changes to multipart upload records. It is
+	// held only while a record is read and written, never while a body
+	// is transferred.
+	uploadMu sync.Mutex
 }
+
+// DefaultMaxObjectSize is the largest object or part one request may
+// upload: 5 GB, as in OBS. Larger objects are uploaded in parts.
+const DefaultMaxObjectSize = 5 << 30
 
 // New returns the OBS service.
 func New(d Deps) (*Service, error) {
@@ -62,7 +73,10 @@ func New(d Deps) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{store: d.Store, ids: d.IDs, log: d.Logger, now: d.Now, blobs: blobs}, nil
+	return &Service{
+		store: d.Store, ids: d.IDs, log: d.Logger, now: d.Now, blobs: blobs,
+		maxObjectSize: DefaultMaxObjectSize,
+	}, nil
 }
 
 // Name implements server.Service.

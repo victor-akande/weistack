@@ -86,7 +86,7 @@ func (c *call) subresource(names ...string) string {
 var bucketSubresources = []string{
 	"acl", "policy", "versioning", "versions", "lifecycle", "cors", "tagging", "website", "logging",
 	"notification", "encryption", "replication", "quota", "storageinfo", "storagePolicy", "storageClass",
-	"metadata", "inventory", "customdomain", "requestPayment", "object-lock", "directcoldaccess", "uploads",
+	"metadata", "inventory", "customdomain", "requestPayment", "object-lock", "directcoldaccess",
 	"append", "restore",
 }
 
@@ -119,6 +119,9 @@ func (s *Service) route(c *call) (string, handlerFunc) {
 			if c.subresource("location") != "" {
 				return "GetBucketLocation", s.handleGetBucketLocation
 			}
+			if c.subresource("uploads") != "" {
+				return "ListMultipartUploads", s.handleListUploads
+			}
 			if c.r.URL.Query().Get("list-type") == "2" {
 				return "ListObjectsV2", s.handleListObjects
 			}
@@ -132,7 +135,28 @@ func (s *Service) route(c *call) (string, handlerFunc) {
 		return "Bucket", notAllowed
 	}
 
-	// An object.
+	// An object. Multipart uploads first: they are addressed by ?uploads
+	// and ?uploadId.
+	q := c.r.URL.Query()
+	if _, initiate := q["uploads"]; initiate && m == http.MethodPost {
+		return "InitiateMultipartUpload", s.handleInitiateUpload
+	}
+	if q.Get("uploadId") != "" {
+		switch m {
+		case http.MethodPut:
+			if c.vendorHeader("copy-source") != "" {
+				return "CopyPart", func(*call) error { return errNotImplemented("copying a part (UploadPartCopy)") }
+			}
+			return "UploadPart", s.handleUploadPart
+		case http.MethodPost:
+			return "CompleteMultipartUpload", s.handleCompleteUpload
+		case http.MethodDelete:
+			return "AbortMultipartUpload", s.handleAbortUpload
+		case http.MethodGet:
+			return "ListParts", s.handleListParts
+		}
+		return "Upload", notAllowed
+	}
 	if sub := c.subresource(objectSubresources...); sub != "" {
 		return "Object?" + sub, func(*call) error { return errNotImplemented("object " + sub) }
 	}
@@ -159,7 +183,7 @@ func (s *Service) route(c *call) (string, handlerFunc) {
 // parameter that the emulator does not implement.
 var objectSubresources = []string{
 	"acl", "tagging", "restore", "append", "modify", "truncate", "rename", "metadata", "select", "torrent",
-	"retention", "legal-hold", "uploads", "uploadId", "partNumber",
+	"retention", "legal-hold", "partNumber",
 }
 
 // vendorHeader returns a vendor header of the request in whichever
