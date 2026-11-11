@@ -1,0 +1,8 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {"flavors": [{"id": "<uuid>", "vcpus": "2", "ram": 4, "spec_code": "rds.mysql.n1.large.2", "instance_mode": "single",
+      "az_status": {"ap-southeast-1a": "normal", "ap-southeast-1b": "normal", "ap-southeast-1c": "normal"},
+      "az_desc": {"ap-southeast-1a": "ap-southeast-1a", "ap-southeast-1b": "ap-southeast-1b", "ap-southeast-1c": "ap-southeast-1c"},
+      "version_name": ["5.7", "8.0"], "group_type": "general"}]}
+}

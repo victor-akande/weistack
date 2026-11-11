@@ -1,0 +1,5 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {"dataStores": [{"id": "<uuid>", "name": "5.7"}, {"id": "<uuid>", "name": "8.0"}]}
+}

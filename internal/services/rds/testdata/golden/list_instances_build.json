@@ -1,0 +1,14 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {"instances": [{"id": "<string>", "status": "BUILD", "name": "rds-mysql", "port": 3306, "type": "Single", "region": "ap-southeast-1",
+        "datastore": {"type": "MySQL", "version": "8.0"}, "created": "<string>", "updated": "<string>",
+        "volume": {"type": "CLOUDSSD", "size": 100},
+        "nodes": [{"id": "<string>", "name": "rds-mysql_node0", "role": "master", "status": "BUILD", "availability_zone": "ap-southeast-1a"}],
+        "private_ips": ["192.168.1.2"], "public_ips": [], "enable_ssl": false, "db_user_name": "root",
+        "vpc_id": "<uuid>", "subnet_id": "<uuid>", "security_group_id": "<uuid>", "flavor_ref": "rds.mysql.n1.large.2",
+        "cpu": "2", "mem": "4", "switch_strategy": "", "read_only_by_user": false,
+        "charge_info": {"charge_mode": "postPaid"}, "backup_strategy": {"start_time": "08:15-09:15", "keep_days": 12},
+        "maintenance_window": "02:00-06:00", "related_instance": [], "disk_encryption_id": "", "enterprise_project_id": "0",
+        "time_zone": "", "tags": [{"key": "env", "value": "test"}], "associated_with_ddm": false}], "total_count": 1}
+}

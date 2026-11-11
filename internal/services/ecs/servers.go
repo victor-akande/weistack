@@ -15,6 +15,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/apierr"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/store"
+	"github.com/victor-akande/weistack/internal/core/zones"
 	"github.com/victor-akande/weistack/internal/services/ims"
 	"github.com/victor-akande/weistack/internal/services/vpc"
 )
@@ -214,8 +215,8 @@ func (s *Service) validate(ctx context.Context, t Tenant, opt CreateServerOption
 	// Availability zone: the first one when the client leaves it open.
 	p.az = opt.AvailabilityZone
 	if p.az == "" {
-		p.az = Zones(t.Region)[0]
-	} else if !ZoneExists(t.Region, p.az) {
+		p.az = zones.Of(t.Region)[0]
+	} else if !zones.Exists(t.Region, p.az) {
 		return p, errInvalidRequest("availability_zone %q does not exist in region %s", p.az, t.Region)
 	}
 

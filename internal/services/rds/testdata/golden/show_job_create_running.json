@@ -1,0 +1,6 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {"job": {"id": "<uuid>", "name": "CreateMysqlInstance", "status": "Running", "created": "<string>", 
+        "instance": {"id": "<string>", "name": "rds-mysql"}, "entities": {"instance": {"endpoint": "192.168.1.2:3306", "type": "Single", "datastore": {"type": "MySQL", "version": "8.0"}}}}}
+}

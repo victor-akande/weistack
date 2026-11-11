@@ -12,10 +12,10 @@ sponsored by Huawei.
 ## Status
 
 Early development. The **core framework** (M1) and **VPC** (M2) are in
-place, and so are **IMS** (M3), **ECS** (M4) and **OBS** (M5).
-Per-service coverage tables: [VPC](docs/services/vpc.md),
+place, and so are **IMS** (M3), **ECS** (M4) and **OBS** (M5); **RDS**
+(M6) is in progress. Per-service coverage tables: [VPC](docs/services/vpc.md),
 [IMS](docs/services/ims.md), [ECS](docs/services/ecs.md),
-[OBS](docs/services/obs.md).
+[OBS](docs/services/obs.md), [RDS](docs/services/rds.md).
 
 | Milestone | Scope | State |
 | --- | --- | --- |
@@ -24,7 +24,7 @@ Per-service coverage tables: [VPC](docs/services/vpc.md),
 | M3 | IMS: images | Done |
 | M4 | ECS: servers, flavors, jobs | Done |
 | M5 | OBS: buckets, objects, multipart | Done |
-| M6 | RDS: MySQL/PostgreSQL instances | Planned |
+| M6 | RDS: MySQL/PostgreSQL instances | In progress |
 
 ## Quick start
 
@@ -94,6 +94,7 @@ defaults. Run `weistack -h` for the full list.
 | `-seed-dir` | `WEISTACK_SEED_DIR` | none | Directory of YAML files extending built-in seed data ([images](docs/services/ims.md#adding-your-own), [flavors](docs/services/ecs.md#adding-your-own)) |
 | `-ecs-max-servers` | `WEISTACK_ECS_MAX_SERVERS` | `20` | ECS server quota per project |
 | `-ecs-max-vcpus` | `WEISTACK_ECS_MAX_VCPUS` | `80` | ECS vCPU quota per project |
+| `-rds-max-instances` | `WEISTACK_RDS_MAX_INSTANCES` | `20` | RDS instance quota per project |
 | `-lifecycle-delay` | `WEISTACK_LIFECYCLE_DELAY` | `2s` | Duration of async transitions; `0` is instant |
 | `-log-level` | `WEISTACK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `-log-format` | `WEISTACK_LOG_FORMAT` | `json` | `json` or `text` |

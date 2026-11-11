@@ -1,0 +1,6 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {"job": {"id": "<uuid>", "name": "DeleteInstance", "status": "Completed", "created": "<string>", "ended": "<string>", "process": "100%",
+        "instance": {"id": "<string>", "name": "rds-mysql"}}}
+}

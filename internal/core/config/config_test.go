@@ -29,6 +29,7 @@ func TestLoadDefaults(t *testing.T) {
 		DataDir:         "/data",
 		ECSMaxServers:   20,
 		ECSMaxVCPUs:     80,
+		RDSMaxInstances: 20,
 		LifecycleDelay:  2 * time.Second,
 		LogLevel:        slog.LevelInfo,
 		LogFormat:       "json",
@@ -140,6 +141,7 @@ func TestLoadErrors(t *testing.T) {
 		{"empty data dir", []string{"-data-dir", ""}, nil, "data directory"},
 		{"negative delay", []string{"-lifecycle-delay", "-1s"}, nil, "negative"},
 		{"zero server quota", []string{"-ecs-max-servers", "0"}, nil, "ECS quotas"},
+		{"zero rds quota", []string{"-rds-max-instances", "0"}, nil, "RDS instance quota"},
 		{"zero vcpu quota", nil, map[string]string{"WEISTACK_ECS_MAX_VCPUS": "0"}, "ECS quotas"},
 		{"bad log level", []string{"-log-level", "loud"}, nil, "log level"},
 		{"bad log format", []string{"-log-format", "xml"}, nil, "log format"},
@@ -179,7 +181,7 @@ func TestLoadHelp(t *testing.T) {
 func TestValidateReportsEveryProblem(t *testing.T) {
 	t.Parallel()
 
-	err := Config{Port: -1, Region: "x", LogFormat: "yaml", ECSMaxServers: 1, ECSMaxVCPUs: 1}.Validate()
+	err := Config{Port: -1, Region: "x", LogFormat: "yaml", ECSMaxServers: 1, ECSMaxVCPUs: 1, RDSMaxInstances: 1}.Validate()
 	if err == nil {
 		t.Fatal("Validate succeeded, want error")
 	}
