@@ -70,6 +70,7 @@ func errVolumeRange(lo, hi int) *apierr.Error {
 
 var (
 	errVolumeMultiple = dbs(http.StatusBadRequest, "DBS.200027", "The storage size must be a multiple of 10 GB.")
+	errVolumeShrink   = dbs(http.StatusBadRequest, "DBS.200306", "The new storage size must be greater than the current size.")
 	errPassword       = dbs(http.StatusBadRequest, "DBS.200052", "The root password is invalid: it does not meet the complexity requirements of the DB engine.")
 	errPort           = dbs(http.StatusBadRequest, "DBS.280364", "The database port is invalid.")
 )
@@ -94,4 +95,12 @@ func errJobNotFound(id string) *apierr.Error {
 // support, naming it.
 func errNotImplemented(what string) *apierr.Error {
 	return apierr.NotImplemented("rds", what)
+}
+
+func errBackupNotFound(id string) *apierr.Error {
+	return dbs(http.StatusNotFound, "DBS.201010", "The backup %s does not exist.", id)
+}
+
+func errBackupStatus(id, status string) *apierr.Error {
+	return dbs(http.StatusBadRequest, "DBS.201208", "This operation is not allowed for the backup %s in status %s.", id, status)
 }

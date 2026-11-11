@@ -211,3 +211,120 @@ func TestRDSInstances(t *testing.T) {
 	}
 	teardown()
 }
+
+// TestRDSScenario is end-to-end scenario 4 of the plan through the
+// official SDK: create a MySQL instance in a subnet, wait for ACTIVE,
+// resize it, scale its storage, reboot it, back it up, and delete it.
+func TestRDSScenario(t *testing.T) {
+	c := newRDS(t)
+	vpcID, subnetID, groupID, teardown := dbNetwork(t, "rds-scenario", "10.30.2.0/24")
+
+	body := rds.InstanceRequest{
+		Name: "scenario-mysql", Region: region, VpcId: vpcID, SubnetId: subnetID, SecurityGroupId: groupID,
+		Datastore:        &rds.Datastore{Type: rds.GetDatastoreTypeEnum().MY_SQL, Version: "8.0"},
+		FlavorRef:        "rds.mysql.n1.large.2",
+		Volume:           &rds.Volume{Type: rds.GetVolumeTypeEnum().CLOUDSSD, Size: 40},
+		AvailabilityZone: region + "a",
+		Password:         ptr("Weistack@2026"),
+	}
+	created, err := c.CreateInstance(&rds.CreateInstanceRequest{Body: &body})
+	if err != nil {
+		t.Fatalf("CreateInstance: %v", err)
+	}
+	id := *created.Instance.Id
+	waitRDSJob(t, c, "the creation", *created.JobId)
+
+	show := func() rds.InstanceResponse {
+		t.Helper()
+		res, err := c.ListInstances(&rds.ListInstancesRequest{Id: &id})
+		if err != nil || res.Instances == nil || len(*res.Instances) != 1 {
+			t.Fatalf("ListInstances(id) = %+v, %v", res, err)
+		}
+		return (*res.Instances)[0]
+	}
+	if got := show(); got.Status != "ACTIVE" {
+		t.Fatalf("after creation: %s", got.Status)
+	}
+
+	// Resize.
+	resized, err := c.StartResizeFlavorAction(&rds.StartResizeFlavorActionRequest{InstanceId: id, Body: &rds.ResizeFlavorRequest{
+		ResizeFlavor: &rds.ResizeFlavorObject{SpecCode: "rds.mysql.n1.xlarge.4"},
+	}})
+	if err != nil || resized.JobId == nil {
+		t.Fatalf("StartResizeFlavorAction: %+v, %v", resized, err)
+	}
+	if got := show(); got.Status != "MODIFYING" {
+		t.Errorf("during resize: %s", got.Status)
+	}
+	waitRDSJob(t, c, "the resize", *resized.JobId)
+	if got := show(); got.FlavorRef != "rds.mysql.n1.xlarge.4" || got.Cpu == nil || *got.Cpu != "4" || got.Status != "ACTIVE" {
+		t.Errorf("after resize: %s, %v vCPUs, %s", got.FlavorRef, got.Cpu, got.Status)
+	}
+
+	// Storage.
+	grown, err := c.StartInstanceEnlargeVolumeAction(&rds.StartInstanceEnlargeVolumeActionRequest{InstanceId: id, Body: &rds.EnlargeVolumeRequestBody{
+		EnlargeVolume: &rds.EnlargeVolumeObject{Size: 100},
+	}})
+	if err != nil || grown.JobId == nil {
+		t.Fatalf("StartInstanceEnlargeVolumeAction: %+v, %v", grown, err)
+	}
+	waitRDSJob(t, c, "the storage scaling", *grown.JobId)
+	if got := show(); got.Volume.Size != 100 {
+		t.Errorf("storage after scaling: %d GB", got.Volume.Size)
+	}
+	_, err = c.StartInstanceEnlargeVolumeAction(&rds.StartInstanceEnlargeVolumeActionRequest{InstanceId: id, Body: &rds.EnlargeVolumeRequestBody{
+		EnlargeVolume: &rds.EnlargeVolumeObject{Size: 60},
+	}})
+	wantError(t, err, 400, "DBS.200306")
+
+	// Reboot.
+	rebooted, err := c.StartInstanceRestartAction(&rds.StartInstanceRestartActionRequest{InstanceId: id, Body: &rds.InstanceRestartRequsetBody{
+		Restart: &rds.RestartConfiguration{},
+	}})
+	if err != nil || rebooted.JobId == nil {
+		t.Fatalf("StartInstanceRestartAction: %+v, %v", rebooted, err)
+	}
+	if got := show(); got.Status != "REBOOTING" {
+		t.Errorf("during reboot: %s", got.Status)
+	}
+	// Nothing else can start meanwhile.
+	_, err = c.StartInstanceRestartAction(&rds.StartInstanceRestartActionRequest{InstanceId: id, Body: &rds.InstanceRestartRequsetBody{Restart: &rds.RestartConfiguration{}}})
+	wantError(t, err, 409, "DBS.200011")
+	waitRDSJob(t, c, "the reboot", *rebooted.JobId)
+
+	// Backup.
+	backup, err := c.CreateManualBackup(&rds.CreateManualBackupRequest{Body: &rds.CreateManualBackupRequestBody{
+		InstanceId: id, Name: "scenario-backup", Description: ptr("taken by the SDK suite"),
+	}})
+	if err != nil || backup.Backup == nil || backup.Backup.Status.Value() != "BUILDING" {
+		t.Fatalf("CreateManualBackup = %+v, %v", backup, err)
+	}
+	backupID := backup.Backup.Id
+	eventually(t, "the backup to complete", func() bool {
+		res, err := c.ListBackups(&rds.ListBackupsRequest{InstanceId: id, BackupId: &backupID})
+		if err != nil {
+			t.Fatalf("ListBackups: %v", err)
+		}
+		return len(*res.Backups) == 1 && (*res.Backups)[0].Status.Value() == "COMPLETED"
+	})
+	if got := show(); got.Status != "ACTIVE" {
+		t.Errorf("after the backup: %s", got.Status)
+	}
+
+	// Delete. The manual backup is kept, as in the real service.
+	del, err := c.DeleteInstance(&rds.DeleteInstanceRequest{InstanceId: id})
+	if err != nil || del.JobId == nil {
+		t.Fatalf("DeleteInstance: %+v, %v", del, err)
+	}
+	waitRDSJob(t, c, "the deletion", *del.JobId)
+	kept, err := c.ListBackups(&rds.ListBackupsRequest{InstanceId: id})
+	if err != nil || kept.TotalCount == nil || *kept.TotalCount != 1 {
+		t.Fatalf("backups after deleting the instance = %+v, %v", kept, err)
+	}
+	if _, err := c.DeleteManualBackup(&rds.DeleteManualBackupRequest{BackupId: backupID}); err != nil {
+		t.Fatalf("DeleteManualBackup: %v", err)
+	}
+	_, err = c.DeleteManualBackup(&rds.DeleteManualBackupRequest{BackupId: backupID})
+	wantError(t, err, 404, "DBS.201010")
+	teardown()
+}

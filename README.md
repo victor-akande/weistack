@@ -12,8 +12,8 @@ sponsored by Huawei.
 ## Status
 
 Early development. The **core framework** (M1) and **VPC** (M2) are in
-place, and so are **IMS** (M3), **ECS** (M4) and **OBS** (M5); **RDS**
-(M6) is in progress. Per-service coverage tables: [VPC](docs/services/vpc.md),
+place, and so are **IMS** (M3), **ECS** (M4), **OBS** (M5) and **RDS**
+(M6). Per-service coverage tables: [VPC](docs/services/vpc.md),
 [IMS](docs/services/ims.md), [ECS](docs/services/ecs.md),
 [OBS](docs/services/obs.md), [RDS](docs/services/rds.md).
 
@@ -24,7 +24,7 @@ place, and so are **IMS** (M3), **ECS** (M4) and **OBS** (M5); **RDS**
 | M3 | IMS: images | Done |
 | M4 | ECS: servers, flavors, jobs | Done |
 | M5 | OBS: buckets, objects, multipart | Done |
-| M6 | RDS: MySQL/PostgreSQL instances | In progress |
+| M6 | RDS: MySQL/PostgreSQL instances | Done |
 
 ## Quick start
 
