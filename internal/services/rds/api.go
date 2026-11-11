@@ -27,6 +27,10 @@ func (s *Service) Routes(r chi.Router) {
 		r.Post("/instances", s.handle("CreateInstance", s.handleCreate))
 		r.Get("/instances", s.handle("ListInstances", s.handleList))
 		r.Delete("/instances/{instance_id}", s.handle("DeleteInstance", s.handleDelete))
+		r.Post("/instances/{instance_id}/action", s.handle("InstanceAction", s.handleAction))
+		r.Post("/backups", s.handle("CreateManualBackup", s.handleCreateBackup))
+		r.Get("/backups", s.handle("ListBackups", s.handleListBackups))
+		r.Delete("/backups/{backup_id}", s.handle("DeleteManualBackup", s.handleDeleteBackup))
 		r.Get("/jobs", s.handle("ListJobInfo", s.handleShowJob))
 	})
 }
@@ -189,6 +193,97 @@ func (s *Service) handleShowJob(w http.ResponseWriter, r *http.Request, t Tenant
 		return err
 	}
 	return httpx.WriteJSON(w, http.StatusOK, jobResponse{Job: job})
+}
+
+// handleAction serves restart, resize and storage scaling, which share
+// one path and are told apart by the body's single top-level key.
+func (s *Service) handleAction(w http.ResponseWriter, r *http.Request, t Tenant) error {
+	var req actionRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		return errInvalid("The request body is invalid: %s", err)
+	}
+	id := chi.URLParam(r, "instance_id")
+	info := reqctx.From(r.Context())
+	var (
+		job Job
+		err error
+	)
+	switch {
+	case req.Restart != nil && req.ResizeFlavor == nil && req.EnlargeVolume == nil:
+		info.SetOperation("StartInstanceRestartAction")
+		job, err = s.RestartInstance(r.Context(), t, id)
+	case req.ResizeFlavor != nil && req.Restart == nil && req.EnlargeVolume == nil:
+		info.SetOperation("StartResizeFlavorAction")
+		job, err = s.ResizeInstance(r.Context(), t, id, *req.ResizeFlavor)
+	case req.EnlargeVolume != nil && req.Restart == nil && req.ResizeFlavor == nil:
+		info.SetOperation("StartInstanceEnlargeVolumeAction")
+		job, err = s.EnlargeVolume(r.Context(), t, id, *req.EnlargeVolume)
+	default:
+		return errInvalid("The request body must contain exactly one of restart, resize_flavor and enlarge_volume.")
+	}
+	if err != nil {
+		return err
+	}
+	return httpx.WriteJSON(w, http.StatusAccepted, jobIDResponse{JobID: job.ID})
+}
+
+func (s *Service) handleCreateBackup(w http.ResponseWriter, r *http.Request, t Tenant) error {
+	var opt CreateBackupOption
+	if err := httpx.DecodeJSON(r, &opt); err != nil {
+		return errInvalid("The request body is invalid: %s", err)
+	}
+	b, err := s.CreateBackup(r.Context(), t, opt)
+	if err != nil {
+		return err
+	}
+	return httpx.WriteJSON(w, http.StatusAccepted, createBackupResponse{Backup: backupInfo{
+		ID: b.ID, InstanceID: b.InstanceID, Name: b.Name, Description: b.Description, Databases: b.Databases,
+		BeginTime: b.BeginTime, Status: b.Status, Type: b.Type,
+	}})
+}
+
+func (s *Service) handleListBackups(w http.ResponseWriter, r *http.Request, t Tenant) error {
+	q := r.URL.Query()
+	instanceID := q.Get("instance_id")
+	if instanceID == "" {
+		return errInvalid("instance_id is required")
+	}
+	offset, limit := 0, maxListLimit
+	if raw := q.Get("offset"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 0 {
+			return errInvalid("offset must be a non-negative integer")
+		}
+		offset = n
+	}
+	if raw := q.Get("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 || n > maxListLimit {
+			return errInvalid("limit must be an integer from 1 to %d", maxListLimit)
+		}
+		limit = n
+	}
+	all, err := s.ListBackups(r.Context(), t, instanceID, q.Get("backup_id"), q.Get("backup_type"), q.Get("status"))
+	if err != nil {
+		return err
+	}
+	res := listBackupsResponse{TotalCount: len(all), Backups: []backupForList{}}
+	if offset < len(all) {
+		for _, b := range all[offset:min(offset+limit, len(all))] {
+			res.Backups = append(res.Backups, backupForList{
+				ID: b.ID, InstanceID: b.InstanceID, Name: b.Name, Databases: b.Databases, BeginTime: b.BeginTime,
+				EndTime: b.EndTime, Status: b.Status, Type: b.Type, Size: b.Size, Datastore: b.Datastore,
+			})
+		}
+	}
+	return httpx.WriteJSON(w, http.StatusOK, res)
+}
+
+func (s *Service) handleDeleteBackup(w http.ResponseWriter, r *http.Request, t Tenant) error {
+	if err := s.DeleteBackup(r.Context(), t, chi.URLParam(r, "backup_id")); err != nil {
+		return err
+	}
+	return httpx.WriteJSON(w, http.StatusOK, struct{}{})
 }
 
 // Resume continues the operations that were in flight when a persistent

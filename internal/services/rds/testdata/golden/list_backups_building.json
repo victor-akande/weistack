@@ -1,0 +1,1 @@
+{"source": "docs", "status": 200, "body": {"backups": [{"id": "<string>", "instance_id": "<string>", "name": "nightly-01", "databases": [{"name": "shop"}], "begin_time": "<string>", "end_time": "", "status": "BUILDING", "type": "manual", "size": 2048, "datastore": {"type": "MySQL", "version": "8.0"}, "associated_with_ddm": false}], "total_count": 1}}

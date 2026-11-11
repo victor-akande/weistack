@@ -17,7 +17,13 @@ Legend: **Yes** implemented, **Partial** implemented with the listed gaps,
 | ListInstances | `GET /v3/{project_id}/instances` | Yes | The way to read one instance, as in the real API |
 | DeleteInstance | `DELETE /v3/{project_id}/instances/{instance_id}` | Yes | |
 | ListJobInfo | `GET /v3/{project_id}/jobs?id=` | Yes | |
-| Restart, resize, storage scaling, backups | | No | Next |
+| StartInstanceRestartAction | `POST .../instances/{id}/action` `{"restart": {}}` | Yes | Options (`delay`, `restart_server`) ignored |
+| StartResizeFlavorAction | `POST .../instances/{id}/action` `{"resize_flavor": ...}` | Yes | `is_delay` ignored |
+| StartInstanceEnlargeVolumeAction | `POST .../instances/{id}/action` `{"enlarge_volume": ...}` | Yes | |
+| CreateManualBackup | `POST /v3/{project_id}/backups` | Partial | Metadata only; `backup_database_individually` ignored |
+| ListBackups | `GET /v3/{project_id}/backups` | Yes | `instance_id` (required), `backup_id`, `backup_type`, `status`, `offset`, `limit` |
+| DeleteManualBackup | `DELETE /v3/{project_id}/backups/{backup_id}` | Yes | |
+| Stop/start, storage shrinking, automated backups, restore | | No | |
 | SQL Server, MariaDB | | No | |
 | Read replicas, restore, parameter templates, accounts, databases, logs, SSL, EIPs | | No | |
 
@@ -94,12 +100,43 @@ An instance cannot be deleted, or changed, while it is being created or has
 another operation in flight (`DBS.200011`). A failed creation leaves it in
 `CREATE FAIL`, which can be deleted.
 
+## Operations
+
+| Operation | Needs | While running | Ends in |
+| --- | --- | --- | --- |
+| Restart | `ACTIVE` | `REBOOTING` | `ACTIVE` |
+| Resize | `ACTIVE` | `MODIFYING` | `ACTIVE`, with the new specification |
+| Storage scaling | `ACTIVE` | `MODIFYING` | `ACTIVE`, with the new size |
+| Manual backup | `ACTIVE` | `BACKING UP` | `ACTIVE` |
+| Delete | any but `BUILD` | unchanged | gone |
+
+- One operation at a time: a second one, or anything on an instance still
+  `BUILD`, is refused with `DBS.200011`. An instance in another status
+  (`FAILED`, `CREATE FAIL`) refuses the operations that need `ACTIVE` with
+  `DBS.200086`.
+- Each returns a `job_id` (HTTP 202) and completes after the lifecycle delay.
+  The change lands only when the job completes.
+- **Resize** goes to another specification of the same engine and the same
+  mode: a single instance cannot become HA this way (`DBS.200054`).
+- **Storage** only grows, in multiples of 10 GB, up to the engine's maximum
+  (`DBS.200306`, `DBS.200027`, `DBS.200023`). The job's `entities.volume`
+  reports the original and target sizes.
+- **Backups** are named 4 to 64 characters (starting with a letter; letters,
+  digits, `-`, `_`), and go `BUILDING` → `COMPLETED`. They are metadata: no
+  data exists to back up, so every backup reports 2048 KB. Manual backups
+  outlive their instance, as in the real service; a backup still `BUILDING`
+  cannot be deleted (`DBS.201208`). `ListBackups` returns the newest first.
+- An injected fault leaves the instance `FAILED` (a failed backup leaves it
+  `ACTIVE`, with the backup `FAILED`) and the job `Failed`.
+- `Resume` continues an interrupted operation after a restart.
+
 ## Jobs
 
 `GET /v3/{project_id}/jobs?id={job_id}` returns `Running`, `Completed` (with
 `ended` and `process: 100%`) or `Failed` (with `fail_reason`). Creation jobs
-are named `CreateMysqlInstance`, as in the API reference's example;
-deletion jobs `DeleteInstance`.
+are named `CreateMysqlInstance`, as in the API reference's example; the others
+`DeleteInstance`, `RestartInstance`, `ResizeFlavor`, `EnlargeVolume` and
+`CreateManualBackup`.
 
 ## Error codes
 
@@ -121,6 +158,10 @@ Errors are `{"error_code": "...", "error_msg": "..."}`.
 | `DBS.200052` | 400 | Password does not meet the engine's rules |
 | `DBS.200053` | 400 | Specification does not exist |
 | `DBS.200054` | 400 | Specification is for another engine or mode |
+| `DBS.200086` | 400 | Instance status does not allow the operation |
+| `DBS.200306` | 400 | New storage size not larger than the current size |
+| `DBS.201010` | 404 | Backup does not exist |
+| `DBS.201208` | 400 | Deleting a backup that is still running |
 | `DBS.200501` | 404 | Subnet does not exist or is in another VPC |
 | `DBS.200503` | 404 | VPC does not exist |
 | `DBS.200543` | 400 | Job does not exist |
@@ -128,11 +169,16 @@ Errors are `{"error_code": "...", "error_msg": "..."}`.
 
 ## Client compatibility
 
-`TestRDSInstances` in `test/sdk` drives every operation above through the
-official Go SDK (`huaweicloud-sdk-go-v3`, `rds/v3` client): it lists engines
-and flavors, creates a MySQL instance and an HA PostgreSQL pair in a network
-built with the VPC SDK, waits on their jobs, finds them with filters, checks
-four error codes, and deletes everything.
+Every operation marked **Yes** or **Partial** runs through the official Go
+SDK (`huaweicloud-sdk-go-v3`, `rds/v3` client) in `test/sdk`:
+
+- `TestRDSInstances` lists engines and flavors, creates a MySQL instance and
+  an HA PostgreSQL pair in a network built with the VPC SDK, waits on their
+  jobs, finds them with filters, checks four error codes, and deletes
+  everything.
+- `TestRDSScenario` is plan scenario 4: create a MySQL instance in a subnet,
+  wait for `ACTIVE`, resize, scale storage, reboot, back up, delete, and
+  confirm the manual backup survives until it is deleted.
 
 ## Fidelity notes
 
@@ -148,3 +194,8 @@ traffic). Known open points:
 - An HA instance takes one address (its floating IP). Real HA nodes also hold
   addresses of their own.
 - Real instances also report `private_dns_names`; the emulator omits them.
+- The HTTP status of the restart, resize and storage actions and of backup
+  creation is assumed to be 202, as for creation; deleting a backup returns
+  200 with `{}`. The SDK accepts either.
+- Real resizing reboots the instance and may fail over; the emulator only
+  shows `MODIFYING`.

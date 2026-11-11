@@ -372,6 +372,8 @@ func (s *Service) finish(ctx context.Context, t Tenant, id string, op Pending, f
 		switch {
 		case fault != nil && op.Kind == taskCreate:
 			inst.Status = StatusCreateFail
+		case fault != nil && op.Kind == taskBackup:
+			inst.Status = op.Final // a failed backup leaves the instance running
 		case fault != nil:
 			inst.Status = StatusFailed
 		default:
@@ -385,6 +387,9 @@ func (s *Service) finish(ctx context.Context, t Tenant, id string, op Pending, f
 	}
 	if errors.Is(err, store.ErrNotFound) && fault == nil {
 		fault = errors.New("the DB instance no longer exists")
+	}
+	if op.Backup != "" {
+		s.finishBackup(ctx, t, op.Backup, fault)
 	}
 	s.endJob(ctx, t, op.JobID, fault)
 }
@@ -465,7 +470,7 @@ func (s *Service) ListInstances(ctx context.Context, t Tenant, f ListInstancesFi
 // begin starts an operation on an instance: it checks the instance is
 // idle and in a status the operation accepts, records the pending
 // operation and returns the job. The caller must hold s.mu.
-func (s *Service) begin(ctx context.Context, t Tenant, id, jobName string, during string, op Pending, accept ...string) (Job, error) {
+func (s *Service) begin(ctx context.Context, t Tenant, id, jobName, during string, op Pending, entities map[string]any, accept ...string) (Job, error) {
 	inst, err := s.GetInstance(ctx, t, id)
 	if err != nil {
 		return Job{}, err
@@ -477,6 +482,7 @@ func (s *Service) begin(ctx context.Context, t Tenant, id, jobName string, durin
 		return Job{}, errStatus(id, inst.Status)
 	}
 	job := s.newJob(jobName, inst)
+	job.Entities = entities
 	op.JobID = job.ID
 	if op.Final == "" {
 		op.Final = inst.Status
@@ -502,7 +508,7 @@ func (s *Service) begin(ctx context.Context, t Tenant, id, jobName string, durin
 func (s *Service) DeleteInstance(ctx context.Context, t Tenant, id string) (Job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.begin(ctx, t, id, jobDelete, "", Pending{Kind: taskDelete})
+	return s.begin(ctx, t, id, jobDelete, "", Pending{Kind: taskDelete}, nil)
 }
 
 // view renders the API form of an instance.

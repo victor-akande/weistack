@@ -293,3 +293,95 @@ type ListInstancesFilter struct {
 	ID, Name, Type, Engine, VPCID, SubnetID, EnterpriseProjectID string
 	Tags                                                         []Tag
 }
+
+// actionRequest is the body of POST /instances/{id}/action: exactly one
+// of the three actions.
+type actionRequest struct {
+	Restart       *struct{}      `json:"restart"`
+	ResizeFlavor  *ResizeOption  `json:"resize_flavor"`
+	EnlargeVolume *EnlargeOption `json:"enlarge_volume"`
+}
+
+// ResizeOption mirrors the SDK model rds/v3 ResizeFlavorObject.
+type ResizeOption struct {
+	SpecCode string `json:"spec_code"`
+}
+
+// EnlargeOption mirrors the SDK model rds/v3 EnlargeVolumeObject.
+type EnlargeOption struct {
+	Size int `json:"size"`
+}
+
+// Backup statuses and types.
+const (
+	BackupBuilding  = "BUILDING"
+	BackupCompleted = "COMPLETED"
+	BackupFailed    = "FAILED"
+	BackupManual    = "manual"
+)
+
+// Backup is the stored record of a backup. It is kept when its instance
+// is deleted, as manual backups are.
+type Backup struct {
+	ID          string           `json:"id"`
+	InstanceID  string           `json:"instance_id"`
+	Name        string           `json:"name"`
+	Description string           `json:"description,omitempty"`
+	Databases   []BackupDatabase `json:"databases,omitempty"`
+	BeginTime   string           `json:"begin_time"`
+	EndTime     string           `json:"end_time"`
+	Status      string           `json:"status"`
+	Type        string           `json:"type"`
+	Size        int64            `json:"size"`
+	Datastore   Datastore        `json:"datastore"`
+}
+
+// BackupDatabase mirrors the SDK model rds/v3 BackupDatabase.
+type BackupDatabase struct {
+	Name string `json:"name"`
+}
+
+// CreateBackupOption mirrors the SDK model rds/v3 CreateManualBackupRequestBody.
+type CreateBackupOption struct {
+	InstanceID  string           `json:"instance_id"`
+	Name        string           `json:"name"`
+	Description string           `json:"description"`
+	Databases   []BackupDatabase `json:"databases"`
+}
+
+// backupInfo mirrors the SDK model rds/v3 BackupInfo, the body of a
+// creation response.
+type backupInfo struct {
+	ID          string           `json:"id"`
+	InstanceID  string           `json:"instance_id"`
+	Name        string           `json:"name"`
+	Description string           `json:"description,omitempty"`
+	Databases   []BackupDatabase `json:"databases,omitempty"`
+	BeginTime   string           `json:"begin_time"`
+	Status      string           `json:"status"`
+	Type        string           `json:"type"`
+}
+
+type createBackupResponse struct {
+	Backup backupInfo `json:"backup"`
+}
+
+// backupForList mirrors the SDK model rds/v3 BackupForList.
+type backupForList struct {
+	ID                string           `json:"id"`
+	InstanceID        string           `json:"instance_id"`
+	Name              string           `json:"name"`
+	Databases         []BackupDatabase `json:"databases,omitempty"`
+	BeginTime         string           `json:"begin_time"`
+	EndTime           string           `json:"end_time"`
+	Status            string           `json:"status"`
+	Type              string           `json:"type"`
+	Size              int64            `json:"size"`
+	Datastore         Datastore        `json:"datastore"`
+	AssociatedWithDDM bool             `json:"associated_with_ddm"`
+}
+
+type listBackupsResponse struct {
+	Backups    []backupForList `json:"backups"`
+	TotalCount int             `json:"total_count"`
+}
