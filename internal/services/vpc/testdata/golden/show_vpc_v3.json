@@ -1,0 +1,5 @@
+{"source": "sdk-model", "status": 200, "body": {"request_id": "<hex32>", "vpc": {
+  "id": "<uuid>", "name": "vpc", "description": "", "cidr": "192.168.0.0/16", "extend_cidrs": [], "status": "ACTIVE",
+  "project_id": "<hex32>", "enterprise_project_id": "0", "created_at": "<time-z>", "updated_at": "<time-z>",
+  "cloud_resources": [{"resource_type": "virsubnet", "resource_count": 1}], "tags": [],
+  "block_service_endpoint_states": "off", "enable_network_address_usage_metrics": false}}}

@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -129,26 +130,42 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		return err
 	}
 
-	listeners, err := listen(ctx, cfg, log)
+	// The main listener serves every service; each configured service
+	// port gets a listener that serves only that service.
+	listeners, err := listen(ctx, cfg, cfg.Port, log)
 	if err != nil {
 		return err
 	}
 	ln := listeners[0]
-
-	httpSrv := &http.Server{
-		Handler: srv.Handler(),
-		// Guards against slow-header connections. There is deliberately
-		// no overall read/write timeout: object uploads and downloads
-		// may legitimately take minutes.
-		ReadHeaderTimeout: 10 * time.Second,
-		IdleTimeout:       2 * time.Minute,
-		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
+	servers := []*http.Server{newHTTPServer(srv.Handler(), log)}
+	bound := [][]net.Listener{listeners}
+	defer func() {
+		for _, group := range bound {
+			for _, l := range group {
+				_ = l.Close()
+			}
+		}
+	}()
+	servicePorts := map[string]string{}
+	for _, name := range sortedKeys(cfg.ServicePorts) {
+		handler, ok := srv.ServiceHandler(name)
+		if !ok {
+			return fmt.Errorf("service port given for %q, which is not an enabled service", name)
+		}
+		group, err := listen(ctx, cfg, cfg.ServicePorts[name], log)
+		if err != nil {
+			return fmt.Errorf("%s port: %w", name, err)
+		}
+		servers = append(servers, newHTTPServer(handler, log))
+		bound = append(bound, group)
+		servicePorts[name] = group[0].Addr().String()
 	}
 
 	log.Info("weistack started",
 		"version", version.Version,
 		"address", ln.Addr().String(),
 		"ipv6_loopback", len(listeners) > 1,
+		"service_ports", servicePorts,
 		"region", cfg.Region,
 		"project_id", projectID,
 		"persist", cfg.Persist,
@@ -159,9 +176,11 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		env.OnReady(ln.Addr())
 	}
 
-	serveErr := make(chan error, len(listeners))
-	for _, l := range listeners {
-		go func() { serveErr <- httpSrv.Serve(l) }()
+	serveErr := make(chan error, 8)
+	for i, group := range bound {
+		for _, l := range group {
+			go func() { serveErr <- servers[i].Serve(l) }()
+		}
 	}
 
 	select {
@@ -174,9 +193,13 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 	log.Info("shutting down", "timeout", cfg.ShutdownTimeout.String())
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.ShutdownTimeout)
 	defer cancel()
-	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
-		_ = httpSrv.Close()
-		return fmt.Errorf("shutdown did not finish within %s: %w", cfg.ShutdownTimeout, err)
+	for _, hs := range servers {
+		if err := hs.Shutdown(shutdownCtx); err != nil {
+			for _, other := range servers {
+				_ = other.Close()
+			}
+			return fmt.Errorf("shutdown did not finish within %s: %w", cfg.ShutdownTimeout, err)
+		}
 	}
 	log.Info("stopped")
 	return nil
@@ -255,14 +278,35 @@ func objectDataDir(cfg config.Config) (dir string, cleanup func(), err error) {
 	return dir, func() { _ = os.RemoveAll(dir) }, nil
 }
 
-// listen opens the server's listeners. The first is always the
-// configured address. When that is the default IPv4 loopback, the IPv6
+func newHTTPServer(h http.Handler, log *slog.Logger) *http.Server {
+	return &http.Server{
+		Handler: h,
+		// Guards against slow-header connections. There is deliberately
+		// no overall read/write timeout: object uploads and downloads
+		// may legitimately take minutes.
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
+	}
+}
+
+func sortedKeys(m map[string]int) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// listen opens the listeners for one port. The first is always the
+// configured host. When that is the default IPv4 loopback, the IPv6
 // loopback is opened on the same port as well, because many systems
 // resolve "localhost" and "{service}.localhost" to ::1. That second
 // listener is best effort: a machine without IPv6 simply does not get it.
-func listen(ctx context.Context, cfg config.Config, log *slog.Logger) ([]net.Listener, error) {
+func listen(ctx context.Context, cfg config.Config, port int, log *slog.Logger) ([]net.Listener, error) {
 	var lc net.ListenConfig
-	primary, err := lc.Listen(ctx, "tcp", net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)))
+	primary, err := lc.Listen(ctx, "tcp", net.JoinHostPort(cfg.Host, strconv.Itoa(port)))
 	if err != nil {
 		return nil, fmt.Errorf("listening: %w", err)
 	}

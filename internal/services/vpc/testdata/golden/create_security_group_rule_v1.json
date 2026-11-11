@@ -1,0 +1,1 @@
+{"source": "sdk-model", "status": 200, "body": {"security_group_rule": {"id": "<uuid>", "description": "https", "security_group_id": "<uuid>", "direction": "ingress", "ethertype": "IPv4", "protocol": "tcp", "port_range_min": 443, "port_range_max": 443, "remote_ip_prefix": "10.0.0.0/8", "remote_group_id": null, "remote_address_group_id": null, "tenant_id": "<hex32>"}}}

@@ -14,7 +14,8 @@ Legend: **Yes** implemented, **Partial** implemented with the listed gaps,
 | ListVpcs | `GET /v1/{project_id}/vpcs` | Yes | Filters `id`, `enterprise_project_id`; `marker`/`limit` |
 | UpdateVpc | `PUT /v1/{project_id}/vpcs/{vpc_id}` | Yes | |
 | DeleteVpc | `DELETE /v1/{project_id}/vpcs/{vpc_id}` | Yes | |
-| VPC v3 API | `/v3/{project_id}/vpc/vpcs...` | No | |
+| ShowVpc (v3) | `GET /v3/{project_id}/vpc/vpcs/{vpc_id}` | Yes | `extend_cidrs` is always empty; status `PENDING`/`ACTIVE` |
+| Other VPC v3 operations | `/v3/{project_id}/vpc/vpcs...` | No | |
 
 Behaviour:
 
@@ -65,7 +66,9 @@ Behaviour:
 | ListSecurityGroups | `GET /v3/{project_id}/vpc/security-groups` | Yes | Filters `id`, `name`, `description` (repeatable), `enterprise_project_id`; `marker`/`limit`; `page_info` |
 | UpdateSecurityGroup | `PUT /v3/{project_id}/vpc/security-groups/{id}` | Yes | `dry_run` supported |
 | DeleteSecurityGroup | `DELETE /v3/{project_id}/vpc/security-groups/{id}` | Partial | No "in use by a port" check until ECS exists |
-| Security groups v1 / Neutron v2.0 | `/v1/{project_id}/security-groups`, `/v2.0/security-groups` | No | |
+| Security groups v1 | `/v1/{project_id}/security-groups[/{id}]` | Yes | Create, show, list, delete. A view of the same groups as v3; `vpc_id` is echoed on create only |
+| Security group rules v1 | `/v1/{project_id}/security-group-rules[/{id}]` | Yes | Create, show, list, delete. `port_range_min`/`max` map to v3 `multiport`; a v3 port list shows an open range in v1 |
+| Neutron v2.0 API and tags | `/v2.0/...` | No | |
 
 ## Security group rules (v3)
 
@@ -97,9 +100,17 @@ Behaviour:
 - `dry_run: true` validates the request and returns `202` with code
   `SYS.0202`; nothing is created.
 
+## Two API versions, one set of records
+
+Real clients mix API versions: the Terraform provider creates security groups
+with v3 and reads and deletes them with v1. Every version WeiStack serves is a
+view of the same stored resources, so a group or rule created through one is
+visible, and can be deleted, through the other.
+
 ## Error codes
 
-Errors of the v1 API (VPCs, subnets) are `{"code": "...", "message": "..."}`.
+Errors of the v1 API (VPCs, subnets, v1 security groups) are
+`{"code": "...", "message": "..."}`.
 Errors of the v3 API (security groups) are
 `{"request_id": "...", "error_code": "...", "error_msg": "..."}`.
 
@@ -120,6 +131,9 @@ Errors of the v3 API (security groups) are
 | `VPC.0202` | 404 | Subnet does not exist |
 | `VPC.0205` | 500 | Subnet is still being created |
 | `VPC.0208` | 500 | Deleting a subnet with private IPs in use |
+| `VPC.0601` | 400 | Invalid v1 security group or rule request |
+| `VPC.0602` | 409 | v1: duplicate rule; deleting the default security group |
+| `VPC.0603` | 404 | v1: security group or rule does not exist |
 | `VPC.9902` | 400 | Invalid security group or rule request |
 | `VPC.9902` | 409 | Duplicate rule; deleting the default security group |
 | `VPC.9904` | 404 | Security group, rule, remote group or address group does not exist |
