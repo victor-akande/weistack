@@ -34,9 +34,16 @@ make build
 ./bin/weistack
 ```
 
+At a terminal it prints the project ID, the proxy setting and how to trust
+its CA. Then, in another terminal:
+
 ```bash
 curl http://localhost:8780/_weistack/health
 ```
+
+[docs/getting-started.md](docs/getting-started.md) walks through the rest:
+creating resources with `curl`, then with Huawei's Terraform provider, and
+keeping state across restarts.
 
 With Docker:
 
@@ -82,8 +89,8 @@ verification (most have an `insecure` option), or trust the CA:
 export SSL_CERT_FILE=$PWD/weistack-ca.pem   # Go and OpenSSL-based clients
 ```
 
-The CA is kept in `~/.config/weistack/tls` (or `{data-dir}/tls` with
-`-persist`, or `-tls-dir`; `/data/tls` in the image), so clients trust it
+The CA is kept in `~/.config/weistack/tls` (`-tls-dir` changes it;
+`/data/tls` in the image), with or without `-persist`, so clients trust it
 once. Its key never leaves that directory and is readable only by you. A
 running emulator also serves the certificate, which is the easy way to get
 it out of a container:
@@ -138,14 +145,14 @@ defaults. Run `weistack -h` for the full list.
 | `-region` | `WEISTACK_REGION` | `ap-southeast-1` | Region when a request names none |
 | `-project-id` | `WEISTACK_PROJECT_ID` | generated | Default project, 32 hex characters |
 | `-persist` | `WEISTACK_PERSIST` | off | Keep state on disk across restarts |
-| `-data-dir` | `WEISTACK_DATA_DIR` | `/data` | Where persistent state and object data live |
+| `-data-dir` | `WEISTACK_DATA_DIR` | `~/.local/share/weistack` (`/data` in the image) | Where `-persist` keeps state and object data. macOS: `~/Library/Application Support/weistack`; Windows: `%LocalAppData%\weistack` |
 | `-seed-dir` | `WEISTACK_SEED_DIR` | none | Directory of YAML files extending built-in seed data ([images](docs/services/ims.md#adding-your-own), [flavors](docs/services/ecs.md#adding-your-own)) |
 | `-ecs-max-servers` | `WEISTACK_ECS_MAX_SERVERS` | `20` | ECS server quota per project |
 | `-ecs-max-vcpus` | `WEISTACK_ECS_MAX_VCPUS` | `80` | ECS vCPU quota per project |
 | `-rds-max-instances` | `WEISTACK_RDS_MAX_INSTANCES` | `20` | RDS instance quota per project |
 | `-lifecycle-delay` | `WEISTACK_LIFECYCLE_DELAY` | `2s` | Duration of async transitions; `0` is instant |
 | `-log-level` | `WEISTACK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
-| `-log-format` | `WEISTACK_LOG_FORMAT` | `json` | `json` or `text` |
+| `-log-format` | `WEISTACK_LOG_FORMAT` | `auto` | `json`, `text`, or `auto`: text at a terminal, JSON otherwise |
 | `-services` | `WEISTACK_SERVICES` | all | Comma-separated subset to enable |
 | `-service-ports` | `WEISTACK_SERVICE_PORTS` | none | Extra listeners that each serve one service, for example `obs=9000` |
 | `-proxy-domains` | `WEISTACK_PROXY_DOMAINS` | `myhuaweicloud.com` | Domains the proxy answers for itself |

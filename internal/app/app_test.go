@@ -15,6 +15,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/victor-akande/weistack/internal/core/config"
 )
 
 type safeBuffer struct {
@@ -511,5 +513,50 @@ func TestCACommand(t *testing.T) {
 	}
 	if _, _, err := run("-no-such-flag"); err == nil {
 		t.Fatal("ca accepted an invalid flag")
+	}
+}
+
+func TestBannerAndLogFormat(t *testing.T) {
+	t.Parallel()
+
+	// Output that is not a terminal (a buffer, a pipe, a container's log)
+	// gets JSON logs under "auto" and no banner.
+	var buf bytes.Buffer
+	if isTerminal(&buf) {
+		t.Fatal("a buffer is a terminal")
+	}
+	f, err := os.CreateTemp(t.TempDir(), "log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if isTerminal(f) {
+		t.Fatal("a regular file is a terminal")
+	}
+	newLogger(config.Config{LogFormat: "auto"}, &buf).Info("hello")
+	if !strings.HasPrefix(buf.String(), `{"time":`) {
+		t.Fatalf("auto, not at a terminal: %q, want JSON", buf.String())
+	}
+	buf.Reset()
+	newLogger(config.Config{LogFormat: "text"}, &buf).Info("hello")
+	if !strings.HasPrefix(buf.String(), "time=") {
+		t.Fatalf("text: %q", buf.String())
+	}
+
+	buf.Reset()
+	printBanner(&buf, config.Config{}, "127.0.0.1:8780", "0123456789abcdef0123456789abcdef")
+	for _, want := range []string{
+		"ready on http://127.0.0.1:8780", "0123456789abcdef0123456789abcdef", "new on every start",
+		"export HTTPS_PROXY=http://127.0.0.1:8780", "http://127.0.0.1:8780/_weistack/ca",
+		"/vpc/v1/0123456789abcdef0123456789abcdef/vpcs", "docs/getting-started.md",
+	} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("banner lacks %q:\n%s", want, buf.String())
+		}
+	}
+	buf.Reset()
+	printBanner(&buf, config.Config{Persist: true, DataDir: "/srv/weistack"}, "127.0.0.1:8780", "0123456789abcdef0123456789abcdef")
+	if !strings.Contains(buf.String(), "kept in /srv/weistack") {
+		t.Errorf("persistent banner:\n%s", buf.String())
 	}
 }

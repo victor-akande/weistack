@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -21,12 +23,12 @@ const EnvPrefix = "WEISTACK_"
 
 // Defaults.
 const (
-	DefaultHost            = "127.0.0.1"
-	DefaultPort            = 8780
-	DefaultRegion          = "ap-southeast-1"
-	DefaultDataDir         = "/data"
-	DefaultLifecycleDelay  = 2 * time.Second
-	DefaultLogFormat       = "json"
+	DefaultHost           = "127.0.0.1"
+	DefaultPort           = 8780
+	DefaultRegion         = "ap-southeast-1"
+	DefaultLifecycleDelay = 2 * time.Second
+	// DefaultLogFormat picks text at a terminal and JSON otherwise.
+	DefaultLogFormat       = "auto"
 	DefaultMaxBodyBytes    = 10 << 20 // 10 MiB; services that stream (OBS) opt out per route.
 	DefaultShutdownTimeout = 10 * time.Second
 	DefaultECSMaxServers   = 20
@@ -61,7 +63,7 @@ type Config struct {
 	LifecycleDelay time.Duration
 	// LogLevel is the minimum level logged.
 	LogLevel slog.Level
-	// LogFormat is "json" or "text".
+	// LogFormat is "json", "text" or "auto" (text at a terminal).
 	LogFormat string
 	// Services restricts which services are enabled. Empty means all.
 	Services []string
@@ -113,17 +115,17 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 	fs.StringVar(&cfg.Region, "region", env.str("REGION", DefaultRegion), "default region")
 	fs.StringVar(&cfg.ProjectID, "project-id", env.str("PROJECT_ID", ""), "default project ID, 32 hex characters (generated when empty)")
 	fs.BoolVar(&cfg.Persist, "persist", env.bool("PERSIST", false), "persist state under the data directory")
-	fs.StringVar(&cfg.DataDir, "data-dir", env.str("DATA_DIR", DefaultDataDir), "directory for persistent state and object bodies")
+	fs.StringVar(&cfg.DataDir, "data-dir", env.str("DATA_DIR", DefaultDataDir(getenv)), "directory for persistent state and object bodies, with -persist")
 	fs.StringVar(&cfg.SeedDir, "seed-dir", env.str("SEED_DIR", ""), "directory of YAML files that extend the built-in seed data")
 	fs.IntVar(&cfg.ECSMaxServers, "ecs-max-servers", env.int("ECS_MAX_SERVERS", DefaultECSMaxServers), "per-project quota of ECS servers")
 	fs.IntVar(&cfg.ECSMaxVCPUs, "ecs-max-vcpus", env.int("ECS_MAX_VCPUS", DefaultECSMaxVCPUs), "per-project quota of ECS vCPUs")
 	fs.IntVar(&cfg.RDSMaxInstances, "rds-max-instances", env.int("RDS_MAX_INSTANCES", DefaultRDSMaxInstances), "per-project quota of RDS instances")
 	fs.DurationVar(&cfg.LifecycleDelay, "lifecycle-delay", env.duration("LIFECYCLE_DELAY", DefaultLifecycleDelay), "duration of asynchronous state transitions (0 is instant)")
 	fs.StringVar(&logLevel, "log-level", env.str("LOG_LEVEL", "info"), "log level: debug, info, warn or error")
-	fs.StringVar(&cfg.LogFormat, "log-format", env.str("LOG_FORMAT", DefaultLogFormat), "log format: json or text")
+	fs.StringVar(&cfg.LogFormat, "log-format", env.str("LOG_FORMAT", DefaultLogFormat), "log format: json, text, or auto for text at a terminal")
 	fs.StringVar(&proxyDomains, "proxy-domains", env.str("PROXY_DOMAINS", "myhuaweicloud.com"), "domains answered when WeiStack is used as an HTTPS proxy")
 	fs.StringVar(&cfg.ProxyPassthrough, "proxy-passthrough", env.str("PROXY_PASSTHROUGH", "loopback"), "who may tunnel to other hosts through the proxy: loopback, all or none")
-	fs.StringVar(&cfg.TLSDir, "tls-dir", env.str("TLS_DIR", ""), "directory of the local CA (default: <data-dir>/tls with -persist, else the user config directory)")
+	fs.StringVar(&cfg.TLSDir, "tls-dir", env.str("TLS_DIR", ""), "directory of the local CA (default: weistack/tls in the user config directory)")
 	fs.StringVar(&servicePorts, "service-ports", env.str("SERVICE_PORTS", ""), "extra per-service listeners, for example obs=9000,ecs=9001")
 	fs.StringVar(&services, "services", env.str("SERVICES", ""), "comma-separated services to enable (default all)")
 	fs.BoolVar(&cfg.Metrics, "metrics", env.bool("METRICS", false), "serve Prometheus metrics at /_weistack/metrics")
@@ -169,8 +171,8 @@ func (c Config) Validate() error {
 	if c.ProjectID != "" && !projectIDRE.MatchString(c.ProjectID) {
 		errs = append(errs, fmt.Errorf("project ID %q must be 32 lowercase hex characters", c.ProjectID))
 	}
-	if c.DataDir == "" {
-		errs = append(errs, errors.New("data directory must not be empty"))
+	if c.Persist && c.DataDir == "" {
+		errs = append(errs, errors.New("no data directory for -persist: set -data-dir"))
 	}
 	switch c.ProxyPassthrough {
 	case "loopback", "all", "none":
@@ -191,8 +193,10 @@ func (c Config) Validate() error {
 	if c.LifecycleDelay < 0 {
 		errs = append(errs, fmt.Errorf("lifecycle delay %s must not be negative", c.LifecycleDelay))
 	}
-	if c.LogFormat != "json" && c.LogFormat != "text" {
-		errs = append(errs, fmt.Errorf("log format %q must be json or text", c.LogFormat))
+	switch c.LogFormat {
+	case "json", "text", "auto":
+	default:
+		errs = append(errs, fmt.Errorf("log format %q must be json, text or auto", c.LogFormat))
 	}
 	used := map[int]string{c.Port: "the main listener"}
 	for name, port := range c.ServicePorts {
@@ -267,6 +271,32 @@ func splitList(s string) []string {
 		out = append(out, part)
 	}
 	return out
+}
+
+// DefaultDataDir is where -persist keeps state when -data-dir is not
+// given: the per-user data directory of the platform, for example
+// ~/.local/share/weistack on Linux. It is empty when the home directory
+// is unknown. The container image sets /data instead.
+func DefaultDataDir(getenv func(string) string) string {
+	if dir := getenv("XDG_DATA_HOME"); dir != "" {
+		return filepath.Join(dir, "weistack")
+	}
+	switch runtime.GOOS {
+	case "windows":
+		if dir := getenv("LocalAppData"); dir != "" {
+			return filepath.Join(dir, "weistack")
+		}
+		return ""
+	case "darwin":
+		if home := getenv("HOME"); home != "" {
+			return filepath.Join(home, "Library", "Application Support", "weistack")
+		}
+		return ""
+	}
+	if home := getenv("HOME"); home != "" {
+		return filepath.Join(home, ".local", "share", "weistack")
+	}
+	return ""
 }
 
 // envReader reads typed environment variables, remembering the first error
