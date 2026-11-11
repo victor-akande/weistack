@@ -22,7 +22,13 @@ Legend: **Yes** implemented, **No** returns `501 NotImplemented`.
 | DeleteObjects | `POST /{bucket}?delete` | Yes | Up to 1000 keys; quiet mode |
 | ListObjects | `GET /{bucket}` | Yes | `prefix`, `delimiter`, `marker`, `max-keys`, `encoding-type` |
 | ListObjectsV2 | `GET /{bucket}?list-type=2` | Yes | `continuation-token`, `start-after`, `fetch-owner` |
-| Multipart uploads | `?uploads`, `?uploadId=` | No | Next |
+| InitiateMultipartUpload | `POST /{bucket}/{key}?uploads` | Yes | |
+| UploadPart | `PUT /{bucket}/{key}?partNumber=N&uploadId=ID` | Yes | |
+| CompleteMultipartUpload | `POST /{bucket}/{key}?uploadId=ID` | Yes | |
+| AbortMultipartUpload | `DELETE /{bucket}/{key}?uploadId=ID` | Yes | |
+| ListParts | `GET /{bucket}/{key}?uploadId=ID` | Yes | `max-parts`, `part-number-marker` |
+| ListMultipartUploads | `GET /{bucket}?uploads` | Partial | `prefix`, `key-marker`, `upload-id-marker`, `max-uploads`; `delimiter`: `501` |
+| UploadPartCopy | `PUT ...?uploadId=` with a copy source | No | |
 | Browser POST uploads, appendable objects, object ACLs and tags, versions | | No | |
 | ACLs, policies, versioning, lifecycle, CORS, tags, website, logging, quota, storage info, encryption, replication | `?acl`, `?policy`, ... | No | |
 
@@ -103,7 +109,31 @@ dialect with `obs.WithSignature(obs.SignatureObs)`.
   listing versions page correctly with any page size: v1 by `NextMarker`,
   v2 by `NextContinuationToken`. With `encoding-type=url`, keys, prefixes
   and delimiters are percent-encoded, slashes kept.
-- A bucket can only be deleted when it holds no objects (`BucketNotEmpty`).
+- A bucket can only be deleted when it holds no objects and no multipart
+  uploads in progress (`BucketNotEmpty`).
+- One request uploads at most 5 GB (`EntityTooLarge`); larger objects are
+  uploaded in parts.
+
+## Multipart uploads
+
+- `InitiateMultipartUpload` takes the object's `Content-Type`, stored
+  headers and user metadata, and returns an upload ID of 32 uppercase hex
+  characters.
+- Parts are numbered 1 to 10,000 and may be uploaded in any order and in
+  parallel. Uploading a part number again replaces it. A part's ETag is its
+  MD5.
+- `CompleteMultipartUpload` lists the parts to keep, in ascending order
+  (`InvalidPartOrder`), each with its ETag (`InvalidPart`). Every part but
+  the last must be at least **100 KB**, the OBS 3.0 rule, checked at
+  completion (`EntityTooSmall`); S3 clients, which use 5 MiB parts, are
+  unaffected. Parts not listed are discarded.
+- The parts are assembled into one object by streaming, one file at a time.
+  Its ETag is the MD5 of the parts' binary MD5s followed by `-` and the
+  number of parts, as in S3. While assembly runs, the upload cannot be
+  changed, aborted or completed again; if it fails the upload is released
+  unchanged.
+- Uploads survive a restart with `-persist`, so a resumable client can
+  continue after one.
 
 ## Storage
 
@@ -136,7 +166,12 @@ A `HEAD` error has no body; the code and message are in the
 | `MethodNotAllowed` | 405 | Method not valid for the resource |
 | `BucketAlreadyOwnedByYou` | 409 | You already own a bucket of that name |
 | `BucketAlreadyExists` | 409 | Another caller owns a bucket of that name |
-| `BucketNotEmpty` | 409 | Deleting a bucket that still has objects |
+| `BucketNotEmpty` | 409 | Deleting a bucket that still has objects or multipart uploads |
+| `NoSuchUpload` | 404 | Upload ID unknown, for another key, aborted or completed |
+| `InvalidPart` | 400 | A listed part was not uploaded, or its ETag differs |
+| `InvalidPartOrder` | 400 | Listed parts are not in ascending order |
+| `EntityTooSmall` | 400 | A part other than the last is under 100 KB |
+| `EntityTooLarge` | 400 | One request uploads more than 5 GB |
 | `PreconditionFailed` | 412 | `If-Match` or `If-Unmodified-Since` failed |
 | `InvalidRange` | 416 | Range starts past the end of the object |
 | `NotImplemented` | 501 | Feature not emulated; the message names it |
@@ -156,6 +191,15 @@ Two SDKs drive the emulator in `test/sdk`:
   with signature v4, a 1 MiB upload, `ListObjectsV2` through the SDK's
   paginator with URL-encoded keys, and the error codes as the SDK decodes
   them.
+- **Multipart.** `TestOBSLargeMultipartUpload` completes scenario 3: a
+  100 MB file sent with the OBS SDK's resumable `UploadFile` (10 MB parts,
+  4 in parallel, checkpoint file), read back whole and by a range across a
+  part boundary, and compared byte for byte. `TestOBSMultipartCalls` (both
+  dialects) and `TestS3MultipartCalls` drive every multipart operation
+  directly, including `EntityTooSmall`, abort and `BucketNotEmpty`.
+
+Measured on the release binary: a 100 MB upload and download raise peak
+memory from 9.8 MB idle to 10.8 MB.
 
 The AWS SDK only sends `aws-chunked` uploads over TLS, which the emulator
 does not serve yet; that decoding is covered by unit tests built from the
@@ -170,6 +214,8 @@ documented wire format.
 - Real OBS serves `ListObjects` beyond 1000 entries per page in some
   configurations and reports `Location` in listings; the emulator caps at
   1000 and omits it.
+- Real OBS also enforces the 100 KB minimum at completion; whether it
+  reports `EntityTooSmall` with exactly this code and status is unverified.
 - Listing reads every key of the bucket for each page. That is fine for
   thousands of objects; it is not built for millions.
 - Real OBS redirects a request for a bucket sent to another region's
