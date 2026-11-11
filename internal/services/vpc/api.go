@@ -27,6 +27,16 @@ func (s *Service) Routes(r chi.Router) {
 		r.Get("/subnets/{subnet_id}", s.v1("ShowSubnet", s.handleShowSubnet))
 		r.Put("/vpcs/{vpc_id}/subnets/{subnet_id}", s.v1("UpdateSubnet", s.handleUpdateSubnet))
 		r.Delete("/vpcs/{vpc_id}/subnets/{subnet_id}", s.v1("DeleteSubnet", s.handleDeleteSubnet))
+
+		// The v1 security group API, a view of the v3 records.
+		r.Post("/security-groups", s.v1("CreateSecurityGroupV1", s.handleCreateGroupV1))
+		r.Get("/security-groups", s.v1("ListSecurityGroupsV1", s.handleListGroupsV1))
+		r.Get("/security-groups/{security_group_id}", s.v1("ShowSecurityGroupV1", s.handleShowGroupV1))
+		r.Delete("/security-groups/{security_group_id}", s.v1("DeleteSecurityGroupV1", s.handleDeleteGroupV1))
+		r.Post("/security-group-rules", s.v1("CreateSecurityGroupRuleV1", s.handleCreateRuleV1))
+		r.Get("/security-group-rules", s.v1("ListSecurityGroupRulesV1", s.handleListRulesV1))
+		r.Get("/security-group-rules/{security_group_rule_id}", s.v1("ShowSecurityGroupRuleV1", s.handleShowRuleV1))
+		r.Delete("/security-group-rules/{security_group_rule_id}", s.v1("DeleteSecurityGroupRuleV1", s.handleDeleteRuleV1))
 	})
 	r.Route("/v3/{project_id}/vpc", func(r chi.Router) {
 		r.Post("/security-groups", s.v3("CreateSecurityGroup", s.handleCreateSecurityGroup))
@@ -39,6 +49,8 @@ func (s *Service) Routes(r chi.Router) {
 		r.Get("/security-group-rules", s.v3("ListSecurityGroupRules", s.handleListSecurityGroupRules))
 		r.Get("/security-group-rules/{security_group_rule_id}", s.v3("ShowSecurityGroupRule", s.handleShowSecurityGroupRule))
 		r.Delete("/security-group-rules/{security_group_rule_id}", s.v3("DeleteSecurityGroupRule", s.handleDeleteSecurityGroupRule))
+
+		r.Get("/vpcs/{vpc_id}", s.v3("ShowVpcV3", s.handleShowVPCv3))
 	})
 }
 

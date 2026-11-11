@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -21,6 +22,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/config"
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
+	"github.com/victor-akande/weistack/internal/core/reqctx"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
@@ -134,13 +136,7 @@ func New(opts Options) (*Server, error) {
 	}
 
 	s.admin = s.newAdmin()
-	s.handler = chain(http.HandlerFunc(s.route),
-		s.requestContext,
-		s.observe,
-		s.recoverPanics,
-		cors,
-		auth.Middleware(s.log),
-	)
+	s.handler = s.wrap(http.HandlerFunc(s.route))
 	return s, nil
 }
 
@@ -163,6 +159,31 @@ func (s *Server) mount(svc Service) *mounted {
 
 // Handler returns the root HTTP handler.
 func (s *Server) Handler() http.Handler { return s.handler }
+
+// ServiceHandler returns a handler that sends every request to one
+// service, for a listener dedicated to it. The admin API stays
+// available. It reports false for a service that is not enabled.
+func (s *Server) ServiceHandler(name string) (http.Handler, bool) {
+	m, ok := s.services[name]
+	if !ok {
+		return nil, false
+	}
+	route := func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == adminPrefix || strings.HasPrefix(r.URL.Path, adminPrefix+"/") {
+			reqctx.From(r.Context()).Service = adminService
+			s.admin.ServeHTTP(w, r)
+			return
+		}
+		reqctx.From(r.Context()).Service = name
+		dispatch(m, w, r)
+	}
+	return s.wrap(http.HandlerFunc(route)), true
+}
+
+// wrap applies the middleware every request goes through.
+func (s *Server) wrap(h http.Handler) http.Handler {
+	return chain(h, s.requestContext, s.observe, s.recoverPanics, cors, auth.Middleware(s.log))
+}
 
 // ServiceNames returns the enabled services in alphabetical order.
 func (s *Server) ServiceNames() []string { return append([]string(nil), s.names...) }

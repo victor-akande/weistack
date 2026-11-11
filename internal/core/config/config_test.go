@@ -148,6 +148,13 @@ func TestLoadErrors(t *testing.T) {
 		{"bad service name", []string{"-services", "vpc,e c s"}, nil, "service name"},
 		{"zero body limit", []string{"-max-body-bytes", "0"}, nil, "max body bytes"},
 		{"zero shutdown timeout", []string{"-shutdown-timeout", "0s"}, nil, "shutdown timeout"},
+		{"bad service port", []string{"-service-ports", "obs"}, nil, "want service=port"},
+		{"service port not a number", []string{"-service-ports", "obs=x"}, nil, "want service=port"},
+		{"service port twice", []string{"-service-ports", "obs=9000,obs=9001"}, nil, "more than one port"},
+		{"service port out of range", []string{"-service-ports", "obs=70000"}, nil, "out of range"},
+		{"service port clash", []string{"-service-ports", "obs=9000,ecs=9000"}, nil, "already used"},
+		{"service port on the main port", []string{"-service-ports", "obs=8780"}, nil, "already used"},
+		{"service port bad name", []string{"-service-ports", "O B S=9000"}, nil, "not valid"},
 		{"positional argument", []string{"serve"}, nil, "unexpected argument"},
 		{"unknown flag", []string{"-nope"}, nil, "not defined"},
 	}
@@ -189,6 +196,21 @@ func TestValidateReportsEveryProblem(t *testing.T) {
 		if !strings.Contains(err.Error(), sub) {
 			t.Errorf("error does not mention %q: %v", sub, err)
 		}
+	}
+}
+
+func TestServicePorts(t *testing.T) {
+	t.Parallel()
+	got, err := Load([]string{"-service-ports", "obs=9000, ecs=9001"}, env(nil), io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.ServicePorts, map[string]int{"obs": 9000, "ecs": 9001}) {
+		t.Fatalf("ServicePorts = %v", got.ServicePorts)
+	}
+	got, err = Load(nil, env(map[string]string{"WEISTACK_SERVICE_PORTS": "obs=9100"}), io.Discard)
+	if err != nil || got.ServicePorts["obs"] != 9100 {
+		t.Fatalf("from the environment: %v, %v", got.ServicePorts, err)
 	}
 }
 

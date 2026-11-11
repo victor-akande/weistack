@@ -402,3 +402,69 @@ func TestExplicitHostDoesNotAddListeners(t *testing.T) {
 		t.Fatal("an explicit host also opened the IPv6 loopback")
 	}
 }
+
+func TestServicePortServesOneService(t *testing.T) {
+	t.Parallel()
+
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := strconv.Itoa(probe.Addr().(*net.TCPAddr).Port)
+	probe.Close()
+
+	inst := startInstance(t, map[string]string{"WEISTACK_SERVICE_PORTS": "obs=" + port})
+	base := "http://127.0.0.1:" + port
+
+	// Every path goes to OBS, so a bucket is addressed path-style on the
+	// bare address, as S3 clients do with an IP endpoint.
+	req, _ := http.NewRequest(http.MethodPut, base+"/port-bucket", nil)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || res.Header.Get("Server") != "OBS" {
+		t.Fatalf("PUT bucket on the OBS port: %d %v", res.StatusCode, res.Header)
+	}
+	res, err = http.Get(base + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if !strings.Contains(string(body), "<Name>port-bucket</Name>") {
+		t.Fatalf("bucket listing on the OBS port: %s", body)
+	}
+	// The same bucket through the main listener's path prefix.
+	if status, _ := inst.get(t, "/obs/port-bucket?location"); status != http.StatusOK {
+		t.Fatalf("bucket through the main listener: %d", status)
+	}
+	// The admin API stays reachable on the service port.
+	if res, err := http.Get(base + "/_weistack/health"); err != nil || res.StatusCode != http.StatusOK {
+		t.Fatalf("health on the OBS port: %v", err)
+	} else {
+		res.Body.Close()
+	}
+
+	if err := inst.stop(t); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	if conn, err := net.DialTimeout("tcp", "127.0.0.1:"+port, time.Second); err == nil {
+		conn.Close()
+		t.Fatal("the service port still accepts connections after shutdown")
+	}
+}
+
+func TestServicePortForAnUnknownService(t *testing.T) {
+	t.Parallel()
+	err := Run(context.Background(), Env{
+		Getenv: func(k string) string {
+			return map[string]string{"WEISTACK_PORT": "0", "WEISTACK_SERVICE_PORTS": "dns=9999"}[k]
+		},
+		Stdout: io.Discard, Stderr: io.Discard,
+	})
+	if err == nil || !strings.Contains(err.Error(), `"dns"`) {
+		t.Fatalf("err = %v, want it to name the unknown service", err)
+	}
+}

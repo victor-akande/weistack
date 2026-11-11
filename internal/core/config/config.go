@@ -65,6 +65,10 @@ type Config struct {
 	LogFormat string
 	// Services restricts which services are enabled. Empty means all.
 	Services []string
+	// ServicePorts gives services a listener of their own, on which every
+	// request goes to that service: for clients that cannot address a
+	// service by host name or path prefix. Keyed by service name.
+	ServicePorts map[string]int
 	// Metrics enables the Prometheus-format metrics endpoint.
 	Metrics bool
 	// MaxBodyBytes caps request bodies on JSON APIs.
@@ -86,9 +90,10 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 	env := envReader{getenv: getenv}
 
 	var (
-		cfg      Config
-		logLevel string
-		services string
+		cfg          Config
+		logLevel     string
+		services     string
+		servicePorts string
 	)
 
 	fs := flag.NewFlagSet("weistack", flag.ContinueOnError)
@@ -106,12 +111,14 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 	fs.DurationVar(&cfg.LifecycleDelay, "lifecycle-delay", env.duration("LIFECYCLE_DELAY", DefaultLifecycleDelay), "duration of asynchronous state transitions (0 is instant)")
 	fs.StringVar(&logLevel, "log-level", env.str("LOG_LEVEL", "info"), "log level: debug, info, warn or error")
 	fs.StringVar(&cfg.LogFormat, "log-format", env.str("LOG_FORMAT", DefaultLogFormat), "log format: json or text")
+	fs.StringVar(&servicePorts, "service-ports", env.str("SERVICE_PORTS", ""), "extra per-service listeners, for example obs=9000,ecs=9001")
 	fs.StringVar(&services, "services", env.str("SERVICES", ""), "comma-separated services to enable (default all)")
 	fs.BoolVar(&cfg.Metrics, "metrics", env.bool("METRICS", false), "serve Prometheus metrics at /_weistack/metrics")
 	fs.Int64Var(&cfg.MaxBodyBytes, "max-body-bytes", env.int64("MAX_BODY_BYTES", DefaultMaxBodyBytes), "maximum request body size for JSON APIs")
 	fs.DurationVar(&cfg.ShutdownTimeout, "shutdown-timeout", env.duration("SHUTDOWN_TIMEOUT", DefaultShutdownTimeout), "time allowed for in-flight requests to finish on shutdown")
 
-	if err := fs.Parse(args); err != nil {
+	err := fs.Parse(args)
+	if err != nil {
 		return Config{}, err
 	}
 	if fs.NArg() > 0 {
@@ -121,11 +128,14 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 		return Config{}, env.err
 	}
 
-	if err := cfg.LogLevel.UnmarshalText([]byte(logLevel)); err != nil {
+	if err = cfg.LogLevel.UnmarshalText([]byte(logLevel)); err != nil {
 		return Config{}, fmt.Errorf("invalid log level %q: want debug, info, warn or error", logLevel)
 	}
 	cfg.LogFormat = strings.ToLower(cfg.LogFormat)
 	cfg.Services = splitList(services)
+	if cfg.ServicePorts, err = parseServicePorts(servicePorts); err != nil {
+		return Config{}, err
+	}
 
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -160,6 +170,18 @@ func (c Config) Validate() error {
 	if c.LogFormat != "json" && c.LogFormat != "text" {
 		errs = append(errs, fmt.Errorf("log format %q must be json or text", c.LogFormat))
 	}
+	used := map[int]string{c.Port: "the main listener"}
+	for name, port := range c.ServicePorts {
+		switch {
+		case !serviceRE.MatchString(name):
+			errs = append(errs, fmt.Errorf("service name %q in the service ports is not valid", name))
+		case port < 1 || port > 65535:
+			errs = append(errs, fmt.Errorf("port %d for %s is out of range 1-65535", port, name))
+		case used[port] != "" && port != 0:
+			errs = append(errs, fmt.Errorf("port %d for %s is already used by %s", port, name, used[port]))
+		}
+		used[port] = name
+	}
 	for _, s := range c.Services {
 		if !serviceRE.MatchString(s) {
 			errs = append(errs, fmt.Errorf("service name %q is not valid", s))
@@ -185,6 +207,26 @@ func (c Config) ServiceEnabled(name string) bool {
 		}
 	}
 	return false
+}
+
+// parseServicePorts reads "obs=9000,ecs=9001".
+func parseServicePorts(raw string) (map[string]int, error) {
+	out := map[string]int{}
+	for _, part := range splitList(raw) {
+		name, port, ok := strings.Cut(part, "=")
+		n, err := strconv.Atoi(strings.TrimSpace(port))
+		if !ok || err != nil {
+			return nil, fmt.Errorf("invalid service port %q: want service=port, for example obs=9000", part)
+		}
+		if _, dup := out[strings.TrimSpace(name)]; dup {
+			return nil, fmt.Errorf("service %q is given more than one port", name)
+		}
+		out[strings.TrimSpace(name)] = n
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
 }
 
 // splitList parses a comma-separated list, trimming blanks, lower-casing

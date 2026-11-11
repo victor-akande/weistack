@@ -1,0 +1,8 @@
+{"source": "sdk-model", "status": 200, "body": {"security_group": {"id": "<uuid>", "name": "web", "description": "", "vpc_id": "", "enterprise_project_id": "0",
+  "security_group_rules": [
+    {"id": "<uuid>", "description": "", "security_group_id": "<uuid>", "direction": "ingress", "ethertype": "IPv6", "protocol": null, "port_range_min": null, "port_range_max": null, "remote_ip_prefix": null, "remote_group_id": "<uuid>", "remote_address_group_id": null, "tenant_id": "<hex32>"},
+    {"id": "<uuid>", "description": "", "security_group_id": "<uuid>", "direction": "egress", "ethertype": "IPv6", "protocol": null, "port_range_min": null, "port_range_max": null, "remote_ip_prefix": null, "remote_group_id": null, "remote_address_group_id": null, "tenant_id": "<hex32>"},
+    {"id": "<uuid>", "description": "", "security_group_id": "<uuid>", "direction": "egress", "ethertype": "IPv4", "protocol": null, "port_range_min": null, "port_range_max": null, "remote_ip_prefix": null, "remote_group_id": null, "remote_address_group_id": null, "tenant_id": "<hex32>"},
+    {"id": "<uuid>", "description": "", "security_group_id": "<uuid>", "direction": "ingress", "ethertype": "IPv4", "protocol": null, "port_range_min": null, "port_range_max": null, "remote_ip_prefix": null, "remote_group_id": "<uuid>", "remote_address_group_id": null, "tenant_id": "<hex32>"},
+    {"id": "<uuid>", "description": "ssh", "security_group_id": "<uuid>", "direction": "ingress", "ethertype": "IPv4", "protocol": "tcp", "port_range_min": 22, "port_range_max": 22, "remote_ip_prefix": "0.0.0.0/0", "remote_group_id": null, "remote_address_group_id": null, "tenant_id": "<hex32>"}
+  ]}}}
