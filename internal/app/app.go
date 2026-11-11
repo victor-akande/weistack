@@ -25,6 +25,7 @@ import (
 	"github.com/victor-akande/weistack/internal/server"
 	"github.com/victor-akande/weistack/internal/services/ecs"
 	"github.com/victor-akande/weistack/internal/services/ims"
+	"github.com/victor-akande/weistack/internal/services/obs"
 	"github.com/victor-akande/weistack/internal/services/vpc"
 	"github.com/victor-akande/weistack/internal/version"
 )
@@ -32,6 +33,7 @@ import (
 const (
 	databaseFile  = "weistack.db"
 	projectIDFile = "project_id"
+	objectsDir    = "objects"
 )
 
 // Env is the process environment the app runs in, injected for tests.
@@ -102,7 +104,13 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		<-engineDone
 	}()
 
-	services, err := buildServices(ctx, cfg, projectID, st, engine, gen, log)
+	objectDir, removeObjectDir, err := objectDataDir(cfg)
+	if err != nil {
+		return err
+	}
+	defer removeObjectDir()
+
+	services, err := buildServices(ctx, cfg, projectID, objectDir, st, engine, gen, log)
 	if err != nil {
 		return err
 	}
@@ -176,7 +184,7 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 // buildServices constructs every emulated service. New services are
 // added here.
 func buildServices(
-	ctx context.Context, cfg config.Config, projectID string,
+	ctx context.Context, cfg config.Config, projectID, objectDir string,
 	st store.Store, engine *lifecycle.Engine, gen *ids.Generator, log *slog.Logger,
 ) ([]server.Service, error) {
 	vpcSvc, err := vpc.New(vpc.Deps{Store: st, Engine: engine, IDs: gen, Logger: log})
@@ -213,7 +221,27 @@ func buildServices(
 	// IMS makes images of ECS servers; ECS reads IMS images. The cycle
 	// is closed here, after both exist.
 	imsSvc.SetServers(ecsSvc)
-	return []server.Service{vpcSvc, imsSvc, ecsSvc}, nil
+
+	obsSvc, err := obs.New(obs.Deps{Store: st, IDs: gen, Logger: log, DataDir: objectDir})
+	if err != nil {
+		return nil, err
+	}
+	return []server.Service{vpcSvc, imsSvc, ecsSvc, obsSvc}, nil
+}
+
+// objectDataDir returns the directory for OBS object bodies and a
+// function to call at exit. With persistence the bodies live beside the
+// database; without it they go to a temporary directory that is removed
+// when the emulator stops, like the rest of its in-memory state.
+func objectDataDir(cfg config.Config) (dir string, cleanup func(), err error) {
+	if cfg.Persist {
+		return filepath.Join(cfg.DataDir, objectsDir), func() {}, nil
+	}
+	dir, err = os.MkdirTemp("", "weistack-objects-")
+	if err != nil {
+		return "", nil, fmt.Errorf("creating a temporary directory for object data: %w", err)
+	}
+	return dir, func() { _ = os.RemoveAll(dir) }, nil
 }
 
 // listen opens the server's listeners. The first is always the
