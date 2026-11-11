@@ -67,6 +67,8 @@ type Service struct {
 	// the store's compare-and-swap; the mutex only spares a burst of
 	// concurrent allocations from retrying against each other.
 	ipamMu sync.Mutex
+
+	ports portSource
 }
 
 // New returns the VPC service.

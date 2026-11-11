@@ -30,7 +30,9 @@ Legend: **Yes** implemented, **No** returns `501 NotImplemented`.
 | ListMultipartUploads | `GET /{bucket}?uploads` | Partial | `prefix`, `key-marker`, `upload-id-marker`, `max-uploads`; `delimiter`: `501` |
 | UploadPartCopy | `PUT ...?uploadId=` with a copy source | No | |
 | Browser POST uploads, appendable objects, object ACLs and tags, versions | | No | |
-| ACLs, policies, versioning, lifecycle, CORS, tags, website, logging, quota, storage info, encryption, replication | `?acl`, `?policy`, ... | No | |
+| Bucket configuration reads | `GET /{bucket}?acl`, `?policy`, `?versioning`, ... | Yes | See "Bucket configuration" |
+| Bucket configuration writes | `PUT` or `DELETE /{bucket}?acl`, `?policy`, ... | No | |
+| Replication, inventory, object lock, direct cold access | `?replication`, `?inventory`, ... | No | |
 
 ## Addressing
 
@@ -72,6 +74,24 @@ dialect with `obs.WithSignature(obs.SignatureObs)`.
   creates, lists only those, and gets `AccessDenied` on anyone else's.
   Requests without credentials share one `anonymous` identity. The owner ID
   shown in listings is derived from the access key, never the key itself.
+
+## Bucket configuration
+
+WeiStack stores no bucket configuration, so every bucket is in the state of
+a bucket nobody has configured. Reading configuration returns what OBS
+returns for such a bucket. Tools that read everything after a create, such
+as Terraform's `huaweicloud_obs_bucket`, therefore work.
+
+| Subresource | Answer |
+| --- | --- |
+| `?acl` | The owner has `FULL_CONTROL` |
+| `?versioning`, `?logging`, `?notification`, `?customdomain` | An empty document: unversioned, no logging, no notifications, no custom domains |
+| `?quota` | `StorageQuota` 0, meaning no quota |
+| `?storageinfo` | The bucket's real size and object count |
+| `?storageClass` (OBS), `?storagePolicy` (S3) | `STANDARD` |
+| `?requestPayment` | `BucketOwner` |
+| `?policy`, `?lifecycle`, `?cors`, `?tagging`, `?website` | `404` `NoSuchBucketPolicy`, `NoSuchLifecycleConfiguration`, `NoSuchCORSConfiguration`, `NoSuchTagSet`, `NoSuchWebsiteConfiguration` |
+| `?encryption` | `404` `NoSuchEncryptionConfiguration`, or `ServerSideEncryptionConfigurationNotFoundError` in the S3 dialect |
 
 ## Objects
 

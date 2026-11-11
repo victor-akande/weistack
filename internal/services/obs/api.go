@@ -82,7 +82,8 @@ func (c *call) subresource(names ...string) string {
 }
 
 // bucketSubresources are bucket-level features addressed by a query
-// parameter that the emulator does not implement.
+// parameter. Of these the emulator answers only reads of configuration
+// it never stores (config.go).
 var bucketSubresources = []string{
 	"acl", "policy", "versioning", "versions", "lifecycle", "cors", "tagging", "website", "logging",
 	"notification", "encryption", "replication", "quota", "storageinfo", "storagePolicy", "storageClass",
@@ -106,6 +107,9 @@ func (s *Service) route(c *call) (string, handlerFunc) {
 
 	case c.target.Key == "":
 		if sub := c.subresource(bucketSubresources...); sub != "" {
+			if read, ok := s.configs[sub]; ok && m == http.MethodGet {
+				return "GetBucket?" + sub, read
+			}
 			return "Bucket?" + sub, func(*call) error { return errNotImplemented("bucket " + sub) }
 		}
 		switch m {

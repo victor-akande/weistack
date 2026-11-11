@@ -25,6 +25,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/server"
 	"github.com/victor-akande/weistack/internal/services/ecs"
+	"github.com/victor-akande/weistack/internal/services/evs"
 	"github.com/victor-akande/weistack/internal/services/ims"
 	"github.com/victor-akande/weistack/internal/services/obs"
 	"github.com/victor-akande/weistack/internal/services/rds"
@@ -259,6 +260,14 @@ func buildServices(
 	// IMS makes images of ECS servers; ECS reads IMS images. The cycle
 	// is closed here, after both exist.
 	imsSvc.SetServers(ecsSvc)
+	// VPC shows the NICs of ECS servers as ports.
+	vpcSvc.SetPorts(ecsSvc)
+
+	// EVS shows the disks of ECS servers.
+	evsSvc, err := evs.New(evs.Deps{Logger: log, Volumes: ecsSvc})
+	if err != nil {
+		return nil, err
+	}
 
 	obsSvc, err := obs.New(obs.Deps{Store: st, IDs: gen, Logger: log, DataDir: objectDir})
 	if err != nil {
@@ -274,7 +283,7 @@ func buildServices(
 	if err := rdsSvc.Resume(ctx); err != nil {
 		return nil, err
 	}
-	return []server.Service{vpcSvc, imsSvc, ecsSvc, obsSvc, rdsSvc}, nil
+	return []server.Service{vpcSvc, imsSvc, ecsSvc, evsSvc, obsSvc, rdsSvc}, nil
 }
 
 // objectDataDir returns the directory for OBS object bodies and a

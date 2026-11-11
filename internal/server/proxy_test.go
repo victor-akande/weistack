@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"io"
@@ -63,7 +64,9 @@ func newProxyEnv(t *testing.T, passthrough string, withCA bool) *proxyEnv {
 
 // client uses the env as its proxy and trusts roots.
 func (p *proxyEnv) client(roots *tls.Config) *http.Client {
-	tr := &http.Transport{Proxy: http.ProxyURL(p.url), TLSClientConfig: roots, ForceAttemptHTTP2: false}
+	// A short handshake timeout tells a stalled handshake apart from a
+	// stalled request should a test ever hang.
+	tr := &http.Transport{Proxy: http.ProxyURL(p.url), TLSClientConfig: roots, TLSHandshakeTimeout: 5 * time.Second}
 	return &http.Client{Transport: tr, Timeout: 10 * time.Second}
 }
 
@@ -116,7 +119,10 @@ func TestProxyInterceptsHTTPS(t *testing.T) {
 func TestProxyCertificateMustBeTrusted(t *testing.T) {
 	t.Parallel()
 	p := newProxyEnv(t, PassthroughLoopback, true)
-	_, err := p.client(&tls.Config{MinVersion: tls.VersionTLS12}).Get("https://vpc.ap-southeast-1.myhuaweicloud.com/v1/p/things")
+	// An empty pool trusts nothing. The system pool would do as well, but
+	// loading it can take seconds on a busy machine.
+	untrusting := &tls.Config{RootCAs: x509.NewCertPool(), MinVersion: tls.VersionTLS12}
+	_, err := p.client(untrusting).Get("https://vpc.ap-southeast-1.myhuaweicloud.com/v1/p/things")
 	if err == nil || !strings.Contains(err.Error(), "certificate") {
 		t.Fatalf("a client that does not trust the CA connected: %v", err)
 	}

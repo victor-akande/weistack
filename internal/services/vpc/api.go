@@ -15,6 +15,11 @@ import (
 
 // Routes implements server.Service. Paths are those of the real API.
 func (s *Service) Routes(r chi.Router) {
+	r.Route("/v2.0/{project_id}", func(r chi.Router) {
+		r.Get("/vpcs/{id}/tags", s.v1("ShowVpcTags", s.handleShowVPCTags))
+		r.Get("/subnets/{id}/tags", s.v1("ShowSubnetTags", s.handleShowSubnetTags))
+		r.Get("/security-groups/{id}/tags", s.v1("ShowSecurityGroupTags", s.handleShowSecurityGroupTags))
+	})
 	r.Route("/v1/{project_id}", func(r chi.Router) {
 		r.Post("/vpcs", s.v1("CreateVpc", s.handleCreateVPC))
 		r.Get("/vpcs", s.v1("ListVpcs", s.handleListVPCs))
@@ -27,6 +32,10 @@ func (s *Service) Routes(r chi.Router) {
 		r.Get("/subnets/{subnet_id}", s.v1("ShowSubnet", s.handleShowSubnet))
 		r.Put("/vpcs/{vpc_id}/subnets/{subnet_id}", s.v1("UpdateSubnet", s.handleUpdateSubnet))
 		r.Delete("/vpcs/{vpc_id}/subnets/{subnet_id}", s.v1("DeleteSubnet", s.handleDeleteSubnet))
+
+		// Ports, the NICs of ECS servers, read only.
+		r.Get("/ports", s.v1("ListPorts", s.handleListPorts))
+		r.Get("/ports/{port_id}", s.v1("ShowPort", s.handleShowPort))
 
 		// The v1 security group API, a view of the v3 records.
 		r.Post("/security-groups", s.v1("CreateSecurityGroupV1", s.handleCreateGroupV1))
