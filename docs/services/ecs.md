@@ -19,7 +19,15 @@ Legend: **Yes** implemented, **Partial** implemented with the listed gaps,
 | ListServersDetails | `GET /v1/{project_id}/cloudservers/detail` | Yes | See "Listing servers" |
 | DeleteServers | `POST /v1/{project_id}/cloudservers/delete` | Yes | `delete_publicip`, `delete_volume` accepted; disks and EIPs are data only |
 | ShowJob | `GET /v1/{project_id}/jobs/{job_id}` | Yes | |
-| UpdateServer, start/stop/reboot, resize, tags | | No | Next |
+| UpdateServer | `PUT /v1/{project_id}/cloudservers/{server_id}` | Partial | `name`, `description`, `user_data`. `hostname` cannot be changed |
+| BatchStartServers | `POST /v1/{project_id}/cloudservers/action` (`os-start`) | Yes | |
+| BatchStopServers | `POST /v1/{project_id}/cloudservers/action` (`os-stop`) | Yes | `SOFT` and `HARD` behave alike |
+| BatchRebootServers | `POST /v1/{project_id}/cloudservers/action` (`reboot`) | Yes | |
+| ResizePostPaidServer | `POST /v1/{project_id}/cloudservers/{server_id}/resize` | Partial | `dry_run`: `501` |
+| ShowServerTags | `GET /v1/{project_id}/cloudservers/{server_id}/tags` | Yes | |
+| BatchCreateServerTags / BatchDeleteServerTags | `POST /v1/{project_id}/cloudservers/{server_id}/tags/action` | Yes | |
+| ListServerTags | `GET /v1/{project_id}/cloudservers/tags` | Yes | |
+| Batch resize, rename, redeploy, NICs, disks, key pairs, server groups, metadata, password, console | | No | |
 | Nova-native server API (`/v2.1/{project_id}/servers...`) | | No | |
 
 ## Creating servers
@@ -63,6 +71,37 @@ exist, or none is touched. Servers show `OS-EXT-STS:task_state: deleting`
 until the lifecycle delay passes; then they are gone and their addresses are
 free. A server can be deleted while still `BUILD`: the build is abandoned and
 its create job fails.
+
+## Server status
+
+| Operation | Needs | While running | Ends in |
+| --- | --- | --- | --- |
+| Create | | `BUILD`, task `spawning` | `ACTIVE` |
+| Stop | `ACTIVE` | `ACTIVE`, task `powering-off` | `SHUTOFF` |
+| Start | `SHUTOFF` | `SHUTOFF`, task `powering-on` | `ACTIVE` |
+| Reboot (`SOFT`) | `ACTIVE` | `REBOOT`, task `rebooting` | `ACTIVE` |
+| Reboot (`HARD`) | `ACTIVE` | `HARD_REBOOT`, task `rebooting` | `ACTIVE` |
+| Resize | `SHUTOFF` | `RESIZE`, task `resize_prep` | `SHUTOFF` |
+| Resize, `mode: withStopServer` | `ACTIVE` | `RESIZE`, task `resize_prep` | `ACTIVE` |
+| Delete | any | task `deleting` | gone |
+
+- Each operation returns a job and completes after the lifecycle delay.
+- An operation on a server in the wrong status, or with another operation
+  in flight, is refused with `Ecs.0100`. Delete is the exception: it
+  abandons whatever is in flight, and that operation's job fails.
+- Start, stop and reboot take up to 1000 servers. Every listed server must
+  exist and be in the right status, or none is touched.
+- Resize needs a different flavor of the same CPU architecture and room in
+  the vCPU quota. The flavor changes when the job finishes.
+- An injected fault leaves the server `ERROR` and the job `FAIL`.
+
+## Tags
+
+A server has at most 10 tags. A key has 1 to 36 characters and a value at
+most 43; neither may contain `= * < > \ , | /`. Creating a tag whose key
+exists replaces its value. Deleting matches by key and ignores keys the
+server does not have. `ListServerTags` returns every key in the project with
+the values it takes.
 
 ## Listing servers
 
@@ -133,7 +172,11 @@ ECS errors are `{"error": {"code": "...", "message": "..."}}`.
 | `Ecs.0043` | 400 | Unknown disk type |
 | `Ecs.0050` | 400 | More than 12 NICs |
 | `Ecs.0064` | 400 | Subnet belongs to another VPC |
+| `Ecs.0100` | 400 | Server status does not allow the operation, or another is in flight |
 | `Ecs.0114` | 404 | Server does not exist |
+| `Ecs.0118` | 400 | More than 1000 servers in a batch |
+| `Ecs.0804` | 400 | Resize to a flavor of another CPU architecture |
+| `Ecs.0810` | 400 | Resize to the current flavor |
 | `Ecs.0905` to `Ecs.0908` | 400 | Too many tags; invalid tag; forbidden character; duplicate key |
 | `Ecs.0913` | 400 | `count` above 500 |
 | `Ecs.0914`, `Ecs.0915` | 400 | Name too long; name empty or with invalid characters |
@@ -147,7 +190,8 @@ Every operation marked **Yes** or **Partial** is exercised through the
 official Go SDK (`huaweicloud-sdk-go-v3`, `ecs/v2` client) in `test/sdk`.
 `TestServerEndToEnd` runs the whole path across three services: network,
 server from a public image, private image of that server, second server from
-the image, and teardown in reverse order.
+the image, and teardown in reverse order. `TestServerOperations` stops,
+starts, reboots, resizes, renames and tags a server, waiting on each job.
 
 ## Fidelity notes
 
@@ -162,8 +206,14 @@ traffic). Known open points:
   style suffixes.
 - Whether deleting a list containing an unknown server fails the request
   (as here) or only that sub-job is unverified.
-- Job types for deletion (`deleteServer`, `deleteSingleServer`) are assumed
-  by analogy with creation.
+- Job type names other than `createServer`/`createSingleServer` (delete,
+  start, stop, reboot, resize) are assumed by analogy.
+- Real Huawei Cloud may accept a batch start/stop/reboot and fail only the
+  sub-jobs of servers in the wrong status; the emulator refuses the request.
+- The `task_state` values and the transient `RESIZE` status are those of
+  OpenStack Nova; a real resize also passes through `VERIFY_RESIZE`.
+- The update response follows the SDK model (`image` as an ID string); the
+  API reference has no example to compare with.
 - Real flavors carry many more `os_extra_specs` keys, and which zones sell a
   flavor varies; the emulator returns a common subset and sells everything
   everywhere.

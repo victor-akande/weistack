@@ -775,6 +775,10 @@ func vmState(status string) (state string, power int) {
 		return "stopped", 4
 	case StatusError:
 		return "error", 0
+	case StatusReboot, StatusHardReboot:
+		return "active", 1
+	case StatusResize:
+		return "resized", 4
 	}
-	return strings.ToLower(status), 1
+	return strings.ToLower(status), 0
 }
