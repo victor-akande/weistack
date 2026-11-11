@@ -24,6 +24,26 @@ var (
 	errInvalidURI       = apierr.New(http.StatusBadRequest, "InvalidURI", "Couldn't parse the specified URI.")
 )
 
+// Objects.
+var (
+	errNoSuchKey          = apierr.New(http.StatusNotFound, "NoSuchKey", "The specified key does not exist.")
+	errBucketNotEmpty     = apierr.New(http.StatusConflict, "BucketNotEmpty", "The bucket you tried to delete is not empty")
+	errKeyTooLong         = apierr.New(http.StatusBadRequest, "KeyTooLongError", "Your key is too long")
+	errInvalidDigest      = apierr.New(http.StatusBadRequest, "InvalidDigest", "The Content-MD5 you specified is not valid.")
+	errBadDigest          = apierr.New(http.StatusBadRequest, "BadDigest", "The Content-MD5 you specified did not match what we received.")
+	errIncompleteBody     = apierr.New(http.StatusBadRequest, "IncompleteBody", "You did not provide the number of bytes specified by the Content-Length HTTP header")
+	errInvalidRange       = apierr.New(http.StatusRequestedRangeNotSatisfiable, "InvalidRange", "The requested range is not satisfiable")
+	errPreconditionFailed = apierr.New(http.StatusPreconditionFailed, "PreconditionFailed", "At least one of the pre-conditions you specified did not hold")
+)
+
+func errInvalidArgument(message string) *apierr.Error {
+	return apierr.New(http.StatusBadRequest, "InvalidArgument", "%s", message)
+}
+
+func errInvalidRequest(message string) *apierr.Error {
+	return apierr.New(http.StatusBadRequest, "InvalidRequest", "%s", message)
+}
+
 func errInvalidLocation(got, want string) *apierr.Error {
 	return apierr.New(http.StatusBadRequest, "InvalidLocationConstraint",
 		"The specified location-constraint %q is not valid for this endpoint; use %q.", got, want)
