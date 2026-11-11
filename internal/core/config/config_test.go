@@ -23,18 +23,20 @@ func TestLoadDefaults(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	want := Config{
-		Host:            "127.0.0.1",
-		Port:            8780,
-		Region:          "ap-southeast-1",
-		DataDir:         "/data",
-		ECSMaxServers:   20,
-		ECSMaxVCPUs:     80,
-		RDSMaxInstances: 20,
-		LifecycleDelay:  2 * time.Second,
-		LogLevel:        slog.LevelInfo,
-		LogFormat:       "json",
-		MaxBodyBytes:    10 << 20,
-		ShutdownTimeout: 10 * time.Second,
+		Host:             "127.0.0.1",
+		Port:             8780,
+		Region:           "ap-southeast-1",
+		DataDir:          "/data",
+		ProxyDomains:     []string{"myhuaweicloud.com"},
+		ProxyPassthrough: "loopback",
+		ECSMaxServers:    20,
+		ECSMaxVCPUs:      80,
+		RDSMaxInstances:  20,
+		LifecycleDelay:   2 * time.Second,
+		LogLevel:         slog.LevelInfo,
+		LogFormat:        "json",
+		MaxBodyBytes:     10 << 20,
+		ShutdownTimeout:  10 * time.Second,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("defaults mismatch\n got: %+v\nwant: %+v", got, want)
@@ -155,6 +157,8 @@ func TestLoadErrors(t *testing.T) {
 		{"service port clash", []string{"-service-ports", "obs=9000,ecs=9000"}, nil, "already used"},
 		{"service port on the main port", []string{"-service-ports", "obs=8780"}, nil, "already used"},
 		{"service port bad name", []string{"-service-ports", "O B S=9000"}, nil, "not valid"},
+		{"bad passthrough", []string{"-proxy-passthrough", "some"}, nil, "proxy passthrough"},
+		{"bad proxy domain", []string{"-proxy-domains", "not a domain"}, nil, "not a domain name"},
 		{"positional argument", []string{"serve"}, nil, "unexpected argument"},
 		{"unknown flag", []string{"-nope"}, nil, "not defined"},
 	}
@@ -188,7 +192,7 @@ func TestLoadHelp(t *testing.T) {
 func TestValidateReportsEveryProblem(t *testing.T) {
 	t.Parallel()
 
-	err := Config{Port: -1, Region: "x", LogFormat: "yaml", ECSMaxServers: 1, ECSMaxVCPUs: 1, RDSMaxInstances: 1}.Validate()
+	err := Config{Port: -1, Region: "x", LogFormat: "yaml", ECSMaxServers: 1, ECSMaxVCPUs: 1, RDSMaxInstances: 1, ProxyPassthrough: "none"}.Validate()
 	if err == nil {
 		t.Fatal("Validate succeeded, want error")
 	}

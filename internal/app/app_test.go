@@ -48,7 +48,9 @@ func startInstance(t *testing.T, vars map[string]string) *instance {
 	inst := &instance{stdout: &safeBuffer{}, cancel: cancel, done: make(chan error, 1)}
 	ready := make(chan net.Addr, 1)
 
-	env := map[string]string{"WEISTACK_PORT": "0", "WEISTACK_LIFECYCLE_DELAY": "0"}
+	// Each instance gets its own CA directory: tests must never write
+	// to the user's real configuration directory.
+	env := map[string]string{"WEISTACK_PORT": "0", "WEISTACK_LIFECYCLE_DELAY": "0", "WEISTACK_TLS_DIR": t.TempDir()}
 	for k, v := range vars {
 		env[k] = v
 	}
@@ -243,12 +245,18 @@ func TestStartupErrors(t *testing.T) {
 		{"unknown service", []string{"-port", "0", "-services", "vpc,nope"}, nil, `unknown service "nope"`},
 		{"unusable data dir", []string{"-port", "0", "-persist", "-data-dir", notADir}, nil, "store"},
 	}
+	tlsDir := t.TempDir() // never the user's real CA directory
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			err := Run(context.Background(), Env{
-				Args:   tt.args,
-				Getenv: func(k string) string { return tt.env[k] },
+				Args: tt.args,
+				Getenv: func(k string) string {
+					if k == "WEISTACK_TLS_DIR" {
+						return tlsDir
+					}
+					return tt.env[k]
+				},
 				Stdout: io.Discard, Stderr: io.Discard,
 			})
 			if err == nil || !strings.Contains(err.Error(), tt.wantSub) {
@@ -458,13 +466,50 @@ func TestServicePortServesOneService(t *testing.T) {
 
 func TestServicePortForAnUnknownService(t *testing.T) {
 	t.Parallel()
+	tlsDir := t.TempDir()
 	err := Run(context.Background(), Env{
 		Getenv: func(k string) string {
-			return map[string]string{"WEISTACK_PORT": "0", "WEISTACK_SERVICE_PORTS": "dns=9999"}[k]
+			return map[string]string{"WEISTACK_PORT": "0", "WEISTACK_SERVICE_PORTS": "dns=9999", "WEISTACK_TLS_DIR": tlsDir}[k]
 		},
 		Stdout: io.Discard, Stderr: io.Discard,
 	})
 	if err == nil || !strings.Contains(err.Error(), `"dns"`) {
 		t.Fatalf("err = %v, want it to name the unknown service", err)
+	}
+}
+
+func TestCACommand(t *testing.T) {
+	t.Parallel()
+	dir := filepath.Join(t.TempDir(), "tls")
+	env := map[string]string{"WEISTACK_TLS_DIR": dir}
+	run := func(args ...string) (string, string, error) {
+		var out, errOut bytes.Buffer
+		err := Run(context.Background(), Env{
+			Args: append([]string{"ca"}, args...), Getenv: func(k string) string { return env[k] },
+			Stdout: &out, Stderr: &errOut,
+		})
+		return out.String(), errOut.String(), err
+	}
+
+	first, note, err := run()
+	if err != nil || !strings.HasPrefix(first, "-----BEGIN CERTIFICATE-----") {
+		t.Fatalf("ca = %q, %v", first, err)
+	}
+	if !strings.Contains(note, filepath.Join(dir, "ca.pem")) {
+		t.Fatalf("ca did not say where the certificate lives: %q", note)
+	}
+	info, err := os.Stat(filepath.Join(dir, "ca-key.pem"))
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("CA key file: %v, %v", info, err)
+	}
+	// The CA is stable: clients trust it once.
+	if again, _, err := run(); err != nil || again != first {
+		t.Fatalf("second ca printed a different certificate (%v)", err)
+	}
+	if _, _, err := run("-h"); err != nil {
+		t.Fatalf("ca -h: %v", err)
+	}
+	if _, _, err := run("-no-such-flag"); err == nil {
+		t.Fatal("ca accepted an invalid flag")
 	}
 }

@@ -65,6 +65,14 @@ type Config struct {
 	LogFormat string
 	// Services restricts which services are enabled. Empty means all.
 	Services []string
+	// ProxyDomains are the domains WeiStack answers for when clients use
+	// it as an HTTP(S) proxy.
+	ProxyDomains []string
+	// ProxyPassthrough says who may tunnel through WeiStack to other
+	// hosts: loopback (clients on this machine), all, or none.
+	ProxyPassthrough string
+	// TLSDir holds the local CA. Empty means the default location.
+	TLSDir string
 	// ServicePorts gives services a listener of their own, on which every
 	// request goes to that service: for clients that cannot address a
 	// service by host name or path prefix. Keyed by service name.
@@ -81,6 +89,7 @@ var (
 	regionRE    = regexp.MustCompile(`^[a-z]{2,}(-[a-z0-9]+)+$`)
 	projectIDRE = regexp.MustCompile(`^[0-9a-f]{32}$`)
 	serviceRE   = regexp.MustCompile(`^[a-z][a-z0-9]*$`)
+	domainRE    = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
 )
 
 // Load resolves the configuration from args (without the program name) and
@@ -94,6 +103,7 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 		logLevel     string
 		services     string
 		servicePorts string
+		proxyDomains string
 	)
 
 	fs := flag.NewFlagSet("weistack", flag.ContinueOnError)
@@ -111,6 +121,9 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 	fs.DurationVar(&cfg.LifecycleDelay, "lifecycle-delay", env.duration("LIFECYCLE_DELAY", DefaultLifecycleDelay), "duration of asynchronous state transitions (0 is instant)")
 	fs.StringVar(&logLevel, "log-level", env.str("LOG_LEVEL", "info"), "log level: debug, info, warn or error")
 	fs.StringVar(&cfg.LogFormat, "log-format", env.str("LOG_FORMAT", DefaultLogFormat), "log format: json or text")
+	fs.StringVar(&proxyDomains, "proxy-domains", env.str("PROXY_DOMAINS", "myhuaweicloud.com"), "domains answered when WeiStack is used as an HTTPS proxy")
+	fs.StringVar(&cfg.ProxyPassthrough, "proxy-passthrough", env.str("PROXY_PASSTHROUGH", "loopback"), "who may tunnel to other hosts through the proxy: loopback, all or none")
+	fs.StringVar(&cfg.TLSDir, "tls-dir", env.str("TLS_DIR", ""), "directory of the local CA (default: <data-dir>/tls with -persist, else the user config directory)")
 	fs.StringVar(&servicePorts, "service-ports", env.str("SERVICE_PORTS", ""), "extra per-service listeners, for example obs=9000,ecs=9001")
 	fs.StringVar(&services, "services", env.str("SERVICES", ""), "comma-separated services to enable (default all)")
 	fs.BoolVar(&cfg.Metrics, "metrics", env.bool("METRICS", false), "serve Prometheus metrics at /_weistack/metrics")
@@ -133,6 +146,7 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 	}
 	cfg.LogFormat = strings.ToLower(cfg.LogFormat)
 	cfg.Services = splitList(services)
+	cfg.ProxyDomains = splitList(proxyDomains)
 	if cfg.ServicePorts, err = parseServicePorts(servicePorts); err != nil {
 		return Config{}, err
 	}
@@ -157,6 +171,16 @@ func (c Config) Validate() error {
 	}
 	if c.DataDir == "" {
 		errs = append(errs, errors.New("data directory must not be empty"))
+	}
+	switch c.ProxyPassthrough {
+	case "loopback", "all", "none":
+	default:
+		errs = append(errs, fmt.Errorf("proxy passthrough %q must be loopback, all or none", c.ProxyPassthrough))
+	}
+	for _, d := range c.ProxyDomains {
+		if !domainRE.MatchString(d) {
+			errs = append(errs, fmt.Errorf("proxy domain %q is not a domain name", d))
+		}
 	}
 	if c.RDSMaxInstances < 1 {
 		errs = append(errs, fmt.Errorf("RDS instance quota %d must be positive", c.RDSMaxInstances))

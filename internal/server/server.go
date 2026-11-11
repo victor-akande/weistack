@@ -24,6 +24,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/reqctx"
 	"github.com/victor-akande/weistack/internal/core/store"
+	"github.com/victor-akande/weistack/internal/tlsca"
 )
 
 // Service is one emulated Huawei Cloud service.
@@ -65,6 +66,9 @@ type Options struct {
 	// Services are all compiled-in services; Config.Services selects
 	// which of them are enabled.
 	Services []Service
+	// Proxy configures the main listener as an HTTP(S) proxy for the
+	// emulated domains. The zero value disables HTTPS interception.
+	Proxy ProxyOptions
 }
 
 // Server routes requests to services and serves the admin API.
@@ -82,6 +86,8 @@ type Server struct {
 	metrics  *metrics
 	admin    http.Handler
 	handler  http.Handler
+	proxy    *proxy
+	ca       *tlsca.Authority
 }
 
 type mounted struct {
@@ -135,8 +141,10 @@ func New(opts Options) (*Server, error) {
 		}
 	}
 
+	s.ca = opts.Proxy.CA
 	s.admin = s.newAdmin()
 	s.handler = s.wrap(http.HandlerFunc(s.route))
+	s.proxy = newProxy(opts.Proxy, s.handler, s.log)
 	return s, nil
 }
 
@@ -157,8 +165,13 @@ func (s *Server) mount(svc Service) *mounted {
 	return m
 }
 
-// Handler returns the root HTTP handler.
-func (s *Server) Handler() http.Handler { return s.handler }
+// Handler returns the root HTTP handler, which also answers proxy
+// requests.
+func (s *Server) Handler() http.Handler { return s.proxy }
+
+// Shutdown drains connections the server took over as a proxy. The
+// caller shuts down its own http.Servers.
+func (s *Server) Shutdown(ctx context.Context) error { return s.proxy.shutdown(ctx) }
 
 // ServiceHandler returns a handler that sends every request to one
 // service, for a listener dedicated to it. The admin API stays

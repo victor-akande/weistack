@@ -29,6 +29,7 @@ import (
 	"github.com/victor-akande/weistack/internal/services/obs"
 	"github.com/victor-akande/weistack/internal/services/rds"
 	"github.com/victor-akande/weistack/internal/services/vpc"
+	"github.com/victor-akande/weistack/internal/tlsca"
 	"github.com/victor-akande/weistack/internal/version"
 )
 
@@ -60,6 +61,8 @@ func Run(ctx context.Context, env Env) error {
 			return nil
 		case "healthcheck":
 			return healthcheck(ctx, env)
+		case "ca":
+			return printCA(env)
 		}
 	}
 
@@ -117,6 +120,11 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		return err
 	}
 
+	ca, err := loadCA(cfg, log)
+	if err != nil {
+		return err
+	}
+
 	srv, err := server.New(server.Options{
 		Config:    cfg,
 		ProjectID: projectID,
@@ -125,6 +133,9 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		Engine:    engine,
 		IDs:       gen,
 		Services:  services,
+		Proxy: server.ProxyOptions{
+			CA: ca, Domains: cfg.ProxyDomains, Passthrough: cfg.ProxyPassthrough,
+		},
 	})
 	if err != nil {
 		return err
@@ -193,6 +204,9 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 	log.Info("shutting down", "timeout", cfg.ShutdownTimeout.String())
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.ShutdownTimeout)
 	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Warn("proxy tunnels did not drain", "error", err)
+	}
 	for _, hs := range servers {
 		if err := hs.Shutdown(shutdownCtx); err != nil {
 			for _, other := range servers {
@@ -276,6 +290,61 @@ func objectDataDir(cfg config.Config) (dir string, cleanup func(), err error) {
 		return "", nil, fmt.Errorf("creating a temporary directory for object data: %w", err)
 	}
 	return dir, func() { _ = os.RemoveAll(dir) }, nil
+}
+
+// tlsDir returns where the local CA lives: the configured directory,
+// the data directory with persistence (so a container keeps its CA in
+// its volume), or the user's config directory.
+func tlsDir(cfg config.Config) string {
+	switch {
+	case cfg.TLSDir != "":
+		return cfg.TLSDir
+	case cfg.Persist:
+		return filepath.Join(cfg.DataDir, "tls")
+	}
+	if dir, err := os.UserConfigDir(); err == nil {
+		return filepath.Join(dir, "weistack", "tls")
+	}
+	return ""
+}
+
+// loadCA loads the local CA. When the default location is unusable the
+// CA lives in memory instead: interception still works, but clients
+// that trust the CA must fetch it again after every start.
+func loadCA(cfg config.Config, log *slog.Logger) (*tlsca.Authority, error) {
+	dir := tlsDir(cfg)
+	ca, err := tlsca.Load(dir)
+	if err == nil {
+		return ca, nil
+	}
+	if cfg.TLSDir != "" {
+		return nil, err // an explicit choice must work
+	}
+	log.Warn("using an in-memory CA", "error", err)
+	return tlsca.Load("")
+}
+
+// printCA writes the local CA certificate to stdout, for clients that
+// verify TLS.
+func printCA(env Env) error {
+	cfg, err := config.Load(env.Args[1:], env.Getenv, env.Stderr)
+	if errors.Is(err, flag.ErrHelp) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	dir := tlsDir(cfg)
+	if dir == "" {
+		return errors.New("no directory for the CA: set -tls-dir")
+	}
+	ca, err := tlsca.Load(dir)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(env.Stderr, "WeiStack CA certificate, from %s\n", filepath.Join(dir, tlsca.CertFile))
+	_, err = env.Stdout.Write(ca.CertPEM())
+	return err
 }
 
 func newHTTPServer(h http.Handler, log *slog.Logger) *http.Server {

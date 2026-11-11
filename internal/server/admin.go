@@ -29,6 +29,9 @@ func (s *Server) newAdmin() http.Handler {
 		r.Get("/services", s.adminOp("ListServices", s.handleServices))
 		r.Get("/state", s.adminOp("DumpState", s.handleState))
 		r.Post("/reset", s.adminOp("Reset", s.handleReset))
+		if s.ca != nil {
+			r.Get("/ca", s.adminOp("GetCACertificate", s.handleCA))
+		}
 		if s.cfg.Metrics {
 			r.Get("/metrics", s.adminOp("Metrics", s.handleMetrics))
 		}
@@ -142,6 +145,15 @@ func (s *Server) handleReset(w http.ResponseWriter, r *http.Request) error {
 	}
 	s.log.InfoContext(r.Context(), "state reset", "cancelled_tasks", cancelled)
 	return httpx.WriteJSON(w, http.StatusOK, resetResponse{Status: "reset", CancelledTasks: cancelled})
+}
+
+// handleCA serves the proxy's CA certificate, so clients of a container
+// can fetch it without access to its file system.
+func (s *Server) handleCA(w http.ResponseWriter, _ *http.Request) error {
+	w.Header().Set("Content-Type", "application/x-pem-file")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(s.ca.CertPEM())
+	return nil
 }
 
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) error {
