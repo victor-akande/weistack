@@ -49,6 +49,9 @@ type Service struct {
 	// maxObjectSize bounds a single upload, object or part.
 	maxObjectSize int64
 
+	// configs answers reads of bucket configuration; see config.go.
+	configs map[string]handlerFunc
+
 	// mu serialises bucket creation and deletion, which check then write.
 	mu sync.Mutex
 	// uploadMu serialises changes to multipart upload records. It is
@@ -73,10 +76,12 @@ func New(d Deps) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{
+	s := &Service{
 		store: d.Store, ids: d.IDs, log: d.Logger, now: d.Now, blobs: blobs,
 		maxObjectSize: DefaultMaxObjectSize,
-	}, nil
+	}
+	s.configs = s.configReads()
+	return s, nil
 }
 
 // Name implements server.Service.

@@ -57,6 +57,21 @@ Behaviour:
   changed to a block that no longer covers them. A subnet cannot be deleted
   while any of its addresses is allocated.
 
+## Ports (v1)
+
+| Operation | Method and path | Status | Notes |
+| --- | --- | --- | --- |
+| ShowPort | `GET /v1/{project_id}/ports/{port_id}` | Yes | |
+| ListPorts | `GET /v1/{project_id}/ports` | Yes | Filters `id`, `device_id`, `device_owner`, `network_id`, `mac_address`, `status`, `name`; `marker`/`limit` |
+| Creating, updating and deleting ports | | No | |
+
+Ports exist only as the NICs of [ECS](ecs.md) servers, which create and
+delete them; the VPC API shows them read-only. A port is `ACTIVE`, has the
+server as `device_id` and `compute:{az}` as `device_owner`, carries the
+server's security groups and has no allowed address pairs, so clients see
+source/destination checking enabled. `network_id` is the subnet's ID and
+`fixed_ips[].subnet_id` its `neutron_subnet_id`, as in the real API.
+
 ## Security groups (v3)
 
 | Operation | Method and path | Status | Notes |
@@ -65,10 +80,11 @@ Behaviour:
 | ShowSecurityGroup | `GET /v3/{project_id}/vpc/security-groups/{id}` | Yes | Includes the group's rules |
 | ListSecurityGroups | `GET /v3/{project_id}/vpc/security-groups` | Yes | Filters `id`, `name`, `description` (repeatable), `enterprise_project_id`; `marker`/`limit`; `page_info` |
 | UpdateSecurityGroup | `PUT /v3/{project_id}/vpc/security-groups/{id}` | Yes | `dry_run` supported |
-| DeleteSecurityGroup | `DELETE /v3/{project_id}/vpc/security-groups/{id}` | Partial | No "in use by a port" check until ECS exists |
+| DeleteSecurityGroup | `DELETE /v3/{project_id}/vpc/security-groups/{id}` | Partial | No "in use by a port" check: a group used by a server can be deleted |
 | Security groups v1 | `/v1/{project_id}/security-groups[/{id}]` | Yes | Create, show, list, delete. A view of the same groups as v3; `vpc_id` is echoed on create only |
 | Security group rules v1 | `/v1/{project_id}/security-group-rules[/{id}]` | Yes | Create, show, list, delete. `port_range_min`/`max` map to v3 `multiport`; a v3 port list shows an open range in v1 |
-| Neutron v2.0 API and tags | `/v2.0/...` | No | |
+| ShowVpcTags, ShowSubnetTags, ShowSecurityGroupTags | `GET /v2.0/{project_id}/{vpcs,subnets,security-groups}/{id}/tags` | Yes | VPCs and subnets keep no tags, so theirs are empty; a group reports the tags it was created with |
+| Changing tags; the rest of the Neutron v2.0 API | `/v2.0/...` | No | |
 
 ## Security group rules (v3)
 
@@ -109,7 +125,7 @@ visible, and can be deleted, through the other.
 
 ## Error codes
 
-Errors of the v1 API (VPCs, subnets, v1 security groups) are
+Errors of the v1 API (VPCs, subnets, ports, v1 security groups) are
 `{"code": "...", "message": "..."}`.
 Errors of the v3 API (security groups) are
 `{"request_id": "...", "error_code": "...", "error_msg": "..."}`.
@@ -131,6 +147,8 @@ Errors of the v3 API (security groups) are
 | `VPC.0202` | 404 | Subnet does not exist |
 | `VPC.0205` | 500 | Subnet is still being created |
 | `VPC.0208` | 500 | Deleting a subnet with private IPs in use |
+| `VPC.2500` | 400 | Invalid port `limit` or `marker` |
+| `VPC.2502` | 404 | Port does not exist |
 | `VPC.0601` | 400 | Invalid v1 security group or rule request |
 | `VPC.0602` | 409 | v1: duplicate rule; deleting the default security group |
 | `VPC.0603` | 404 | v1: security group or rule does not exist |

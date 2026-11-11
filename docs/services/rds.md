@@ -17,6 +17,7 @@ Legend: **Yes** implemented, **Partial** implemented with the listed gaps,
 | ListInstances | `GET /v3/{project_id}/instances` | Yes | The way to read one instance, as in the real API |
 | DeleteInstance | `DELETE /v3/{project_id}/instances/{instance_id}` | Yes | |
 | ListJobInfo | `GET /v3/{project_id}/jobs?id=` | Yes | |
+| ShowStorageUsedSpace | `GET /v3/{project_id}/instances/{instance_id}/storage-used-space` | Yes | Always `"0"`: no database stores data |
 | StartInstanceRestartAction | `POST .../instances/{id}/action` `{"restart": {}}` | Yes | Options (`delay`, `restart_server`) ignored |
 | StartResizeFlavorAction | `POST .../instances/{id}/action` `{"resize_flavor": ...}` | Yes | `is_delay` ignored |
 | StartInstanceEnlargeVolumeAction | `POST .../instances/{id}/action` `{"enlarge_volume": ...}` | Yes | |

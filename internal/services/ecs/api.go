@@ -30,6 +30,8 @@ func (s *Service) Routes(r chi.Router) {
 	r.Get("/v1/{project_id}/cloudservers/{server_id}", s.handle("ShowServer", s.handleShowServer))
 	r.Put("/v1/{project_id}/cloudservers/{server_id}", s.handle("UpdateServer", s.handleUpdateServer))
 	r.Post("/v1/{project_id}/cloudservers/{server_id}/resize", s.handle("ResizePostPaidServer", s.handleResize))
+	r.Get("/v1/{project_id}/cloudservers/{server_id}/block_device", s.handle("ListServerBlockDevices", s.handleListBlockDevices))
+	r.Get("/v1/{project_id}/cloudservers/{server_id}/block_device/{volume_id}", s.handle("ShowServerBlockDevice", s.handleShowBlockDevice))
 	r.Get("/v1/{project_id}/cloudservers/{server_id}/tags", s.handle("ShowServerTags", s.handleShowTags))
 	r.Post("/v1/{project_id}/cloudservers/{server_id}/tags/action", s.handle("BatchServerTags", s.handleTagAction))
 	r.Get("/v1/{project_id}/jobs/{job_id}", s.handle("ShowJob", s.handleShowJob))

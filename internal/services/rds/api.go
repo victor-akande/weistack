@@ -28,6 +28,7 @@ func (s *Service) Routes(r chi.Router) {
 		r.Get("/instances", s.handle("ListInstances", s.handleList))
 		r.Delete("/instances/{instance_id}", s.handle("DeleteInstance", s.handleDelete))
 		r.Post("/instances/{instance_id}/action", s.handle("InstanceAction", s.handleAction))
+		r.Get("/instances/{instance_id}/storage-used-space", s.handle("ShowStorageUsedSpace", s.handleStorageUsedSpace))
 		r.Post("/backups", s.handle("CreateManualBackup", s.handleCreateBackup))
 		r.Get("/backups", s.handle("ListBackups", s.handleListBackups))
 		r.Delete("/backups/{backup_id}", s.handle("DeleteManualBackup", s.handleDeleteBackup))

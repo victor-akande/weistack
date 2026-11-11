@@ -240,14 +240,18 @@ func TestUnsupportedRequests(t *testing.T) {
 	wantError(t, e.as(t, alice, http.MethodPatch, "/photos"), 405, "MethodNotAllowed")
 
 	// Features that are not emulated say so, with the genuine S3 code.
-	for _, sub := range []string{"acl", "versioning", "lifecycle", "policy", "tagging", "cors", "storageinfo", "quota"} {
+	for _, sub := range []string{"replication", "inventory", "object-lock", "directcoldaccess"} {
 		got := e.as(t, alice, http.MethodGet, "/photos?"+sub)
 		wantError(t, got, 501, "NotImplemented")
 		if !strings.Contains(got.Body, "weistack does not implement obs bucket "+sub) {
 			t.Errorf("?%s: message does not name the gap: %s", sub, got.Body)
 		}
 	}
-	wantError(t, e.as(t, alice, http.MethodPut, "/photos?versioning"), 501, "NotImplemented")
+	// Configuration can be read but not written.
+	for _, method := range []string{http.MethodPut, http.MethodDelete} {
+		wantError(t, e.as(t, alice, method, "/photos?versioning"), 501, "NotImplemented")
+		wantError(t, e.as(t, alice, method, "/photos?cors"), 501, "NotImplemented")
+	}
 }
 
 func TestConcurrentCreatesOfOneBucket(t *testing.T) {

@@ -27,7 +27,9 @@ Legend: **Yes** implemented, **Partial** implemented with the listed gaps,
 | ShowServerTags | `GET /v1/{project_id}/cloudservers/{server_id}/tags` | Yes | |
 | BatchCreateServerTags / BatchDeleteServerTags | `POST /v1/{project_id}/cloudservers/{server_id}/tags/action` | Yes | |
 | ListServerTags | `GET /v1/{project_id}/cloudservers/tags` | Yes | |
-| Batch resize, rename, redeploy, NICs, disks, key pairs, server groups, metadata, password, console | | No | |
+| ListServerBlockDevices | `GET /v1/{project_id}/cloudservers/{server_id}/block_device` | Yes | The server's disks; see "Disks" |
+| ShowServerBlockDevice | `GET /v1/{project_id}/cloudservers/{server_id}/block_device/{volume_id}` | Yes | |
+| Batch resize, rename, redeploy, NICs, attaching and detaching disks, key pairs, server groups, metadata, password, console | | No | |
 | Nova-native server API (`/v2.1/{project_id}/servers...`) | | No | |
 
 ## Creating servers
@@ -63,6 +65,15 @@ rejected request creates no server and consumes no address.
 The response carries a `job_id` and the `serverIds`. Each server is `BUILD`
 and becomes `ACTIVE` after the lifecycle delay; the job (`createServer`, with
 one `createSingleServer` sub-job per server) then reports `SUCCESS`.
+
+## Disks
+
+A server's system and data disks are part of the server: they are created
+with it and deleted with it. ECS shows them as block devices: the system
+disk has `bootIndex` 0 and device `/dev/vda`, data disks have -1 and
+`/dev/vdb` onwards. [EVS](evs.md) shows the same disks as volumes, named
+`{server name}-volume-0000` onwards. A volume that is not attached to the
+server is `400 Ecs.0111`.
 
 ## Deleting servers
 
