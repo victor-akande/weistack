@@ -36,6 +36,10 @@ test-sdk: ## Run the suite driven by Huawei's official Go SDK
 test-terraform: ## Apply, re-plan and destroy test/terraform through the proxy
 	test/terraform/run.sh
 
+.PHONY: perf
+perf: ## Check cold start, idle memory and latency budgets against a real binary
+	go test -tags perf -count=1 -v -timeout 15m ./test/perf/
+
 .PHONY: cover
 cover: test ## Print the coverage summary
 	go tool cover -func=coverage.out | tail -n 1
