@@ -32,6 +32,10 @@ test: ## Run all tests with the race detector and coverage
 test-sdk: ## Run the suite driven by Huawei's official Go SDK
 	cd test/sdk && go vet ./... && go test -count=1 -timeout 5m ./...
 
+.PHONY: test-terraform
+test-terraform: ## Apply, re-plan and destroy test/terraform through the proxy
+	test/terraform/run.sh
+
 .PHONY: cover
 cover: test ## Print the coverage summary
 	go tool cover -func=coverage.out | tail -n 1
