@@ -12,9 +12,10 @@ sponsored by Huawei.
 ## Status
 
 Early development. The **core framework** (M1) and **VPC** (M2) are in
-place, and so are **IMS** (M3) and **ECS** (M4). Per-service coverage
-tables: [VPC](docs/services/vpc.md), [IMS](docs/services/ims.md),
-[ECS](docs/services/ecs.md).
+place, and so are **IMS** (M3) and **ECS** (M4); **OBS** (M5) is in
+progress. Per-service coverage tables: [VPC](docs/services/vpc.md),
+[IMS](docs/services/ims.md), [ECS](docs/services/ecs.md),
+[OBS](docs/services/obs.md).
 
 | Milestone | Scope | State |
 | --- | --- | --- |
@@ -22,7 +23,7 @@ tables: [VPC](docs/services/vpc.md), [IMS](docs/services/ims.md),
 | M2 | VPC: VPCs, subnets, security groups and rules | Done |
 | M3 | IMS: images | Done |
 | M4 | ECS: servers, flavors, jobs | Done |
-| M5 | OBS: buckets, objects, multipart | Planned |
+| M5 | OBS: buckets, objects, multipart | In progress |
 | M6 | RDS: MySQL/PostgreSQL instances | Planned |
 
 ## Quick start
@@ -89,7 +90,7 @@ defaults. Run `weistack -h` for the full list.
 | `-region` | `WEISTACK_REGION` | `ap-southeast-1` | Region when a request names none |
 | `-project-id` | `WEISTACK_PROJECT_ID` | generated | Default project, 32 hex characters |
 | `-persist` | `WEISTACK_PERSIST` | off | Keep state on disk across restarts |
-| `-data-dir` | `WEISTACK_DATA_DIR` | `/data` | Where persistent state lives |
+| `-data-dir` | `WEISTACK_DATA_DIR` | `/data` | Where persistent state and object data live |
 | `-seed-dir` | `WEISTACK_SEED_DIR` | none | Directory of YAML files extending built-in seed data ([images](docs/services/ims.md#adding-your-own), [flavors](docs/services/ecs.md#adding-your-own)) |
 | `-ecs-max-servers` | `WEISTACK_ECS_MAX_SERVERS` | `20` | ECS server quota per project |
 | `-ecs-max-vcpus` | `WEISTACK_ECS_MAX_VCPUS` | `80` | ECS vCPU quota per project |

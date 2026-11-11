@@ -1,0 +1,227 @@
+package obs
+
+import (
+	"encoding/xml"
+	"errors"
+	"io"
+	"net/http"
+	"strings"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/victor-akande/weistack/internal/core/apierr"
+	"github.com/victor-akande/weistack/internal/core/reqctx"
+)
+
+// Routes implements server.Service. OBS does not have fixed paths: the
+// bucket and key are in the host name or the path, and the operation is
+// chosen by method and query string, so one handler takes everything.
+func (s *Service) Routes(r chi.Router) {
+	r.Handle("/*", http.HandlerFunc(s.serve))
+}
+
+// call is one request being served.
+type call struct {
+	w       http.ResponseWriter
+	r       *http.Request
+	dialect dialect
+	owner   string
+	region  string
+	target  target
+}
+
+// maxConfigBody bounds the small XML bodies of bucket operations.
+const maxConfigBody = 1 << 20
+
+func (s *Service) serve(w http.ResponseWriter, r *http.Request) {
+	info := reqctx.From(r.Context())
+	c := &call{w: w, r: r, dialect: dialectOf(r), owner: caller(r), region: info.Region}
+
+	// Every response, success or error, identifies the request.
+	h := w.Header()
+	h.Set("Server", "OBS")
+	h.Set(c.dialect.prefix()+"request-id", info.RequestID)
+	h.Set(c.dialect.prefix()+"id-2", info.RequestID)
+
+	var err error
+	if c.target, err = resolve(r); err != nil {
+		s.fail(c, "Resolve", errInvalidURI)
+		return
+	}
+	op, fn := s.route(c)
+	info.SetOperation(op)
+	if err := fn(c); err != nil {
+		s.fail(c, op, err)
+	}
+}
+
+// fail renders an error. A HEAD response has no body, so the code and
+// message are also sent as headers, where the SDKs look for them.
+func (s *Service) fail(c *call, op string, err error) {
+	var e *apierr.Error
+	if !errors.As(err, &e) {
+		s.log.ErrorContext(c.r.Context(), "obs operation failed", "operation", op, "error", err)
+		// Internal failures use the S3 code clients expect.
+		e = apierr.New(http.StatusInternalServerError, "InternalError",
+			"We encountered an internal error. Please try again.")
+	}
+	c.w.Header().Set(c.dialect.prefix()+"error-code", e.Code)
+	c.w.Header().Set(c.dialect.prefix()+"error-message", e.Message)
+	apierr.Write(c.w, c.r, apierr.StyleXML, e)
+}
+
+// subresource returns the first of names present in the query string.
+func (c *call) subresource(names ...string) string {
+	q := c.r.URL.Query()
+	for _, name := range names {
+		if _, ok := q[name]; ok {
+			return name
+		}
+	}
+	return ""
+}
+
+// bucketSubresources are bucket-level features addressed by a query
+// parameter that the emulator does not implement.
+var bucketSubresources = []string{
+	"acl", "policy", "versioning", "versions", "lifecycle", "cors", "tagging", "website", "logging",
+	"notification", "encryption", "replication", "quota", "storageinfo", "storagePolicy", "storageClass",
+	"metadata", "inventory", "customdomain", "requestPayment", "object-lock", "directcoldaccess", "uploads",
+}
+
+type handlerFunc func(*call) error
+
+// route picks the operation for a request and names it for logs.
+func (s *Service) route(c *call) (string, handlerFunc) {
+	notAllowed := func(*call) error { return errMethodNotAllowed }
+	m := c.r.Method
+
+	switch {
+	case c.target.Bucket == "":
+		if m == http.MethodGet {
+			return "ListBuckets", s.handleListBuckets
+		}
+		return "Service", notAllowed
+
+	case c.target.Key == "":
+		if sub := c.subresource(bucketSubresources...); sub != "" {
+			return "Bucket?" + sub, func(*call) error { return errNotImplemented("bucket " + sub) }
+		}
+		switch m {
+		case http.MethodPut:
+			return "CreateBucket", s.handleCreateBucket
+		case http.MethodHead:
+			return "HeadBucket", s.handleHeadBucket
+		case http.MethodDelete:
+			return "DeleteBucket", s.handleDeleteBucket
+		case http.MethodGet:
+			if c.subresource("location") != "" {
+				return "GetBucketLocation", s.handleGetBucketLocation
+			}
+			return "ListObjects", func(*call) error { return errNotImplemented("ListObjects") }
+		}
+		return "Bucket", notAllowed
+	}
+	return "Object", func(*call) error { return errNotImplemented("object operations") }
+}
+
+// writeXML sends an XML document with the standard declaration.
+func (c *call) writeXML(status int, v any) error {
+	body, err := xml.Marshal(v)
+	if err != nil {
+		return err
+	}
+	c.w.Header().Set("Content-Type", "application/xml")
+	c.w.WriteHeader(status)
+	_, _ = io.WriteString(c.w, xml.Header)
+	_, _ = c.w.Write(body)
+	return nil
+}
+
+func (s *Service) handleListBuckets(c *call) error {
+	buckets, err := s.ListBuckets(c.r.Context(), c.owner)
+	if err != nil {
+		return err
+	}
+	res := listBucketsResult{
+		XMLNS:   c.dialect.namespace(),
+		Owner:   xmlOwner{ID: ownerID(c.owner)},
+		Buckets: make([]xmlBucket, 0, len(buckets)),
+	}
+	if c.dialect == dialectS3 {
+		res.Owner.DisplayName = c.owner
+	}
+	for _, b := range buckets {
+		xb := xmlBucket{Name: b.Name, CreationDate: b.Created.Format(timeLayout)}
+		if c.dialect == dialectOBS {
+			xb.Location, xb.BucketType = b.Region, "OBJECT"
+		}
+		res.Buckets = append(res.Buckets, xb)
+	}
+	return c.writeXML(http.StatusOK, res)
+}
+
+func (s *Service) handleCreateBucket(c *call) error {
+	// The body is optional; when present it names the bucket's region,
+	// which must be the region of the endpoint the request was sent to.
+	raw, err := io.ReadAll(io.LimitReader(c.r.Body, maxConfigBody))
+	if err != nil {
+		return err
+	}
+	if len(strings.TrimSpace(string(raw))) > 0 {
+		var cfg createBucketConfiguration
+		if err := xml.Unmarshal(raw, &cfg); err != nil {
+			return errMalformedXML
+		}
+		location := cfg.Location
+		if location == "" {
+			location = cfg.LocationConstraint
+		}
+		if location != "" && location != c.region {
+			return errInvalidLocation(location, c.region)
+		}
+	}
+	b, err := s.CreateBucket(c.r.Context(), c.owner, c.region, c.target.Bucket)
+	if err != nil {
+		return err
+	}
+	c.w.Header().Set("Location", "/"+b.Name)
+	c.w.WriteHeader(http.StatusOK)
+	return nil
+}
+
+func (s *Service) handleHeadBucket(c *call) error {
+	b, err := s.bucketFor(c.r.Context(), c.owner, c.target.Bucket)
+	if err != nil {
+		return err
+	}
+	h := c.w.Header()
+	if c.dialect == dialectOBS {
+		h.Set("x-obs-bucket-location", b.Region)
+		h.Set("x-obs-version", "3.0")
+		h.Set("x-obs-storage-class", "STANDARD")
+	} else {
+		h.Set("x-amz-bucket-region", b.Region)
+	}
+	c.w.WriteHeader(http.StatusOK)
+	return nil
+}
+
+func (s *Service) handleGetBucketLocation(c *call) error {
+	b, err := s.bucketFor(c.r.Context(), c.owner, c.target.Bucket)
+	if err != nil {
+		return err
+	}
+	if c.dialect == dialectS3 {
+		return c.writeXML(http.StatusOK, locationS3{XMLNS: namespaceS3, LocationConstraint: b.Region})
+	}
+	return c.writeXML(http.StatusOK, locationOBS{XMLNS: namespaceOBS, Value: b.Region})
+}
+
+func (s *Service) handleDeleteBucket(c *call) error {
+	if err := s.DeleteBucket(c.r.Context(), c.owner, c.target.Bucket); err != nil {
+		return err
+	}
+	c.w.WriteHeader(http.StatusNoContent)
+	return nil
+}
