@@ -147,12 +147,12 @@ func v1Error(err error) error {
 	if !errors.As(err, &e) {
 		return err
 	}
-	switch {
-	case e.Status == http.StatusNotFound:
+	switch e.Status {
+	case http.StatusNotFound:
 		return apierr.New(http.StatusNotFound, "VPC.0603", "%s", e.Message)
-	case e.Status == http.StatusConflict:
+	case http.StatusConflict:
 		return apierr.New(http.StatusConflict, "VPC.0602", "%s", e.Message)
-	case e.Status == http.StatusBadRequest:
+	case http.StatusBadRequest:
 		return apierr.New(http.StatusBadRequest, "VPC.0601", "%s", e.Message)
 	}
 	return err
