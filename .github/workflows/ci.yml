@@ -75,6 +75,31 @@ jobs:
       - name: Tests driven by the official Huawei Cloud Go SDK
         run: make test-sdk
 
+  terraform:
+    name: terraform
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.17.2"
+          # The wrapper rewrites output and exit codes, which run.sh reads.
+          terraform_wrapper: false
+      - name: Cache the provider
+        uses: actions/cache@v6
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: terraform-${{ hashFiles('test/terraform/.terraform.lock.hcl') }}
+      - name: Apply, re-plan and destroy through the HTTPS proxy
+        run: |
+          export TF_PLUGIN_CACHE_DIR="$HOME/.terraform.d/plugin-cache"
+          mkdir -p "$TF_PLUGIN_CACHE_DIR"
+          make test-terraform
+
   image:
     name: image
     runs-on: ubuntu-latest
