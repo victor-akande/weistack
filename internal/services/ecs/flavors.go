@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/victor-akande/weistack/internal/core/zones"
 )
 
 //go:embed seed/flavors.yaml
@@ -171,8 +173,8 @@ type FlavorExtraSpec struct {
 // status depend on the region and project.
 func (f FlavorSpec) view(t Tenant) Flavor {
 	base := fmt.Sprintf("https://ecs.%s.myhuaweicloud.com/v1.0/%s/flavors/%s", t.Region, t.ProjectID, f.Name)
-	azs := make([]string, 0, zonesPerRegion)
-	for _, az := range Zones(t.Region) {
+	azs := make([]string, 0, zones.PerRegion)
+	for _, az := range zones.Of(t.Region) {
 		azs = append(azs, az+"(normal)")
 	}
 	out := Flavor{
@@ -200,27 +202,4 @@ func (f FlavorSpec) view(t Tenant) Flavor {
 		out.OSExtraSpec.CPUArchitecture = "arm64"
 	}
 	return out
-}
-
-// zonesPerRegion is how many availability zones each region has.
-const zonesPerRegion = 3
-
-// Zones returns the availability zones of a region, named as Huawei
-// Cloud names them: the region followed by a letter.
-func Zones(region string) []string {
-	zones := make([]string, zonesPerRegion)
-	for i := range zones {
-		zones[i] = region + string(rune('a'+i))
-	}
-	return zones
-}
-
-// ZoneExists reports whether az is an availability zone of region.
-func ZoneExists(region, az string) bool {
-	for _, z := range Zones(region) {
-		if z == az {
-			return true
-		}
-	}
-	return false
 }

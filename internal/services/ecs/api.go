@@ -13,6 +13,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/httpx"
 	"github.com/victor-akande/weistack/internal/core/pagination"
 	"github.com/victor-akande/weistack/internal/core/reqctx"
+	"github.com/victor-akande/weistack/internal/core/zones"
 )
 
 // Routes implements server.Service. Paths are those of the real API.
@@ -106,7 +107,7 @@ type listZonesResponse struct {
 
 func (s *Service) handleListZones(w http.ResponseWriter, _ *http.Request, t Tenant) error {
 	res := listZonesResponse{AvailabilityZoneInfo: []zoneInfo{}}
-	for _, az := range Zones(t.Region) {
+	for _, az := range zones.Of(t.Region) {
 		res.AvailabilityZoneInfo = append(res.AvailabilityZoneInfo, zoneInfo{ZoneState: zoneState{Available: true}, ZoneName: az})
 	}
 	return httpx.WriteJSON(w, http.StatusOK, res)

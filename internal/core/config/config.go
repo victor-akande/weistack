@@ -31,6 +31,7 @@ const (
 	DefaultShutdownTimeout = 10 * time.Second
 	DefaultECSMaxServers   = 20
 	DefaultECSMaxVCPUs     = 80
+	DefaultRDSMaxInstances = 20
 )
 
 // Config is the fully resolved runtime configuration.
@@ -54,6 +55,8 @@ type Config struct {
 	// ECSMaxServers and ECSMaxVCPUs are the per-project ECS quotas.
 	ECSMaxServers int
 	ECSMaxVCPUs   int
+	// RDSMaxInstances is the per-project RDS instance quota.
+	RDSMaxInstances int
 	// LifecycleDelay is how long asynchronous transitions take. 0 is instant.
 	LifecycleDelay time.Duration
 	// LogLevel is the minimum level logged.
@@ -99,6 +102,7 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 	fs.StringVar(&cfg.SeedDir, "seed-dir", env.str("SEED_DIR", ""), "directory of YAML files that extend the built-in seed data")
 	fs.IntVar(&cfg.ECSMaxServers, "ecs-max-servers", env.int("ECS_MAX_SERVERS", DefaultECSMaxServers), "per-project quota of ECS servers")
 	fs.IntVar(&cfg.ECSMaxVCPUs, "ecs-max-vcpus", env.int("ECS_MAX_VCPUS", DefaultECSMaxVCPUs), "per-project quota of ECS vCPUs")
+	fs.IntVar(&cfg.RDSMaxInstances, "rds-max-instances", env.int("RDS_MAX_INSTANCES", DefaultRDSMaxInstances), "per-project quota of RDS instances")
 	fs.DurationVar(&cfg.LifecycleDelay, "lifecycle-delay", env.duration("LIFECYCLE_DELAY", DefaultLifecycleDelay), "duration of asynchronous state transitions (0 is instant)")
 	fs.StringVar(&logLevel, "log-level", env.str("LOG_LEVEL", "info"), "log level: debug, info, warn or error")
 	fs.StringVar(&cfg.LogFormat, "log-format", env.str("LOG_FORMAT", DefaultLogFormat), "log format: json or text")
@@ -143,6 +147,9 @@ func (c Config) Validate() error {
 	}
 	if c.DataDir == "" {
 		errs = append(errs, errors.New("data directory must not be empty"))
+	}
+	if c.RDSMaxInstances < 1 {
+		errs = append(errs, fmt.Errorf("RDS instance quota %d must be positive", c.RDSMaxInstances))
 	}
 	if c.ECSMaxServers < 1 || c.ECSMaxVCPUs < 1 {
 		errs = append(errs, fmt.Errorf("ECS quotas must be positive (servers %d, vCPUs %d)", c.ECSMaxServers, c.ECSMaxVCPUs))

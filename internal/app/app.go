@@ -26,6 +26,7 @@ import (
 	"github.com/victor-akande/weistack/internal/services/ecs"
 	"github.com/victor-akande/weistack/internal/services/ims"
 	"github.com/victor-akande/weistack/internal/services/obs"
+	"github.com/victor-akande/weistack/internal/services/rds"
 	"github.com/victor-akande/weistack/internal/services/vpc"
 	"github.com/victor-akande/weistack/internal/version"
 )
@@ -226,7 +227,17 @@ func buildServices(
 	if err != nil {
 		return nil, err
 	}
-	return []server.Service{vpcSvc, imsSvc, ecsSvc, obsSvc}, nil
+
+	rdsSvc, err := rds.New(rds.Deps{
+		Store: st, Engine: engine, IDs: gen, Logger: log, Network: vpcSvc, MaxInstances: cfg.RDSMaxInstances,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := rdsSvc.Resume(ctx); err != nil {
+		return nil, err
+	}
+	return []server.Service{vpcSvc, imsSvc, ecsSvc, obsSvc, rdsSvc}, nil
 }
 
 // objectDataDir returns the directory for OBS object bodies and a

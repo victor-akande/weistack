@@ -99,17 +99,8 @@ func TestFlavorPaging(t *testing.T) {
 	}
 }
 
-func TestZones(t *testing.T) {
+func TestZonesFollowTheRequestRegion(t *testing.T) {
 	t.Parallel()
-
-	if got := strings.Join(Zones("af-south-1"), ","); got != "af-south-1a,af-south-1b,af-south-1c" {
-		t.Errorf("Zones = %s", got)
-	}
-	if !ZoneExists("af-south-1", "af-south-1c") || ZoneExists("af-south-1", "af-south-1d") || ZoneExists("af-south-1", "ap-southeast-1a") {
-		t.Error("ZoneExists is wrong")
-	}
-
-	// The zone list follows the region a request addresses.
 	e := newEnv(t)
 	r, _ := http.NewRequest(http.MethodGet, "/v2.1/"+testProject+"/os-availability-zone", nil)
 	r.Host = "ecs.af-south-1.myhuaweicloud.com"

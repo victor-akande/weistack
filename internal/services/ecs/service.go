@@ -15,6 +15,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/store"
+	"github.com/victor-akande/weistack/internal/core/zones"
 	"github.com/victor-akande/weistack/internal/services/ims"
 	"github.com/victor-akande/weistack/internal/services/vpc"
 )
@@ -124,7 +125,7 @@ func (s *Service) FlavorByName(name string) (FlavorSpec, bool) {
 // every flavor when az is empty. An unknown zone sells nothing.
 func (s *Service) ListFlavors(t Tenant, az string) []Flavor {
 	out := []Flavor{}
-	if az != "" && !ZoneExists(t.Region, az) {
+	if az != "" && !zones.Exists(t.Region, az) {
 		return out
 	}
 	for _, f := range s.flavors {

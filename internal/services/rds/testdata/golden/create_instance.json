@@ -1,0 +1,16 @@
+{
+  "source": "docs",
+  "status": 202,
+  "body": {
+    "instance": {
+      "id": "<string>", "name": "rds-mysql", "status": "BUILD",
+      "datastore": {"type": "MySQL", "version": "8.0"},
+      "port": "3306", "backup_strategy": {"start_time": "08:15-09:15", "keep_days": 12},
+      "enterprise_project_id": "0", "disk_encryption_id": "", "flavor_ref": "rds.mysql.n1.large.2",
+      "volume": {"type": "CLOUDSSD", "size": 100}, "region": "ap-southeast-1",
+      "availability_zone": "ap-southeast-1a", "vpc_id": "<uuid>", "subnet_id": "<uuid>",
+      "security_group_id": "<uuid>", "charge_info": {"charge_mode": "postPaid"}
+    },
+    "job_id": "<uuid>"
+  }
+}
