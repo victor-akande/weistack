@@ -62,6 +62,9 @@ curl -fsS "$admin/health" >/dev/null
 cp "$here/main.tf" "$here/.terraform.lock.hcl" "$work/"
 cd "$work"
 export TF_IN_AUTOMATION=1 TF_INPUT=0 TF_VAR_project_id="$project"
+# A fresh password per run, meeting RDS's rule of four character kinds.
+TF_VAR_db_password="Ws-1$(python3 -c 'import secrets; print(secrets.token_hex(8))')"
+export TF_VAR_db_password
 
 step "terraform init"
 # Without the proxy: the provider comes from the public registry.

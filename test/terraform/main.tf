@@ -18,6 +18,12 @@ variable "project_id" {
   description = "The emulator's project ID (GET /_weistack/services)."
 }
 
+variable "db_password" {
+  type        = string
+  sensitive   = true
+  description = "The RDS root password. run.sh generates one per run."
+}
+
 provider "huaweicloud" {
   region     = "ap-southeast-1"
   access_key = "AKWEISTACKTERRAFORM"
@@ -98,7 +104,7 @@ resource "huaweicloud_rds_instance" "db" {
   db {
     type     = "MySQL"
     version  = "8.0"
-    password = "Weistack!2026"
+    password = var.db_password
   }
 
   volume {
