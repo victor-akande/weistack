@@ -60,23 +60,70 @@ message naming the operation, so a gap is never mistaken for a bug.
 
 ## Pointing a client at WeiStack
 
-Clients differ in what they let you override:
+### As an HTTPS proxy (recommended)
+
+WeiStack is also an HTTP proxy. A client keeps Huawei Cloud's real
+endpoints and sends its traffic through WeiStack, which answers for every
+host under `myhuaweicloud.com` itself. Nothing needs DNS changes, no
+service can leak to the real cloud by being left unconfigured, and
+virtual-hosted OBS buckets work as they do in the cloud.
+
+```bash
+export HTTPS_PROXY=http://127.0.0.1:8780
+```
+
+For HTTPS, WeiStack presents certificates from a local certificate
+authority it creates on first start. Either tell the client to skip
+verification (most have an `insecure` option), or trust the CA:
+
+```bash
+./bin/weistack ca > weistack-ca.pem   # prints the certificate, and where it lives
+export SSL_CERT_FILE=$PWD/weistack-ca.pem   # Go and OpenSSL-based clients
+```
+
+The CA is kept in `~/.config/weistack/tls` (or `{data-dir}/tls` with
+`-persist`, or `-tls-dir`; `/data/tls` in the image), so clients trust it
+once. Its key never leaves that directory and is readable only by you. A
+running emulator also serves the certificate, which is the easy way to get
+it out of a container:
+
+```bash
+curl -o weistack-ca.pem http://127.0.0.1:8780/_weistack/ca
+```
+
+Requests to hosts outside `myhuaweicloud.com` are relayed unchanged, but
+only for clients on the loopback interface; `-proxy-passthrough` changes
+that. When WeiStack runs in a container, clients reach it from another
+address, so either set `NO_PROXY` for the hosts they need directly or run
+the container with `-proxy-passthrough all`.
+
+The official Go SDK does not read `HTTPS_PROXY`; set it in code:
+
+```go
+hc := config.DefaultHttpConfig().
+    WithIgnoreSSLVerification(true).
+    WithProxy(config.NewProxy().WithSchema("http").WithHost("127.0.0.1").WithPort(8780))
+client := vpc.NewVpcClient(vpc.VpcClientBuilder().
+    WithEndpoints([]string{"https://vpc.ap-southeast-1.myhuaweicloud.com"}).
+    WithCredential(credentials). // any AK/SK; project ID from /_weistack/services
+    WithHttpConfig(hc).
+    Build())
+```
+
+### By endpoint
+
+Clients that let you override endpoints can address WeiStack directly:
 
 | Client can set | Use | Example |
 | --- | --- | --- |
-| A full endpoint per service | `{service}.localhost` | `http://vpc.localhost:8780` |
+| A full endpoint per service | Path prefix, or a host name that resolves to WeiStack | `http://127.0.0.1:8780/vpc` |
 | Only a base URL, path kept | Path prefix | `http://localhost:8780/vpc` |
-| Nothing but the real host name | Map `{service}.{region}.myhuaweicloud.com` to the emulator (hosts file) | |
+| A different port per service | `-service-ports` | `-service-ports obs=9000` |
 
-The official Go SDK discards any path in its endpoint, so use the first
-form with it:
-
-```go
-client := vpc.NewVpcClient(vpc.VpcClientBuilder().
-    WithEndpoints([]string{"http://vpc.localhost:8780"}).
-    WithCredential(credentials). // any AK/SK; project ID from /_weistack/services
-    Build())
-```
+`{service}.localhost` host names also route, but whether they resolve to
+the loopback depends on the system resolver (it does not in WSL, for
+example), so prefer the proxy. The official Go SDK discards any path in
+its endpoint, so use the proxy or a dial override with it.
 
 ## Configuration
 
@@ -100,6 +147,9 @@ defaults. Run `weistack -h` for the full list.
 | `-log-format` | `WEISTACK_LOG_FORMAT` | `json` | `json` or `text` |
 | `-services` | `WEISTACK_SERVICES` | all | Comma-separated subset to enable |
 | `-service-ports` | `WEISTACK_SERVICE_PORTS` | none | Extra listeners that each serve one service, for example `obs=9000` |
+| `-proxy-domains` | `WEISTACK_PROXY_DOMAINS` | `myhuaweicloud.com` | Domains the proxy answers for itself |
+| `-proxy-passthrough` | `WEISTACK_PROXY_PASSTHROUGH` | `loopback` | Which proxy clients may reach other hosts: `loopback`, `all` or `none` |
+| `-tls-dir` | `WEISTACK_TLS_DIR` | see above | Where the local CA is kept |
 | `-metrics` | `WEISTACK_METRICS` | off | Serve Prometheus metrics |
 | `-max-body-bytes` | `WEISTACK_MAX_BODY_BYTES` | `10485760` | Body limit for JSON APIs |
 | `-shutdown-timeout` | `WEISTACK_SHUTDOWN_TIMEOUT` | `10s` | Drain time on SIGTERM |
@@ -112,6 +162,7 @@ defaults. Run `weistack -h` for the full list.
 | `GET /_weistack/services` | Enabled services, default region and project ID |
 | `GET /_weistack/state` | Dump of every stored resource as JSON |
 | `POST /_weistack/reset` | Wipe all state and pending transitions |
+| `GET /_weistack/ca` | The proxy's CA certificate, as PEM |
 | `GET /_weistack/metrics` | Prometheus metrics (only with `-metrics`) |
 
 ## Authentication

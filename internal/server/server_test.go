@@ -549,7 +549,9 @@ func TestNewValidation(t *testing.T) {
 			t.Fatalf("ServiceNames() = %v, want [vpc]", got)
 		}
 		w := httptest.NewRecorder()
-		s.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://localhost/ecs/v1/p/things", nil))
+		r := httptest.NewRequest(http.MethodGet, "/ecs/v1/p/things", nil)
+		r.Host = "localhost"
+		s.Handler().ServeHTTP(w, r)
 		if w.Code != http.StatusNotFound {
 			t.Fatalf("disabled service answered with %d, want 404", w.Code)
 		}

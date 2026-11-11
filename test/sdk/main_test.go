@@ -94,6 +94,7 @@ func startEmulator() (stop func(), err error) {
 
 	cmd := exec.Command(bin)
 	cmd.Env = append(os.Environ(),
+		"WEISTACK_TLS_DIR="+filepath.Join(dir, "tls"),
 		"WEISTACK_PORT="+port,
 		"WEISTACK_PROJECT_ID="+projectID,
 		"WEISTACK_REGION="+region,
