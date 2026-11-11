@@ -18,6 +18,10 @@ const (
 	StatusActive  = "ACTIVE"
 	StatusShutoff = "SHUTOFF"
 	StatusError   = "ERROR"
+	// Transient statuses of an operation in flight.
+	StatusReboot     = "REBOOT"
+	StatusHardReboot = "HARD_REBOOT"
+	StatusResize     = "RESIZE"
 )
 
 // Server is the stored record of a server. The API form is ServerDetail,
@@ -64,10 +68,26 @@ type Server struct {
 	ReservationID       string `json:"reservation_id"`
 	LaunchIndex         int    `json:"launch_index"`
 
+	// Pending is the start, stop, reboot or resize in flight, kept on the
+	// record so that it can be resumed after a restart.
+	Pending *PendingOp `json:"pending,omitempty"`
+
 	// Timestamps are stored as RFC 3339 UTC strings.
 	Created    string `json:"created"`
 	Updated    string `json:"updated"`
 	LaunchedAt string `json:"launched_at"`
+}
+
+// PendingOp describes an operation that completes after the lifecycle
+// delay.
+type PendingOp struct {
+	// Kind is the lifecycle task kind, for example "ecs.server.stop".
+	Kind  string `json:"kind"`
+	JobID string `json:"job_id"`
+	// Final is the status the server lands in on success.
+	Final string `json:"final"`
+	// Flavor is the target flavor of a resize.
+	Flavor string `json:"flavor,omitempty"`
 }
 
 // NIC is one network interface of a server.
@@ -321,4 +341,122 @@ type SubJob struct {
 // SubJobEntities mirrors the SDK model ecs/v2 SubJobEntities.
 type SubJobEntities struct {
 	ServerID string `json:"server_id"`
+}
+
+// UpdateServerOption mirrors the SDK model ecs/v2 UpdateServerOption. A
+// nil field is left unchanged.
+type UpdateServerOption struct {
+	Name        *string `json:"name"`
+	Description *string `json:"description"`
+	Hostname    *string `json:"hostname"`
+	UserData    *string `json:"user_data"`
+}
+
+type updateServerRequest struct {
+	Server *UpdateServerOption `json:"server"`
+}
+
+// UpdateServerResult mirrors the SDK model ecs/v2 UpdateServerResult,
+// the body of an update response. It is the Nova form of a server and
+// differs from ServerDetail: image is an ID string, flavor carries links
+// and an address has a numeric version.
+type UpdateServerResult struct {
+	TenantID    string                           `json:"tenant_id"`
+	Image       string                           `json:"image"`
+	AccessIPv4  string                           `json:"accessIPv4"`
+	AccessIPv6  string                           `json:"accessIPv6"`
+	Metadata    map[string]string                `json:"metadata"`
+	Addresses   map[string][]UpdateServerAddress `json:"addresses"`
+	Created     string                           `json:"created"`
+	HostID      string                           `json:"hostId"`
+	Flavor      SimpleFlavor                     `json:"flavor"`
+	DiskConfig  string                           `json:"OS-DCF:diskConfig"`
+	UserID      string                           `json:"user_id"`
+	Name        string                           `json:"name"`
+	Progress    int                              `json:"progress"`
+	Links       []Link                           `json:"links"`
+	ID          string                           `json:"id"`
+	Updated     string                           `json:"updated"`
+	Locked      bool                             `json:"locked"`
+	Description string                           `json:"description"`
+	Tags        []string                         `json:"tags"`
+	Status      string                           `json:"status"`
+	Hostname    string                           `json:"OS-EXT-SRV-ATTR:hostname"`
+	UserData    *string                          `json:"OS-EXT-SRV-ATTR:user_data,omitempty"`
+}
+
+// UpdateServerAddress mirrors the SDK model ecs/v2 UpdateServerAddress.
+type UpdateServerAddress struct {
+	Version int    `json:"version"`
+	Addr    string `json:"addr"`
+}
+
+// SimpleFlavor mirrors the SDK model ecs/v2 SimpleFlavor.
+type SimpleFlavor struct {
+	ID    string `json:"id"`
+	Links []Link `json:"links"`
+}
+
+// Link mirrors the SDK model ecs/v2 Link.
+type Link struct {
+	Rel  string `json:"rel"`
+	Href string `json:"href"`
+}
+
+type updateServerResponse struct {
+	Server UpdateServerResult `json:"server"`
+}
+
+// batchActionRequest is the body of POST /cloudservers/action: exactly
+// one of the three actions.
+type batchActionRequest struct {
+	Start  *batchAction `json:"os-start"`
+	Stop   *batchAction `json:"os-stop"`
+	Reboot *batchAction `json:"reboot"`
+}
+
+// batchAction mirrors the SDK models ecs/v2 BatchStartServersOption,
+// BatchStopServersOption and BatchRebootSeversOption.
+type batchAction struct {
+	Type    string      `json:"type"`
+	Servers []serverRef `json:"servers"`
+}
+
+// ResizeOption mirrors the SDK model ecs/v2 ResizePostPaidServerOption.
+type ResizeOption struct {
+	FlavorRef string `json:"flavorRef"`
+	// Mode "withStopServer" stops a running server, resizes it and
+	// starts it again; otherwise the server must already be stopped.
+	Mode string `json:"mode"`
+}
+
+type resizeRequest struct {
+	Resize *ResizeOption `json:"resize"`
+	DryRun bool          `json:"dry_run"`
+}
+
+// ServerTag mirrors the SDK model ecs/v2 ServerTag.
+type ServerTag struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+type tagActionRequest struct {
+	Action string      `json:"action"`
+	Tags   []ServerTag `json:"tags"`
+}
+
+type serverTagsResponse struct {
+	Tags []ServerTag `json:"tags"`
+}
+
+// ProjectTag mirrors the SDK model ecs/v2 ProjectTag: a key with every
+// value it has across the project's servers.
+type ProjectTag struct {
+	Key    string   `json:"key"`
+	Values []string `json:"values"`
+}
+
+type projectTagsResponse struct {
+	Tags []ProjectTag `json:"tags"`
 }

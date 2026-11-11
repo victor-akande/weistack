@@ -12,8 +12,8 @@ sponsored by Huawei.
 ## Status
 
 Early development. The **core framework** (M1) and **VPC** (M2) are in
-place, and so is **IMS** (M3); **ECS** (M4) is in progress. Per-service
-coverage tables: [VPC](docs/services/vpc.md), [IMS](docs/services/ims.md),
+place, and so are **IMS** (M3) and **ECS** (M4). Per-service coverage
+tables: [VPC](docs/services/vpc.md), [IMS](docs/services/ims.md),
 [ECS](docs/services/ecs.md).
 
 | Milestone | Scope | State |
@@ -21,7 +21,7 @@ coverage tables: [VPC](docs/services/vpc.md), [IMS](docs/services/ims.md),
 | M1 | Core framework: server, routing, errors, store, lifecycle, admin API, CI, image | Done |
 | M2 | VPC: VPCs, subnets, security groups and rules | Done |
 | M3 | IMS: images | Done |
-| M4 | ECS: servers, flavors, jobs | In progress |
+| M4 | ECS: servers, flavors, jobs | Done |
 | M5 | OBS: buckets, objects, multipart | Planned |
 | M6 | RDS: MySQL/PostgreSQL instances | Planned |
 

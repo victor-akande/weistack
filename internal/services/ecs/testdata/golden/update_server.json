@@ -1,0 +1,16 @@
+{
+  "source": "sdk-model",
+  "status": 200,
+  "body": {
+    "server": {
+      "tenant_id": "<hex32>", "image": "<uuid>", "accessIPv4": "", "accessIPv6": "", "metadata": {},
+      "addresses": {"<uuid>": [{"version": 4, "addr": "192.168.1.2"}]},
+      "created": "<time-z>", "hostId": "<string>",
+      "flavor": {"id": "s6.large.2", "links": [{"rel": "bookmark", "href": "<string>"}]},
+      "OS-DCF:diskConfig": "MANUAL", "user_id": "<hex32>", "name": "renamed", "progress": 0,
+      "links": [{"rel": "self", "href": "<string>"}, {"rel": "bookmark", "href": "<string>"}],
+      "id": "<uuid>", "updated": "<time-z>", "locked": false, "description": "now with a description",
+      "tags": [], "status": "ACTIVE", "OS-EXT-SRV-ATTR:hostname": "renamed"
+    }
+  }
+}

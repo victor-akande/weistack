@@ -24,7 +24,13 @@ func (s *Service) Routes(r chi.Router) {
 	r.Post("/v1.1/{project_id}/cloudservers", s.handle("CreateServers", s.handleCreateServers))
 	r.Get("/v1/{project_id}/cloudservers/detail", s.handle("ListServersDetails", s.handleListServers))
 	r.Post("/v1/{project_id}/cloudservers/delete", s.handle("DeleteServers", s.handleDeleteServers))
+	r.Post("/v1/{project_id}/cloudservers/action", s.handle("BatchAction", s.handleBatchAction))
+	r.Get("/v1/{project_id}/cloudservers/tags", s.handle("ListServerTags", s.handleListProjectTags))
 	r.Get("/v1/{project_id}/cloudservers/{server_id}", s.handle("ShowServer", s.handleShowServer))
+	r.Put("/v1/{project_id}/cloudservers/{server_id}", s.handle("UpdateServer", s.handleUpdateServer))
+	r.Post("/v1/{project_id}/cloudservers/{server_id}/resize", s.handle("ResizePostPaidServer", s.handleResize))
+	r.Get("/v1/{project_id}/cloudservers/{server_id}/tags", s.handle("ShowServerTags", s.handleShowTags))
+	r.Post("/v1/{project_id}/cloudservers/{server_id}/tags/action", s.handle("BatchServerTags", s.handleTagAction))
 	r.Get("/v1/{project_id}/jobs/{job_id}", s.handle("ShowJob", s.handleShowJob))
 	r.Get("/v2.1/{project_id}/os-availability-zone", s.handle("NovaListAvailabilityZones", s.handleListZones))
 }
@@ -222,4 +228,117 @@ func (s *Service) handleShowJob(w http.ResponseWriter, r *http.Request, t Tenant
 		return err
 	}
 	return httpx.WriteJSON(w, http.StatusOK, job)
+}
+
+func refIDs(refs []serverRef) []string {
+	ids := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		ids = append(ids, ref.ID)
+	}
+	return ids
+}
+
+// handleBatchAction serves start, stop and reboot, which share one path
+// and are told apart by the body's single top-level key.
+func (s *Service) handleBatchAction(w http.ResponseWriter, r *http.Request, t Tenant) error {
+	var req batchActionRequest
+	if err := decode(r, &req); err != nil {
+		return err
+	}
+	info := reqctx.From(r.Context())
+	var (
+		job Job
+		err error
+	)
+	switch {
+	case req.Start != nil && req.Stop == nil && req.Reboot == nil:
+		info.SetOperation("BatchStartServers")
+		job, err = s.StartServers(r.Context(), t, refIDs(req.Start.Servers))
+	case req.Stop != nil && req.Start == nil && req.Reboot == nil:
+		info.SetOperation("BatchStopServers")
+		job, err = s.StopServers(r.Context(), t, refIDs(req.Stop.Servers), req.Stop.Type)
+	case req.Reboot != nil && req.Start == nil && req.Stop == nil:
+		info.SetOperation("BatchRebootServers")
+		job, err = s.RebootServers(r.Context(), t, refIDs(req.Reboot.Servers), req.Reboot.Type)
+	default:
+		return errInvalidRequest("request body is illegal: it must contain exactly one of os-start, os-stop and reboot")
+	}
+	if err != nil {
+		return err
+	}
+	return httpx.WriteJSON(w, http.StatusOK, jobResponse{JobID: job.JobID})
+}
+
+func (s *Service) handleUpdateServer(w http.ResponseWriter, r *http.Request, t Tenant) error {
+	var req updateServerRequest
+	if err := decode(r, &req); err != nil {
+		return err
+	}
+	if req.Server == nil {
+		return errInvalidRequest("request body is illegal: it must contain a server object")
+	}
+	srv, err := s.UpdateServer(r.Context(), t, chi.URLParam(r, "server_id"), *req.Server)
+	if err != nil {
+		return err
+	}
+	return httpx.WriteJSON(w, http.StatusOK, updateServerResponse{Server: s.updateResult(t, srv)})
+}
+
+func (s *Service) handleResize(w http.ResponseWriter, r *http.Request, t Tenant) error {
+	var req resizeRequest
+	if err := decode(r, &req); err != nil {
+		return err
+	}
+	if req.Resize == nil {
+		return errInvalidRequest("request body is illegal: it must contain a resize object")
+	}
+	if req.DryRun {
+		return apierr.NotImplemented("ecs", "ResizePostPaidServer with dry_run")
+	}
+	job, err := s.ResizeServer(r.Context(), t, chi.URLParam(r, "server_id"), *req.Resize)
+	if err != nil {
+		return err
+	}
+	return httpx.WriteJSON(w, http.StatusOK, jobResponse{JobID: job.JobID})
+}
+
+func (s *Service) handleShowTags(w http.ResponseWriter, r *http.Request, t Tenant) error {
+	tags, err := s.GetServerTags(r.Context(), t, chi.URLParam(r, "server_id"))
+	if err != nil {
+		return err
+	}
+	return httpx.WriteJSON(w, http.StatusOK, serverTagsResponse{Tags: tags})
+}
+
+func (s *Service) handleTagAction(w http.ResponseWriter, r *http.Request, t Tenant) error {
+	var req tagActionRequest
+	if err := decode(r, &req); err != nil {
+		return err
+	}
+	id := chi.URLParam(r, "server_id")
+	info := reqctx.From(r.Context())
+	var err error
+	switch req.Action {
+	case "create":
+		info.SetOperation("BatchCreateServerTags")
+		err = s.AddServerTags(r.Context(), t, id, req.Tags)
+	case "delete":
+		info.SetOperation("BatchDeleteServerTags")
+		err = s.DeleteServerTags(r.Context(), t, id, req.Tags)
+	default:
+		return errInvalidRequest("action must be create or delete")
+	}
+	if err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+func (s *Service) handleListProjectTags(w http.ResponseWriter, r *http.Request, t Tenant) error {
+	tags, err := s.ListProjectTags(r.Context(), t)
+	if err != nil {
+		return err
+	}
+	return httpx.WriteJSON(w, http.StatusOK, projectTagsResponse{Tags: tags})
 }

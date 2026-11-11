@@ -103,3 +103,24 @@ func errTag(code, format string, args ...any) *apierr.Error {
 
 // jobFailureCode is the error_code of a failed job.
 const jobFailureCode = "Ecs.0000"
+
+// errStatus is Ecs.0100: the server's status does not allow the
+// operation.
+func errStatus(id, status, need string) *apierr.Error {
+	return bad("Ecs.0100", "The status of ECS %s (%s) does not allow this operation: %s.", id, status, need)
+}
+
+// errBatchTooLarge is Ecs.0118.
+func errBatchTooLarge(n int) *apierr.Error {
+	return bad("Ecs.0118", "The number of ECSs in the batch (%d) exceeds the upper limit (%d).", n, maxBatch)
+}
+
+// errSameFlavor is Ecs.0810.
+func errSameFlavor(name string) *apierr.Error {
+	return bad("Ecs.0810", "The target flavor %s is the same as the current flavor.", name)
+}
+
+// errFlavorSwitch is Ecs.0804.
+func errFlavorSwitch(from, to string) *apierr.Error {
+	return bad("Ecs.0804", "The ECS cannot be changed from flavor %s to flavor %s: the CPU architectures differ.", from, to)
+}
