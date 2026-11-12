@@ -60,25 +60,31 @@ func (d dialect) namespace() string {
 // anonymous is the owner of requests that carry no access key.
 const anonymous = "anonymous"
 
-// caller returns the access key a request claims, which is the identity
-// buckets are owned by. Signatures are not verified.
+// caller returns who a request acts as, which is what buckets are owned
+// by. A key WeiStack knows acts for its account, as on Huawei Cloud, so
+// all of an account's users share its buckets. Any other key is, as in
+// v0.1, an owner of its own. Signatures are not verified.
 func caller(r *http.Request) string {
-	if ak := auth.FromContext(r.Context()).AccessKey; ak != "" {
-		return ak
+	id := auth.FromContext(r.Context())
+	if owner := id.Owner(); owner != "" {
+		return owner
 	}
 	// Pre-signed URLs carry the key in the query string.
 	q := r.URL.Query()
 	for _, name := range []string{"AccessKeyId", "AWSAccessKeyId"} {
 		if ak := q.Get(name); ak != "" {
-			return ak
+			return auth.Resolve(auth.Identity{AccessKey: ak}, auth.ResolverFromContext(r.Context())).Owner()
 		}
 	}
 	return anonymous
 }
 
-// ownerID renders an access key as the 32-hex ID the API shows for an
-// owner, without exposing the key itself.
-func ownerID(accessKey string) string {
-	sum := md5.Sum([]byte("weistack:obs:owner:" + accessKey)) //nolint:gosec // see import
+// ownerID renders an owner as the 32-hex ID the API shows: an account's
+// own ID, or for a raw access key a stable hash that does not expose it.
+func ownerID(owner string) string {
+	if account, ok := strings.CutPrefix(owner, auth.AccountOwnerPrefix); ok {
+		return account
+	}
+	sum := md5.Sum([]byte("weistack:obs:owner:" + owner)) //nolint:gosec // see import
 	return hex.EncodeToString(sum[:])
 }

@@ -65,11 +65,15 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) error {
 }
 
 type servicesResponse struct {
-	Version   string        `json:"version"`
-	Region    string        `json:"region"`
-	ProjectID string        `json:"project_id"`
-	Persist   bool          `json:"persist"`
-	Services  []serviceInfo `json:"services"`
+	Version   string `json:"version"`
+	Region    string `json:"region"`
+	ProjectID string `json:"project_id"`
+	// AccountID and AccountName are the emulator's account, the "domain"
+	// of Huawei Cloud's IAM (a provider's domain_id).
+	AccountID   string        `json:"account_id,omitempty"`
+	AccountName string        `json:"account_name,omitempty"`
+	Persist     bool          `json:"persist"`
+	Services    []serviceInfo `json:"services"`
 }
 
 type serviceInfo struct {
@@ -84,6 +88,9 @@ func (s *Server) handleServices(w http.ResponseWriter, _ *http.Request) error {
 		ProjectID: s.projectID,
 		Persist:   s.cfg.Persist,
 		Services:  make([]serviceInfo, 0, len(s.names)),
+	}
+	if s.dir != nil {
+		out.AccountID, out.AccountName = s.dir.Account().ID, s.dir.Account().Name
 	}
 	for _, name := range s.names {
 		out.Services = append(out.Services, serviceInfo{Name: name, Version: s.services[name].svc.Version()})

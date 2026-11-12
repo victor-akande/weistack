@@ -2,11 +2,14 @@ package auth
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/victor-akande/weistack/internal/core/identity"
 )
 
 func TestParse(t *testing.T) {
@@ -92,7 +95,7 @@ func TestMiddlewareAcceptsAndNeverLogsSecrets(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	var seen Identity
-	h := Middleware(log)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := Middleware(log, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen = FromContext(r.Context())
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -125,5 +128,48 @@ func TestFromContextDefault(t *testing.T) {
 
 	if got := FromContext(context.Background()); got != (Identity{Scheme: SchemeNone}) {
 		t.Fatalf("FromContext on an empty context = %+v", got)
+	}
+}
+
+func TestResolveAndOwner(t *testing.T) {
+	t.Parallel()
+	acct := identity.Account{ID: "0123456789abcdef0123456789abcdef", Name: identity.AccountName}
+	dir := identity.NewDirectory(acct, identity.Credentials{AccessKey: "ADMINKEY000000000000", SecretKey: "s"})
+
+	admin := Resolve(Identity{AccessKey: "ADMINKEY000000000000"}, dir)
+	if !admin.Known || !admin.Principal.Admin || admin.Owner() != "domain:"+acct.ID {
+		t.Fatalf("admin = %+v, owner %q", admin, admin.Owner())
+	}
+	// Unknown keys stay their own owners, exactly as in v0.1.
+	other := Resolve(Identity{AccessKey: "AKALICE"}, dir)
+	if other.Known || other.Owner() != "AKALICE" {
+		t.Fatalf("unknown key = %+v, owner %q", other, other.Owner())
+	}
+	if none := Resolve(Identity{}, dir); none.Known || none.Owner() != "" {
+		t.Fatalf("no key = %+v", none)
+	}
+	if noResolver := Resolve(Identity{AccessKey: "ADMINKEY000000000000"}, nil); noResolver.Known {
+		t.Fatal("resolved without a resolver")
+	}
+}
+
+func TestMiddlewareResolves(t *testing.T) {
+	t.Parallel()
+	acct := identity.Account{ID: "0123456789abcdef0123456789abcdef", Name: identity.AccountName}
+	dir := identity.NewDirectory(acct, identity.Credentials{AccessKey: "ADMINKEY000000000000", SecretKey: "s"})
+	var got Identity
+	var resolver Resolver
+	h := Middleware(slog.New(slog.NewTextHandler(io.Discard, nil)), dir)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		got = FromContext(r.Context())
+		resolver = ResolverFromContext(r.Context())
+	}))
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Authorization", "SDK-HMAC-SHA256 Access=ADMINKEY000000000000, SignedHeaders=host, Signature=abc")
+	h.ServeHTTP(httptest.NewRecorder(), r)
+	if !got.Known || got.Principal.AccountID != acct.ID || resolver == nil {
+		t.Fatalf("identity = %+v, resolver %v", got, resolver)
+	}
+	if ResolverFromContext(context.Background()) != nil {
+		t.Fatal("a resolver came from an empty context")
 	}
 }
