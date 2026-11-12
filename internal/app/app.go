@@ -21,6 +21,7 @@ import (
 
 	"github.com/victor-akande/weistack/internal/core/config"
 	"github.com/victor-akande/weistack/internal/core/hostpattern"
+	"github.com/victor-akande/weistack/internal/core/identity"
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/store"
@@ -65,6 +66,8 @@ func Run(ctx context.Context, env Env) error {
 			return healthcheck(ctx, env)
 		case "ca":
 			return printCA(env)
+		case "credentials":
+			return printCredentials(env)
 		}
 	}
 
@@ -126,6 +129,15 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 	if err != nil {
 		return err
 	}
+	account, err := loadAccount(cfg)
+	if err != nil {
+		return err
+	}
+	admin, adminFrom, err := loadAdmin(cfg, log)
+	if err != nil {
+		return err
+	}
+	directory := identity.NewDirectory(account, admin)
 
 	// Validated with the configuration, so compiling cannot fail here.
 	bypass := make([]*hostpattern.Pattern, 0, len(cfg.ProxyBypass))
@@ -145,6 +157,7 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		Engine:    engine,
 		IDs:       gen,
 		Services:  services,
+		Directory: directory,
 		Proxy: server.ProxyOptions{
 			CA: ca, Domains: cfg.ProxyDomains, Bypass: bypass, Passthrough: cfg.ProxyPassthrough,
 		},
@@ -191,12 +204,16 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		"service_ports", servicePorts,
 		"region", cfg.Region,
 		"project_id", projectID,
+		"account_id", account.ID,
+		// The access key, never the secret key.
+		"admin_access_key", admin.AccessKey,
+		"admin_credentials", adminFrom,
 		"persist", cfg.Persist,
 		"lifecycle_delay", cfg.LifecycleDelay.String(),
 		"services", srv.ServiceNames(),
 	)
 	if isTerminal(env.Stdout) {
-		printBanner(env.Stdout, cfg, ln.Addr().String(), projectID)
+		printBanner(env.Stdout, cfg, ln.Addr().String(), projectID, account, admin)
 	}
 	if env.OnReady != nil {
 		env.OnReady(ln.Addr())
@@ -430,7 +447,7 @@ func isTerminal(w io.Writer) bool {
 
 // printBanner tells a person at a terminal how to use the emulator that
 // just started. Logs carry the same facts for machines.
-func printBanner(w io.Writer, cfg config.Config, addr, projectID string) {
+func printBanner(w io.Writer, cfg config.Config, addr, projectID string, account identity.Account, admin identity.Credentials) {
 	base := "http://" + addr
 	project := "new on every start; -persist keeps it"
 	if cfg.Persist {
@@ -439,6 +456,8 @@ func printBanner(w io.Writer, cfg config.Config, addr, projectID string) {
 	fmt.Fprintf(w, "\n  WeiStack %s is ready on %s\n\n", version.Version, base)
 	for _, line := range [][2]string{
 		{"Project ID", projectID + "  (" + project + ")"},
+		{"Account", account.Name + "  " + account.ID},
+		{"Admin keys", admin.AccessKey + "  " + admin.SecretKey + "  (weistack credentials)"},
 		{"As a proxy", "export HTTPS_PROXY=" + base},
 		{"Trust its CA", "curl -o weistack-ca.pem " + base + "/_weistack/ca"},
 		{"Directly", base + "/vpc/v1/" + projectID + "/vpcs, or /ecs, /ims, /evs, /obs, /rds"},

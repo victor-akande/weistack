@@ -11,6 +11,8 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+
+	"github.com/victor-akande/weistack/internal/core/identity"
 )
 
 // Authorization schemes the emulator recognises.
@@ -46,6 +48,40 @@ type Identity struct {
 	// Temporary reports whether a security token for temporary
 	// credentials (X-Security-Token) was present.
 	Temporary bool
+	// Known reports whether WeiStack knows the access key, and Principal
+	// is then who it belongs to. Unknown keys are accepted as in v0.1.
+	Known     bool
+	Principal identity.Principal
+}
+
+// AccountOwnerPrefix marks an owner that is an account rather than a raw
+// access key. Access keys cannot contain ":", so the two never collide.
+const AccountOwnerPrefix = "domain:"
+
+// Owner returns who owns what the caller creates. A known key acts for
+// its account, as on Huawei Cloud. Any other key is, as in v0.1, an
+// owner of its own. Empty means the request named no access key.
+func (id Identity) Owner() string {
+	if id.Known {
+		return AccountOwnerPrefix + id.Principal.AccountID
+	}
+	return id.AccessKey
+}
+
+// Resolver finds who an access key belongs to.
+type Resolver interface {
+	Lookup(accessKey string) (identity.Principal, bool)
+}
+
+// Resolve completes id with what resolver knows about its access key.
+func Resolve(id Identity, resolver Resolver) Identity {
+	if resolver == nil || id.AccessKey == "" {
+		return id
+	}
+	if p, ok := resolver.Lookup(id.AccessKey); ok {
+		id.Known, id.Principal = true, p
+	}
+	return id
 }
 
 // Parse extracts the Identity from request headers. It never fails:
@@ -99,6 +135,16 @@ func WithIdentity(ctx context.Context, id Identity) context.Context {
 	return context.WithValue(ctx, ctxKey{}, id)
 }
 
+type resolverKey struct{}
+
+// ResolverFromContext returns the Resolver Middleware used, so a service
+// can resolve a key the request carries elsewhere, such as the access key
+// of a presigned URL.
+func ResolverFromContext(ctx context.Context) Resolver {
+	r, _ := ctx.Value(resolverKey{}).(Resolver)
+	return r
+}
+
 // FromContext returns the Identity stored by Middleware, or the zero
 // Identity with SchemeNone.
 func FromContext(ctx context.Context) Identity {
@@ -108,20 +154,27 @@ func FromContext(ctx context.Context) Identity {
 	return Identity{Scheme: SchemeNone}
 }
 
-// Middleware parses credentials, stores the Identity in the request
-// context and logs it at debug level. In accept mode it never rejects.
-func Middleware(log *slog.Logger) func(http.Handler) http.Handler {
+// Middleware parses credentials, resolves the access key with resolver
+// (which may be nil), stores the Identity in the request context and logs
+// it at debug level. In accept mode it never rejects.
+func Middleware(log *slog.Logger, resolver Resolver) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			id := Parse(r.Header)
+			id := Resolve(Parse(r.Header), resolver)
 			log.DebugContext(r.Context(), "auth accepted",
 				"scheme", id.Scheme,
 				"access_key", id.AccessKey,
+				"known", id.Known,
+				"account", id.Principal.AccountID,
 				"project_id", id.ProjectID,
 				"has_token", id.HasToken,
 				"temporary", id.Temporary,
 			)
-			next.ServeHTTP(w, r.WithContext(WithIdentity(r.Context(), id)))
+			ctx := WithIdentity(r.Context(), id)
+			if resolver != nil {
+				ctx = context.WithValue(ctx, resolverKey{}, resolver)
+			}
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }

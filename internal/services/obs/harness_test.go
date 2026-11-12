@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/victor-akande/weistack/internal/core/config"
+	"github.com/victor-akande/weistack/internal/core/identity"
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/store"
@@ -45,6 +46,12 @@ func newEnv(t *testing.T) *env {
 
 func newEnvWith(t *testing.T, st store.Store, dir string) *env {
 	t.Helper()
+	return newEnvDir(t, st, dir, nil)
+}
+
+// newEnvDir is newEnvWith with a directory of known access keys.
+func newEnvDir(t *testing.T, st store.Store, dir string, keys *identity.Directory) *env {
+	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	e := &env{store: st, dir: dir, now: testEpoch}
 	t.Cleanup(func() { _ = st.Close() })
@@ -61,7 +68,7 @@ func newEnvWith(t *testing.T, st store.Store, dir string) *env {
 	srv, err := server.New(server.Options{
 		Config: cfg, ProjectID: testProject, Logger: log, Store: st,
 		Engine: lifecycle.New(lifecycle.Options{Logger: log}), IDs: gen,
-		Services: []server.Service{svc},
+		Services: []server.Service{svc}, Directory: keys,
 	})
 	if err != nil {
 		t.Fatalf("server.New: %v", err)

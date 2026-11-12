@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/victor-akande/weistack/internal/core/hostpattern"
+	"github.com/victor-akande/weistack/internal/core/identity"
 )
 
 // EnvPrefix is prepended to every environment variable WeiStack reads.
@@ -79,8 +80,14 @@ type Config struct {
 	// ProxyPassthrough says who may tunnel through WeiStack to other
 	// hosts: loopback (clients on this machine), all, or none.
 	ProxyPassthrough string
-	// TLSDir holds the local CA. Empty means the default location.
+	// TLSDir holds the local CA, and the bootstrap administrator's
+	// credentials beside it. Empty means the default location.
 	TLSDir string
+	// AdminAccessKey and AdminSecretKey fix the bootstrap administrator's
+	// keys instead of the generated ones, for example in CI. Both or
+	// neither.
+	AdminAccessKey string
+	AdminSecretKey string
 	// ServicePorts gives services a listener of their own, on which every
 	// request goes to that service: for clients that cannot address a
 	// service by host name or path prefix. Keyed by service name.
@@ -134,6 +141,8 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 	fs.StringVar(&proxyBypass, "proxy-bypass", env.str("PROXY_BYPASS", strings.Join(DefaultProxyBypass, ",")),
 		"hosts inside the proxy domains that are passed on, not answered: * is one label, {region} the same label everywhere")
 	fs.StringVar(&cfg.ProxyPassthrough, "proxy-passthrough", env.str("PROXY_PASSTHROUGH", "loopback"), "who may tunnel to other hosts through the proxy: loopback, all or none")
+	fs.StringVar(&cfg.AdminAccessKey, "admin-access-key", env.str("ADMIN_ACCESS_KEY", ""), "the administrator's access key, instead of the generated one")
+	fs.StringVar(&cfg.AdminSecretKey, "admin-secret-key", env.str("ADMIN_SECRET_KEY", ""), "the administrator's secret key (prefer WEISTACK_ADMIN_SECRET_KEY: flags show in process lists)")
 	fs.StringVar(&cfg.TLSDir, "tls-dir", env.str("TLS_DIR", ""), "directory of the local CA (default: weistack/tls in the user config directory)")
 	fs.StringVar(&servicePorts, "service-ports", env.str("SERVICE_PORTS", ""), "extra per-service listeners, for example obs=9000,ecs=9001")
 	fs.StringVar(&services, "services", env.str("SERVICES", ""), "comma-separated services to enable (default all)")
@@ -207,6 +216,12 @@ func (c Config) Validate() error {
 	}
 	if c.LifecycleDelay < 0 {
 		errs = append(errs, fmt.Errorf("lifecycle delay %s must not be negative", c.LifecycleDelay))
+	}
+	switch {
+	case (c.AdminAccessKey == "") != (c.AdminSecretKey == ""):
+		errs = append(errs, errors.New("set both the administrator's access key and secret key, or neither"))
+	case c.AdminAccessKey != "" && (!identity.ValidKey(c.AdminAccessKey) || !identity.ValidKey(c.AdminSecretKey)):
+		errs = append(errs, errors.New("the administrator's keys must be 8 to 128 letters and digits"))
 	}
 	switch c.LogFormat {
 	case "json", "text", "auto":

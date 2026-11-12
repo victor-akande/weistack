@@ -216,6 +216,7 @@ defaults. Run `weistack -h` for the full list.
 | `-proxy-domains` | `WEISTACK_PROXY_DOMAINS` | `myhuaweicloud.com` | Domains the proxy answers for itself |
 | `-proxy-bypass` | `WEISTACK_PROXY_BYPASS` | KooCLI's downloads and API Explorer | Hosts inside the proxy domains that are passed on instead of answered: `*` is one label, `{region}` the same label everywhere. Empty turns it off |
 | `-proxy-passthrough` | `WEISTACK_PROXY_PASSTHROUGH` | `loopback` | Which proxy clients may reach other hosts: `loopback`, `all` or `none` |
+| `-admin-access-key`, `-admin-secret-key` | `WEISTACK_ADMIN_ACCESS_KEY`, `WEISTACK_ADMIN_SECRET_KEY` | generated | Fix the administrator's keys, for example in CI. Prefer the environment variables for the secret: flags show in process lists |
 | `-tls-dir` | `WEISTACK_TLS_DIR` | see above | Where the local CA is kept |
 | `-metrics` | `WEISTACK_METRICS` | off | Serve Prometheus metrics |
 | `-max-body-bytes` | `WEISTACK_MAX_BODY_BYTES` | `10485760` | Body limit for JSON APIs |
@@ -226,7 +227,7 @@ defaults. Run `weistack -h` for the full list.
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /_weistack/health` | Liveness and version |
-| `GET /_weistack/services` | Enabled services, default region and project ID |
+| `GET /_weistack/services` | Enabled services, default region, project ID and account |
 | `GET /_weistack/state` | Dump of every stored resource as JSON |
 | `POST /_weistack/reset` | Wipe all state and pending transitions |
 | `GET /_weistack/ca` | The proxy's CA certificate, as PEM |
@@ -234,10 +235,23 @@ defaults. Run `weistack -h` for the full list.
 
 ## Authentication
 
-Not verified yet: any access key, signature or token is accepted. Credentials
-are still parsed (and the access key logged at debug level) so real clients
-work unchanged. Signature verification is planned for v0.2.
+WeiStack accepts any credentials: signatures and tokens are parsed but not
+checked, so any access key and secret key work.
 
+It does have one account (Huawei Cloud's "domain") and an administrator.
+The administrator's keys are generated on first start and kept beside the
+CA (`~/.config/weistack/tls/admin-credentials.json`, readable only by you),
+so they stay the same across restarts. The banner shows them, and
+`weistack credentials` prints them for the SDKs and Terraform:
+
+```bash
+eval "$(./bin/weistack credentials)"
+```
+
+`/_weistack/services` reports the account's ID and name. Keys WeiStack
+knows, today only the administrator's, act for the account: their OBS
+buckets belong to it, as on Huawei Cloud. Any other key is, as before, an
+owner of its own.
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow (GitHub flow,

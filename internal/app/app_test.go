@@ -544,18 +544,19 @@ func TestBannerAndLogFormat(t *testing.T) {
 	}
 
 	buf.Reset()
-	printBanner(&buf, config.Config{}, "127.0.0.1:8780", "0123456789abcdef0123456789abcdef")
+	printBanner(&buf, config.Config{}, "127.0.0.1:8780", "0123456789abcdef0123456789abcdef", testAccount, testAdmin)
 	for _, want := range []string{
 		"ready on http://127.0.0.1:8780", "0123456789abcdef0123456789abcdef", "new on every start",
 		"export HTTPS_PROXY=http://127.0.0.1:8780", "http://127.0.0.1:8780/_weistack/ca",
 		"/vpc/v1/0123456789abcdef0123456789abcdef/vpcs", "docs/getting-started.md",
+		"weistack  fedcba9876543210fedcba9876543210", "ADMINKEY000000000000  ADMINSECRET0000000000000000000000000000000  (weistack credentials)",
 	} {
 		if !strings.Contains(buf.String(), want) {
 			t.Errorf("banner lacks %q:\n%s", want, buf.String())
 		}
 	}
 	buf.Reset()
-	printBanner(&buf, config.Config{Persist: true, DataDir: "/srv/weistack"}, "127.0.0.1:8780", "0123456789abcdef0123456789abcdef")
+	printBanner(&buf, config.Config{Persist: true, DataDir: "/srv/weistack"}, "127.0.0.1:8780", "0123456789abcdef0123456789abcdef", testAccount, testAdmin)
 	if !strings.Contains(buf.String(), "kept in /srv/weistack") {
 		t.Errorf("persistent banner:\n%s", buf.String())
 	}

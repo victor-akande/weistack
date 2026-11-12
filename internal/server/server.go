@@ -20,6 +20,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/apierr"
 	"github.com/victor-akande/weistack/internal/core/auth"
 	"github.com/victor-akande/weistack/internal/core/config"
+	"github.com/victor-akande/weistack/internal/core/identity"
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/reqctx"
@@ -69,6 +70,9 @@ type Options struct {
 	// Proxy configures the main listener as an HTTP(S) proxy for the
 	// emulated domains. The zero value disables HTTPS interception.
 	Proxy ProxyOptions
+	// Directory resolves access keys to their principals. Nil treats
+	// every key as unknown, as in v0.1.
+	Directory *identity.Directory
 }
 
 // Server routes requests to services and serves the admin API.
@@ -88,6 +92,7 @@ type Server struct {
 	handler  http.Handler
 	proxy    *proxy
 	ca       *tlsca.Authority
+	dir      *identity.Directory
 }
 
 type mounted struct {
@@ -142,6 +147,7 @@ func New(opts Options) (*Server, error) {
 	}
 
 	s.ca = opts.Proxy.CA
+	s.dir = opts.Directory
 	s.admin = s.newAdmin()
 	s.handler = s.wrap(http.HandlerFunc(s.route))
 	s.proxy = newProxy(opts.Proxy, s.handler, s.log)
@@ -195,7 +201,7 @@ func (s *Server) ServiceHandler(name string) (http.Handler, bool) {
 
 // wrap applies the middleware every request goes through.
 func (s *Server) wrap(h http.Handler) http.Handler {
-	return chain(h, s.requestContext, s.observe, s.recoverPanics, cors, auth.Middleware(s.log))
+	return chain(h, s.requestContext, s.observe, s.recoverPanics, cors, auth.Middleware(s.log, s.resolver()))
 }
 
 // ServiceNames returns the enabled services in alphabetical order.
@@ -207,4 +213,13 @@ func chain(h http.Handler, mws ...func(http.Handler) http.Handler) http.Handler 
 		h = mws[i](h)
 	}
 	return h
+}
+
+// resolver returns the directory as an auth.Resolver, or nil when there
+// is none, so that "no resolver" stays a nil interface.
+func (s *Server) resolver() auth.Resolver {
+	if s.dir == nil {
+		return nil
+	}
+	return s.dir
 }
