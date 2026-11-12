@@ -27,13 +27,19 @@ type Bolt struct {
 
 const boltHeaderLen = 16
 
-// OpenBolt opens, creating if necessary, the database at path.
+// OpenBolt opens, creating if necessary, the database at path. It
+// records the format of a new file, upgrades an older one after backing
+// it up, and refuses one written by a newer release (ErrNewerFormat).
 //
 // Writes are not fsynced one by one: an emulator favours low latency, and
 // a killed process loses nothing because the kernel still holds the
 // written pages. The file is synced on Close. Only a machine crash or
 // power loss can cost recent writes.
 func OpenBolt(path string) (*Bolt, error) {
+	return openBolt(path, FormatVersion, migrations)
+}
+
+func openBolt(path string, current uint64, steps map[uint64]migration) (*Bolt, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return nil, fmt.Errorf("store: creating data directory: %w", err)
 	}
@@ -45,6 +51,10 @@ func OpenBolt(path string) (*Bolt, error) {
 	})
 	if err != nil {
 		return nil, fmt.Errorf("store: opening %s: %w", path, err)
+	}
+	if err := prepareFormat(db, path, current, steps); err != nil {
+		_ = db.Close()
+		return nil, err
 	}
 	return &Bolt{db: db}, nil
 }
@@ -244,7 +254,10 @@ func (b *Bolt) Reset(ctx context.Context) error {
 	err := b.db.Update(func(tx *bolt.Tx) error {
 		var names [][]byte
 		err := tx.ForEach(func(name []byte, _ *bolt.Bucket) error {
-			names = append(names, append([]byte{}, name...))
+			// The database's own metadata survives a reset.
+			if string(name) != metaBucket {
+				names = append(names, append([]byte{}, name...))
+			}
 			return nil
 		})
 		if err != nil {
@@ -268,6 +281,9 @@ func (b *Bolt) Dump(ctx context.Context) (map[string][]Record, error) {
 	out := make(map[string][]Record)
 	err := b.db.View(func(tx *bolt.Tx) error {
 		return tx.ForEach(func(name []byte, bkt *bolt.Bucket) error {
+			if string(name) == metaBucket {
+				return nil
+			}
 			recs, err := bucketRecords(bkt)
 			if err != nil {
 				return err
