@@ -14,8 +14,9 @@ Legend: **Yes** implemented, **Partial** implemented with the listed gaps,
 | ListVpcs | `GET /v1/{project_id}/vpcs` | Yes | Filters `id`, `enterprise_project_id`; `marker`/`limit` |
 | UpdateVpc | `PUT /v1/{project_id}/vpcs/{vpc_id}` | Yes | |
 | DeleteVpc | `DELETE /v1/{project_id}/vpcs/{vpc_id}` | Yes | |
-| ShowVpc (v3) | `GET /v3/{project_id}/vpc/vpcs/{vpc_id}` | Yes | `extend_cidrs` is always empty; status `PENDING`/`ACTIVE` |
-| Other VPC v3 operations | `/v3/{project_id}/vpc/vpcs...` | No | |
+| ListVpcs (v3) | `GET /v3/{project_id}/vpc/vpcs` | Yes | Filters `id`, `name`, `description`, `cidr`, each repeatable; `marker`/`limit` (at most 2000) with `page_info`. KooCLI's default |
+| ShowVpc (v3) | `GET /v3/{project_id}/vpc/vpcs/{vpc_id}` | Yes | `extend_cidrs` is always empty; status `PENDING`/`ACTIVE`; `cloud_resources` counts the default route table and the subnets |
+| Other VPC v3 operations | `/v3/{project_id}/vpc/vpcs...` | No | Create, update and delete are not in the public API reference; use v1 |
 
 Behaviour:
 

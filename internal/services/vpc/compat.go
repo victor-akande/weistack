@@ -75,20 +75,75 @@ func (s *Service) handleShowVPCv3(w http.ResponseWriter, r *http.Request, t Tena
 	if err != nil {
 		return err
 	}
-	return httpx.WriteJSON(w, http.StatusOK, v3VPCResponse{
-		RequestID: requestID(r),
-		VPC: v3VPC{
-			ID: v.ID, Name: v.Name, Description: v.Description, CIDR: v.CIDR, ExtendCIDRs: []string{},
-			Status: v3Status(v.Status), ProjectID: v.TenantID, EnterpriseProjectID: v.EnterpriseProjectID,
-			CreatedAt: TimeZ(time.Time(v.CreatedAt)), UpdatedAt: TimeZ(time.Time(v.UpdatedAt)),
-			CloudResources: []cloudResource{
-				{ResourceType: "virsubnet", ResourceCount: len(subnets)},
-			},
-			Tags:                             []Tag{},
-			BlockServiceEndpointStates:       v.BlockServiceEndpointStates,
-			EnableNetworkAddressUsageMetrics: v.EnableNetworkAddressUsageMetrics,
+	return httpx.WriteJSON(w, http.StatusOK, v3VPCResponse{RequestID: requestID(r), VPC: v3View(v, len(subnets))})
+}
+
+// v3View renders a VPC in the v3 API's form. Every VPC has its default
+// route table, so the route table count is always 1.
+func v3View(v VPC, subnets int) v3VPC {
+	return v3VPC{
+		ID: v.ID, Name: v.Name, Description: v.Description, CIDR: v.CIDR, ExtendCIDRs: []string{},
+		Status: v3Status(v.Status), ProjectID: v.TenantID, EnterpriseProjectID: v.EnterpriseProjectID,
+		CreatedAt: TimeZ(time.Time(v.CreatedAt)), UpdatedAt: TimeZ(time.Time(v.UpdatedAt)),
+		CloudResources: []cloudResource{
+			{ResourceType: "routetable", ResourceCount: 1},
+			{ResourceType: "virsubnet", ResourceCount: subnets},
 		},
+		Tags:                             []Tag{},
+		BlockServiceEndpointStates:       v.BlockServiceEndpointStates,
+		EnableNetworkAddressUsageMetrics: v.EnableNetworkAddressUsageMetrics,
+	}
+}
+
+type listVPCsV3Response struct {
+	RequestID string   `json:"request_id"`
+	VPCs      []v3VPC  `json:"vpcs"`
+	PageInfo  pageInfo `json:"page_info"`
+}
+
+// handleListVPCsV3 is the v3 VPC list. The filters id, name, description
+// and cidr may each be repeated; a VPC matches when it equals any of the
+// values given for every filter present.
+func (s *Service) handleListVPCsV3(w http.ResponseWriter, r *http.Request, t Tenant) error {
+	q := r.URL.Query()
+	all, err := s.vpcs(t).List(r.Context(), func(v VPC) bool {
+		return anyOf(q["id"], v.ID) && anyOf(q["name"], v.Name) &&
+			anyOf(q["description"], v.Description) && anyOf(q["cidr"], v.CIDR)
 	})
+	if err != nil {
+		return err
+	}
+	page, info, err := paginate(q, all, func(v VPC) string { return v.ID })
+	if err != nil {
+		return err
+	}
+	// One pass over the subnets counts them for every VPC on the page.
+	subnets, err := s.subnets(t).List(r.Context(), nil)
+	if err != nil {
+		return err
+	}
+	counts := make(map[string]int, len(page))
+	for _, sn := range subnets {
+		counts[sn.VPCID]++
+	}
+	out := make([]v3VPC, 0, len(page))
+	for _, v := range page {
+		out = append(out, v3View(v, counts[v.ID]))
+	}
+	return httpx.WriteJSON(w, http.StatusOK, listVPCsV3Response{RequestID: requestID(r), VPCs: out, PageInfo: info})
+}
+
+// anyOf reports whether got is one of want, or want is empty.
+func anyOf(want []string, got string) bool {
+	if len(want) == 0 {
+		return true
+	}
+	for _, w := range want {
+		if w == got {
+			return true
+		}
+	}
+	return false
 }
 
 // v1SecurityGroup mirrors the SDK model vpc/v2 SecurityGroup (the v1 API).

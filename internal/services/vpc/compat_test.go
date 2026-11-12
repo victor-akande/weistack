@@ -140,3 +140,68 @@ func TestCreateSecurityGroupThroughV1(t *testing.T) {
 	e.expect(t, "error_vpc_0601", http.MethodPost, "/security-groups", `{}`)
 	e.expect(t, "error_vpc_0601", http.MethodPost, "/security-groups", `nope`)
 }
+
+func TestListVPCsV3(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t)
+	web := e.mustCreateVPC(t, "web", "192.168.0.0/16")
+	e.mustCreateSubnet(t, web.ID, "a", "192.168.1.0/24", "192.168.1.1")
+	e.mustCreateSubnet(t, web.ID, "b", "192.168.2.0/24", "192.168.2.1")
+	db := e.mustCreateVPC(t, "db", "10.0.0.0/16")
+
+	// The call KooCLI makes by default.
+	e.expect3(t, "list_vpcs_v3", http.MethodGet, "/vpcs", "")
+
+	names := func(query string) []string {
+		t.Helper()
+		status, out := e.call3(t, http.MethodGet, "/vpcs"+query, "")
+		if status != http.StatusOK {
+			t.Fatalf("GET /vpcs%s: %d %s", query, status, out)
+		}
+		var got []string
+		for _, v := range decodeInto[listVPCsV3Response](t, out).VPCs {
+			got = append(got, v.Name)
+		}
+		return got
+	}
+	for query, want := range map[string]string{
+		"?id=" + db.ID:                             "db",
+		"?id=" + db.ID + "&id=" + web.ID:           "web,db",
+		"?name=web":                                "web",
+		"?name=web&name=db":                        "web,db",
+		"?cidr=10.0.0.0/16":                        "db",
+		"?description=":                            "web,db",
+		"?name=web&cidr=10.0.0.0/16":               "",
+		"?name=nope":                               "",
+		"?id=00000000-0000-4000-8000-000000000000": "",
+	} {
+		if got := strings.Join(names(query), ","); got != want {
+			t.Errorf("GET /vpcs%s = %q, want %q", query, got, want)
+		}
+	}
+
+	// Paging: a next marker only while more follow.
+	_, out := e.call3(t, http.MethodGet, "/vpcs?limit=1", "")
+	first := decodeInto[listVPCsV3Response](t, out)
+	if len(first.VPCs) != 1 || first.PageInfo.NextMarker == nil || *first.PageInfo.NextMarker != web.ID || first.PageInfo.PreviousMarker != web.ID {
+		t.Fatalf("first page = %s", out)
+	}
+	_, out = e.call3(t, http.MethodGet, "/vpcs?limit=1&marker="+*first.PageInfo.NextMarker, "")
+	second := decodeInto[listVPCsV3Response](t, out)
+	if len(second.VPCs) != 1 || second.VPCs[0].ID != db.ID || second.PageInfo.NextMarker != nil {
+		t.Fatalf("second page = %s", out)
+	}
+
+	for _, query := range []string{"?limit=2001", "?limit=x", "?marker=00000000-0000-4000-8000-000000000000"} {
+		status, out := e.call3(t, http.MethodGet, "/vpcs"+query, "")
+		if status != http.StatusBadRequest || !strings.Contains(string(out), `"VPC.9902"`) {
+			t.Errorf("GET /vpcs%s = %d %s, want 400 VPC.9902", query, status, out)
+		}
+	}
+
+	// Another project sees nothing.
+	status, out := e.send(t, http.MethodGet, "/v3/ffffffffffffffffffffffffffffffff/vpc/vpcs", nil)
+	if list := decodeInto[listVPCsV3Response](t, out); status != http.StatusOK || len(list.VPCs) != 0 || list.VPCs == nil {
+		t.Fatalf("another project: %d %s", status, out)
+	}
+}
