@@ -59,6 +59,7 @@ func (s *Service) Routes(r chi.Router) {
 		r.Get("/security-group-rules/{security_group_rule_id}", s.v3("ShowSecurityGroupRule", s.handleShowSecurityGroupRule))
 		r.Delete("/security-group-rules/{security_group_rule_id}", s.v3("DeleteSecurityGroupRule", s.handleDeleteSecurityGroupRule))
 
+		r.Get("/vpcs", s.v3("ListVpcsV3", s.handleListVPCsV3))
 		r.Get("/vpcs/{vpc_id}", s.v3("ShowVpcV3", s.handleShowVPCv3))
 	})
 }
