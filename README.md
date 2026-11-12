@@ -100,6 +100,9 @@ variable `DOCKERHUB_REPOSITORY` and the secrets `DOCKERHUB_USERNAME` and
 `DOCKERHUB_TOKEN` in the repository's Actions settings. `goreleaser release
 --snapshot --clean` builds every archive locally without publishing.
 
+After a release, add its data fixture for the upgrade test:
+`internal/app/testdata/upgrade/generate.sh <version>` (see the README there).
+
 ## How requests are routed
 
 One listener (default port `8780`) serves every service. A request is matched,

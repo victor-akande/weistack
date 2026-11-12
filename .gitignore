@@ -12,6 +12,8 @@ coverage.*
 # Local emulator state
 /data/
 *.db
+# ...except the data written by each release, for the upgrade test.
+!internal/app/testdata/upgrade/*/data/weistack.db
 
 # Editors and OS
 .idea/
