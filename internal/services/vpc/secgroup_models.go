@@ -3,28 +3,23 @@ package vpc
 import (
 	"fmt"
 	"time"
+
+	"github.com/victor-akande/weistack/internal/core/wiretime"
 )
 
-// timeZLayout is the timestamp format of the VPC v3 API
-// ("2020-07-09T05:56:27Z").
-const timeZLayout = "2006-01-02T15:04:05Z"
-
-// TimeZ is a timestamp in the VPC v3 wire format.
+// TimeZ is a timestamp in the VPC v3 wire format ("2020-07-09T05:56:27Z").
 type TimeZ time.Time
 
 // MarshalJSON implements json.Marshaler.
 func (t TimeZ) MarshalJSON() ([]byte, error) {
-	return []byte(`"` + time.Time(t).UTC().Format(timeZLayout) + `"`), nil
+	return wiretime.AppendQuoted(make([]byte, 0, 24), time.Time(t), true), nil
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
 func (t *TimeZ) UnmarshalJSON(b []byte) error {
-	if len(b) < 2 || b[0] != '"' || b[len(b)-1] != '"' {
-		return fmt.Errorf("vpc: timestamp %s is not a string", b)
-	}
-	parsed, err := time.ParseInLocation(timeZLayout, string(b[1:len(b)-1]), time.UTC)
+	parsed, err := wiretime.ParseQuoted(b, true)
 	if err != nil {
-		return fmt.Errorf("vpc: parsing timestamp: %w", err)
+		return fmt.Errorf("vpc: timestamp %s: %w", b, err)
 	}
 	*t = TimeZ(parsed)
 	return nil

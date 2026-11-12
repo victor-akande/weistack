@@ -4,27 +4,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/victor-akande/weistack/internal/core/wiretime"
 )
 
-// timeLayout is the timestamp format of the IMS API ("2018-09-06T14:03:27Z").
-const timeLayout = "2006-01-02T15:04:05Z"
-
-// Time is a timestamp in the IMS wire format.
+// Time is a timestamp in the IMS wire format ("2018-09-06T14:03:27Z").
 type Time time.Time
 
 // MarshalJSON implements json.Marshaler.
 func (t Time) MarshalJSON() ([]byte, error) {
-	return []byte(`"` + time.Time(t).UTC().Format(timeLayout) + `"`), nil
+	return wiretime.AppendQuoted(make([]byte, 0, 24), time.Time(t), true), nil
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
 func (t *Time) UnmarshalJSON(b []byte) error {
-	if len(b) < 2 || b[0] != '"' || b[len(b)-1] != '"' {
-		return fmt.Errorf("ims: timestamp %s is not a string", b)
-	}
-	parsed, err := time.ParseInLocation(timeLayout, string(b[1:len(b)-1]), time.UTC)
+	parsed, err := wiretime.ParseQuoted(b, true)
 	if err != nil {
-		return fmt.Errorf("ims: parsing timestamp: %w", err)
+		return fmt.Errorf("ims: timestamp %s: %w", b, err)
 	}
 	*t = Time(parsed)
 	return nil
