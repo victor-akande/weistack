@@ -49,7 +49,26 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// No emulated service, but the host may still name a region
+	// (apiexplorer.ap-southeast-3...): log that, not the default.
+	if region := hostRegion(r.Host); region != "" {
+		info.Region = region
+	}
 	apierr.Write(w, r, apierr.StyleFlat, errNoSuchAPI)
+}
+
+// hostRegion returns the region an endpoint host names in its second
+// label ("iam.ap-southeast-3.myhuaweicloud.com"), or "".
+func hostRegion(hostport string) string {
+	host := hostport
+	if h, _, err := net.SplitHostPort(hostport); err == nil {
+		host = h
+	}
+	labels := strings.Split(strings.ToLower(host), ".")
+	if len(labels) > 2 && regionLabelRE.MatchString(labels[1]) {
+		return labels[1]
+	}
+	return ""
 }
 
 func dispatch(m *mounted, w http.ResponseWriter, r *http.Request) {

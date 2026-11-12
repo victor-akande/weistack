@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/victor-akande/weistack/internal/core/hostpattern"
 )
 
 // EnvPrefix is prepended to every environment variable WeiStack reads.
@@ -70,6 +72,10 @@ type Config struct {
 	// ProxyDomains are the domains WeiStack answers for when clients use
 	// it as an HTTP(S) proxy.
 	ProxyDomains []string
+	// ProxyBypass are host patterns inside ProxyDomains that WeiStack
+	// does not answer for: tooling downloads such as KooCLI's catalogue.
+	// They are treated like any other host outside the domains.
+	ProxyBypass []string
 	// ProxyPassthrough says who may tunnel through WeiStack to other
 	// hosts: loopback (clients on this machine), all, or none.
 	ProxyPassthrough string
@@ -106,6 +112,7 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 		services     string
 		servicePorts string
 		proxyDomains string
+		proxyBypass  string
 	)
 
 	fs := flag.NewFlagSet("weistack", flag.ContinueOnError)
@@ -124,6 +131,8 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 	fs.StringVar(&logLevel, "log-level", env.str("LOG_LEVEL", "info"), "log level: debug, info, warn or error")
 	fs.StringVar(&cfg.LogFormat, "log-format", env.str("LOG_FORMAT", DefaultLogFormat), "log format: json, text, or auto for text at a terminal")
 	fs.StringVar(&proxyDomains, "proxy-domains", env.str("PROXY_DOMAINS", "myhuaweicloud.com"), "domains answered when WeiStack is used as an HTTPS proxy")
+	fs.StringVar(&proxyBypass, "proxy-bypass", env.str("PROXY_BYPASS", strings.Join(DefaultProxyBypass, ",")),
+		"hosts inside the proxy domains that are passed on, not answered: * is one label, {region} the same label everywhere")
 	fs.StringVar(&cfg.ProxyPassthrough, "proxy-passthrough", env.str("PROXY_PASSTHROUGH", "loopback"), "who may tunnel to other hosts through the proxy: loopback, all or none")
 	fs.StringVar(&cfg.TLSDir, "tls-dir", env.str("TLS_DIR", ""), "directory of the local CA (default: weistack/tls in the user config directory)")
 	fs.StringVar(&servicePorts, "service-ports", env.str("SERVICE_PORTS", ""), "extra per-service listeners, for example obs=9000,ecs=9001")
@@ -149,6 +158,7 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 	cfg.LogFormat = strings.ToLower(cfg.LogFormat)
 	cfg.Services = splitList(services)
 	cfg.ProxyDomains = splitList(proxyDomains)
+	cfg.ProxyBypass = splitList(proxyBypass)
 	if cfg.ServicePorts, err = parseServicePorts(servicePorts); err != nil {
 		return Config{}, err
 	}
@@ -182,6 +192,11 @@ func (c Config) Validate() error {
 	for _, d := range c.ProxyDomains {
 		if !domainRE.MatchString(d) {
 			errs = append(errs, fmt.Errorf("proxy domain %q is not a domain name", d))
+		}
+	}
+	for _, p := range c.ProxyBypass {
+		if _, err := hostpattern.Compile(p); err != nil {
+			errs = append(errs, fmt.Errorf("proxy bypass: %w", err))
 		}
 	}
 	if c.RDSMaxInstances < 1 {
@@ -271,6 +286,16 @@ func splitList(s string) []string {
 		out = append(out, part)
 	}
 	return out
+}
+
+// DefaultProxyBypass are the hosts under myhuaweicloud.com that Huawei's
+// tools download from before they call any API: KooCLI's version file and
+// API metadata (an OBS bucket per region) and API Explorer's catalogue.
+// They carry no API traffic, so passing them through lets the tools start
+// without letting a request for an unemulated service escape.
+var DefaultProxyBypass = []string{
+	"{region}-hwcloudcli.obs.{region}.myhuaweicloud.com",
+	"apiexplorer.*.myhuaweicloud.com",
 }
 
 // DefaultDataDir is where -persist keeps state when -data-dir is not

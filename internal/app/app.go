@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/victor-akande/weistack/internal/core/config"
+	"github.com/victor-akande/weistack/internal/core/hostpattern"
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/store"
@@ -126,6 +127,16 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		return err
 	}
 
+	// Validated with the configuration, so compiling cannot fail here.
+	bypass := make([]*hostpattern.Pattern, 0, len(cfg.ProxyBypass))
+	for _, p := range cfg.ProxyBypass {
+		compiled, err := hostpattern.Compile(p)
+		if err != nil {
+			return err
+		}
+		bypass = append(bypass, compiled)
+	}
+
 	srv, err := server.New(server.Options{
 		Config:    cfg,
 		ProjectID: projectID,
@@ -135,7 +146,7 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		IDs:       gen,
 		Services:  services,
 		Proxy: server.ProxyOptions{
-			CA: ca, Domains: cfg.ProxyDomains, Passthrough: cfg.ProxyPassthrough,
+			CA: ca, Domains: cfg.ProxyDomains, Bypass: bypass, Passthrough: cfg.ProxyPassthrough,
 		},
 	})
 	if err != nil {
