@@ -133,8 +133,8 @@ terraform plan      # "No changes": what WeiStack reports matches what was writt
 terraform destroy
 ```
 
-Other clients work the same way; see "Pointing a client at WeiStack" in the
-[README](../README.md#pointing-a-client-at-weistack).
+Other clients work the same way: see [connecting clients](clients.md) for
+the Go and Python SDKs, the OBS SDKs, the AWS CLI and KooCLI.
 
 ## 5. Keep state across restarts
 

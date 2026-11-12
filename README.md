@@ -97,6 +97,9 @@ message naming the operation, so a gap is never mistaken for a bug.
 
 ## Pointing a client at WeiStack
 
+[docs/clients.md](docs/clients.md) has a set-up for each client: Terraform,
+the Go and Python SDKs, the OBS SDKs, the AWS CLI and KooCLI.
+
 ### As an HTTPS proxy (recommended)
 
 WeiStack is also an HTTP proxy. A client keeps Huawei Cloud's real
