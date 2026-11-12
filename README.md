@@ -133,7 +133,10 @@ curl -o weistack-ca.pem http://127.0.0.1:8780/_weistack/ca
 
 Requests to hosts outside `myhuaweicloud.com` are relayed unchanged, but
 only for clients on the loopback interface; `-proxy-passthrough` changes
-that. When WeiStack runs in a container, clients reach it from another
+that. The same goes for the few hosts under `myhuaweicloud.com` that
+Huawei's tools download from before calling any API (KooCLI's metadata and
+API Explorer's catalogue, see `-proxy-bypass`), so those tools start
+normally. No API request is ever passed on. When WeiStack runs in a container, clients reach it from another
 address, so either set `NO_PROXY` for the hosts they need directly or run
 the container with `-proxy-passthrough all`.
 
@@ -188,6 +191,7 @@ defaults. Run `weistack -h` for the full list.
 | `-services` | `WEISTACK_SERVICES` | all | Comma-separated subset to enable |
 | `-service-ports` | `WEISTACK_SERVICE_PORTS` | none | Extra listeners that each serve one service, for example `obs=9000` |
 | `-proxy-domains` | `WEISTACK_PROXY_DOMAINS` | `myhuaweicloud.com` | Domains the proxy answers for itself |
+| `-proxy-bypass` | `WEISTACK_PROXY_BYPASS` | KooCLI's downloads and API Explorer | Hosts inside the proxy domains that are passed on instead of answered: `*` is one label, `{region}` the same label everywhere. Empty turns it off |
 | `-proxy-passthrough` | `WEISTACK_PROXY_PASSTHROUGH` | `loopback` | Which proxy clients may reach other hosts: `loopback`, `all` or `none` |
 | `-tls-dir` | `WEISTACK_TLS_DIR` | see above | Where the local CA is kept |
 | `-metrics` | `WEISTACK_METRICS` | off | Serve Prometheus metrics |

@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/victor-akande/weistack/internal/core/hostpattern"
 	"github.com/victor-akande/weistack/internal/tlsca"
 )
 
@@ -32,8 +33,11 @@ type ProxyOptions struct {
 	// CA signs the certificates presented for intercepted hosts. Nil
 	// disables HTTPS interception.
 	CA *tlsca.Authority
-	// Domains are intercepted, with all their subdomains.
+	// Domains are intercepted, with all their subdomains...
 	Domains []string
+	// ...except hosts matching Bypass, which are treated like any host
+	// outside the domains.
+	Bypass []*hostpattern.Pattern
 	// Passthrough is one of the Passthrough constants.
 	Passthrough string
 }
@@ -56,9 +60,15 @@ func newProxy(opts ProxyOptions, handler http.Handler, log *slog.Logger) *proxy 
 	return &proxy{opts: opts, handler: handler, log: log, tunnels: map[*http.Server]struct{}{}}
 }
 
-// intercepts reports whether host belongs to an emulated domain.
+// intercepts reports whether host belongs to an emulated domain and is
+// not bypassed.
 func (p *proxy) intercepts(host string) bool {
 	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	for _, b := range p.opts.Bypass {
+		if b.Match(host) {
+			return false
+		}
+	}
 	for _, d := range p.opts.Domains {
 		if host == d || strings.HasSuffix(host, "."+d) {
 			return true

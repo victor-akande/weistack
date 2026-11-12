@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/victor-akande/weistack/internal/core/config"
+	"github.com/victor-akande/weistack/internal/core/hostpattern"
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/store"
@@ -48,7 +49,7 @@ func newProxyEnv(t *testing.T, passthrough string, withCA bool) *proxyEnv {
 		Config: cfg, ProjectID: testProject, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Store: st, Engine: lifecycle.New(lifecycle.Options{}), IDs: ids.New(),
 		Services: []Service{&fakeService{name: "vpc"}, &fakeService{name: "obs"}},
-		Proxy:    ProxyOptions{CA: ca, Domains: []string{"myhuaweicloud.com"}, Passthrough: passthrough},
+		Proxy:    ProxyOptions{CA: ca, Domains: []string{"myhuaweicloud.com"}, Bypass: defaultBypass(t), Passthrough: passthrough},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -290,5 +291,73 @@ func TestAdminServesCACertificate(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != http.StatusNotFound {
 		t.Fatalf("GET /_weistack/ca without a CA = %d", res.StatusCode)
+	}
+}
+
+// defaultBypass compiles the configuration's default bypass patterns.
+func defaultBypass(t *testing.T) []*hostpattern.Pattern {
+	t.Helper()
+	var out []*hostpattern.Pattern
+	for _, raw := range config.DefaultProxyBypass {
+		p, err := hostpattern.Compile(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+func TestToolingHostsAreNotIntercepted(t *testing.T) {
+	t.Parallel()
+	p := newProxy(ProxyOptions{Domains: []string{"myhuaweicloud.com"}, Bypass: defaultBypass(t)}, nil, nil)
+	for host, want := range map[string]bool{
+		// KooCLI's downloads and API Explorer's catalogue go to Huawei.
+		"ap-southeast-3-hwcloudcli.obs.ap-southeast-3.myhuaweicloud.com": false,
+		"cn-north-4-hwcloudcli.obs.cn-north-4.myhuaweicloud.com":         false,
+		"apiexplorer.ap-southeast-3.myhuaweicloud.com":                   false,
+		// Everything else in the domain stays emulated, including a
+		// user's bucket that merely looks like KooCLI's.
+		"my-hwcloudcli.obs.ap-southeast-1.myhuaweicloud.com":             true,
+		"ap-southeast-1-hwcloudcli.obs.ap-southeast-3.myhuaweicloud.com": true,
+		"vpc.ap-southeast-1.myhuaweicloud.com":                           true,
+		"iam.ap-southeast-3.myhuaweicloud.com":                           true,
+	} {
+		if got := p.intercepts(host); got != want {
+			t.Errorf("intercepts(%q) = %v, want %v", host, got, want)
+		}
+	}
+}
+
+// A bypassed host is treated like any host outside the domains: with
+// passthrough off the tunnel is refused, where an intercepted host would
+// have been answered. Nothing here reaches the network.
+func TestBypassedHostFollowsThePassthroughRule(t *testing.T) {
+	t.Parallel()
+	off := newProxyEnv(t, PassthroughNone, true)
+	c := off.client(&tls.Config{RootCAs: off.ca.Pool(), MinVersion: tls.VersionTLS12})
+	_, err := c.Get("https://apiexplorer.ap-southeast-3.myhuaweicloud.com/v4/products")
+	if err == nil || !strings.Contains(err.Error(), "Forbidden") {
+		t.Fatalf("a bypassed host with passthrough off: %v, want the tunnel refused", err)
+	}
+	// The emulated endpoints are still answered.
+	if status, _ := getJSON(t, c, "https://vpc.ap-southeast-1.myhuaweicloud.com/v1/p/things"); status != http.StatusOK {
+		t.Fatalf("an emulated host: %d", status)
+	}
+}
+
+func TestHostRegion(t *testing.T) {
+	t.Parallel()
+	for host, want := range map[string]string{
+		"apiexplorer.ap-southeast-3.myhuaweicloud.com":   "ap-southeast-3",
+		"iam.cn-north-4.myhuaweicloud.com:443":           "cn-north-4",
+		"iam.myhuaweicloud.com":                          "",
+		"localhost:8780":                                 "",
+		"my-bucket.obs.ap-southeast-1.myhuaweicloud.com": "",
+		"127.0.0.1:8780":                                 "",
+	} {
+		if got := hostRegion(host); got != want {
+			t.Errorf("hostRegion(%q) = %q, want %q", host, got, want)
+		}
 	}
 }

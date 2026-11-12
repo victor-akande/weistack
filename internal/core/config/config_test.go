@@ -29,6 +29,7 @@ func TestLoadDefaults(t *testing.T) {
 		Port:             8780,
 		Region:           "ap-southeast-1",
 		ProxyDomains:     []string{"myhuaweicloud.com"},
+		ProxyBypass:      DefaultProxyBypass,
 		ProxyPassthrough: "loopback",
 		ECSMaxServers:    20,
 		ECSMaxVCPUs:      80,
@@ -273,5 +274,19 @@ func TestLogFormats(t *testing.T) {
 		if _, err := Load([]string{"-log-format", f}, env(nil), io.Discard); err != nil {
 			t.Errorf("-log-format %s: %v", f, err)
 		}
+	}
+}
+
+func TestProxyBypass(t *testing.T) {
+	t.Parallel()
+	cfg, err := Load([]string{"-proxy-bypass", "tools.*.example.com, {region}-cli.obs.{region}.example.com"}, env(nil), io.Discard)
+	if err != nil || len(cfg.ProxyBypass) != 2 || cfg.ProxyBypass[0] != "tools.*.example.com" {
+		t.Fatalf("custom bypass = %v, %v", cfg.ProxyBypass, err)
+	}
+	if cfg, err := Load([]string{"-proxy-bypass", ""}, env(nil), io.Discard); err != nil || len(cfg.ProxyBypass) != 0 {
+		t.Fatalf("an empty bypass turns it off: %v, %v", cfg.ProxyBypass, err)
+	}
+	if _, err := Load([]string{"-proxy-bypass", "ex*mple.com"}, env(nil), io.Discard); err == nil || !strings.Contains(err.Error(), "proxy bypass") {
+		t.Fatalf("an invalid pattern: %v", err)
 	}
 }
