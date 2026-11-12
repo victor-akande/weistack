@@ -11,10 +11,15 @@ import (
 
 func newRDS(t *testing.T) *rdsv3.RdsClient {
 	t.Helper()
+	return newRDSAt(t, emulatorAddr)
+}
+
+func newRDSAt(t *testing.T, addr string) *rdsv3.RdsClient {
+	t.Helper()
 	hc, err := rdsv3.RdsClientBuilder().
 		WithEndpoints([]string{"http://rds." + region + ".myhuaweicloud.com"}).
 		WithCredential(credentials(t)).
-		WithHttpConfig(httpConfig()).
+		WithHttpConfig(httpConfigAt(addr)).
 		SafeBuild()
 	if err != nil {
 		t.Fatalf("building RDS client: %v", err)
