@@ -3,8 +3,9 @@
 [![CI](https://github.com/victor-akande/weistack/actions/workflows/ci.yml/badge.svg)](https://github.com/victor-akande/weistack/actions/workflows/ci.yml)
 
 A lightweight, local emulator of core Huawei Cloud services, written in Go and
-shipped as a single binary and Docker image. Point Huawei's own tools (KooCLI,
-the official SDKs, the Terraform provider) at it with an endpoint override.
+shipped as a single binary and Docker image. Huawei's own tools (KooCLI, the
+official SDKs, the Terraform provider) use it unchanged: they keep the real
+endpoints and reach WeiStack as an HTTPS proxy.
 
 WeiStack is an independent project. It is not affiliated with, endorsed by, or
 sponsored by Huawei.
@@ -62,11 +63,30 @@ tar -xzf weistack_<version>_linux_amd64.tar.gz
 ./weistack version
 ```
 
-The image is multi-architecture (linux/amd64 and linux/arm64):
+The image is multi-architecture (linux/amd64 and linux/arm64) and about
+5 MB:
 
 ```bash
-docker run -p 127.0.0.1:8780:8780 victhedev/weistack:latest
+docker run -it --rm -p 127.0.0.1:8780:8780 victhedev/weistack:latest
 ```
+
+With `-it` WeiStack sees a terminal: it prints its banner with the project
+ID and writes readable logs. Detached (`-d`), it logs JSON for log
+collectors; add `-e WEISTACK_LOG_FORMAT=text` to read `docker logs` more
+easily. Other things to know when running the image:
+
+- **Keep state** across restarts with a volume:
+  `-e WEISTACK_PERSIST=1 -v weistack-data:/data`. The project ID and the
+  proxy's CA are kept there too, so clients keep working after
+  `docker restart`.
+- **As a proxy**, requests from the host reach the container from another
+  address, not the loopback, so by default WeiStack refuses to relay them
+  to hosts it does not emulate (such as Terraform's provider registry).
+  Add `-e WEISTACK_PROXY_PASSTHROUGH=all`; publishing the port on
+  `127.0.0.1` keeps other machines out. A refused request names this
+  setting in its response.
+- **The CA** is served by the running container:
+  `curl -o weistack-ca.pem http://127.0.0.1:8780/_weistack/ca`.
 
 Or build from source with `make build` (Go 1.26 or later).
 

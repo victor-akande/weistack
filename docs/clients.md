@@ -41,12 +41,14 @@ the image), so you only fetch it once.
 | [Terraform](#terraform) | Proxy | Applied, re-planned and destroyed in CI (`test/terraform`) |
 | [Go SDK](#go-sdk) | Proxy | In CI (`test/sdk`, `TestHTTPSProxy`) |
 | [OBS SDK for Go](#obs-sdk-for-go) | Proxy, trusting the CA | In CI (`TestOBSThroughProxyTrustingTheCA`) |
-| [AWS CLI and S3 SDKs](#aws-cli-and-s3-sdks) | Endpoint | Request shape in CI with the AWS SDK for Go (`TestS3OverPathPrefix`); the CLI itself not yet |
-| [Python SDK](#python-sdk) | Proxy | From the SDK's documentation; not yet run against WeiStack |
-| [OBS SDK for Python](#obs-sdk-for-python) | Proxy | From the SDK's source; not yet run against WeiStack |
-| [KooCLI](#koocli) | Proxy | From KooCLI's documentation; not yet run against WeiStack |
+| [AWS CLI and S3 SDKs](#aws-cli-and-s3-sdks) | Endpoint | Request shape in CI with the AWS SDK for Go (`TestS3OverPathPrefix`); by hand with AWS CLI 1.46.3 |
+| [Python SDK](#python-sdk) | Proxy, trusting the CA | By hand with huaweicloudsdkcore 3.1.221 |
+| [OBS SDK for Python](#obs-sdk-for-python) | Proxy, trusting the CA | By hand with esdk-obs-python 3.26.6 |
+| [KooCLI](#koocli) | Proxy, trusting the CA | By hand with KooCLI 7.3.12 |
 
-If a guide marked "not yet" does not work for you, please open an issue.
+"By hand" means run exactly as written here, on openEuler 24.03 (x86_64)
+against WeiStack v0.1.0, except where a section says it needs a later
+version. If a guide does not work for you, please open an issue.
 
 ## Terraform
 
@@ -183,15 +185,35 @@ against the real service.
 
 [KooCLI](https://support.huaweicloud.com/intl/en-us/usermanual-hcli/hcli_22_001.html)
 (`hcloud`) reads the lowercase proxy variables. It has no option to trust a
-CA, so it must skip certificate verification:
+particular CA, but on Linux it reads `SSL_CERT_FILE`. That variable
+*replaces* the trusted CAs, and KooCLI also downloads its API metadata from
+Huawei Cloud, so give it a bundle of the system's CAs plus WeiStack's:
 
 ```bash
-export https_proxy=http://127.0.0.1:8780
+# Debian and Ubuntu: /etc/ssl/certs/ca-certificates.crt
+# RHEL, Fedora, openEuler: /etc/pki/tls/certs/ca-bundle.crt
+cat /etc/pki/tls/certs/ca-bundle.crt ~/weistack-ca.pem > ~/weistack-bundle.pem
+export SSL_CERT_FILE=~/weistack-bundle.pem https_proxy=http://127.0.0.1:8780
 hcloud VPC ListVpcs --cli-region=ap-southeast-1 --project_id=$PROJECT \
-  --cli-access-key=any-access-key --cli-secret-key=any-secret-key \
-  --cli-skip-secure-verify=true
+  --cli-access-key=any-access-key --cli-secret-key=any-secret-key
 ```
 
-Through the proxy, KooCLI can still download its API metadata from Huawei
-Cloud: by default WeiStack passes requests for other hosts through for
-clients on your machine.
+Certificates are verified, so KooCLI asks no questions. On other systems,
+or without the bundle, add `--cli-skip-secure-verify=true` instead; KooCLI
+then asks for confirmation on every command.
+
+Before calling an API, KooCLI downloads its version file and API metadata
+from Huawei Cloud hosts under `myhuaweicloud.com`. From v0.1.1, WeiStack
+passes those hosts through (see `-proxy-bypass`). With v0.1.0, start
+WeiStack with `-proxy-domains` listing only the emulated endpoints, for
+example `vpc.ap-southeast-1.myhuaweicloud.com,obs.ap-southeast-1.myhuaweicloud.com`.
+
+KooCLI picks a default version for operations that exist in several, and
+says so ("ListVpcs is a multi-version API, where the version (v3) is
+default"). WeiStack serves the v3 `ListVpcs` from v0.1.1. If an operation
+returns `WeiStack.0501` because WeiStack has only its v1 form, name that
+version explicitly, as in `hcloud VPC CreateVpc/v2`; KooCLI calls it v2,
+after the SDK package.
+
+To install KooCLI, run Huawei's installer with no proxy variables set: it
+downloads from `myhuaweicloud.com` itself.
