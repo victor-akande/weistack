@@ -1,0 +1,74 @@
+# GoReleaser builds the release binaries when a version tag is pushed
+# (.github/workflows/release.yml). Try it locally without publishing:
+#
+#   goreleaser release --snapshot --clean
+#
+# WeiStack is pure Go, so every target is cross-compiled from one machine.
+version: 2
+
+project_name: weistack
+
+builds:
+  - id: weistack
+    main: ./cmd/weistack
+    binary: weistack
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/victor-akande/weistack/internal/version.Version={{ .Tag }}
+      - -X github.com/victor-akande/weistack/internal/version.Commit={{ .ShortCommit }}
+      - -X github.com/victor-akande/weistack/internal/version.Date={{ .CommitDate }}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    # Reproducible: the same commit builds the same bytes.
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: weistack
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+      - docs/getting-started.md
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot+{{ .ShortCommit }}"
+
+changelog:
+  use: git
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^feat(\([^)]*\))?!?:'
+      order: 0
+    - title: Fixes
+      regexp: '^fix(\([^)]*\))?!?:'
+      order: 1
+    - title: Performance
+      regexp: '^perf(\([^)]*\))?!?:'
+      order: 2
+    - title: Other changes
+      order: 999
+  filters:
+    exclude:
+      - '^docs(\([^)]*\))?:'
+      - '^chore(\([^)]*\))?:'
+      - '^Merge '
+
+release:
+  # v0.x.y-rc.1 and the like are marked as pre-releases.
+  prerelease: auto
+  footer: |
+    **Docker:** `docker pull {{ envOrDefault "DOCKERHUB_REPOSITORY" "victhedev/weistack" }}:{{ .Version }}`
+
+    Getting started: https://github.com/victor-akande/weistack/blob/{{ .Tag }}/docs/getting-started.md
