@@ -3,28 +3,24 @@ package vpc
 import (
 	"fmt"
 	"time"
+
+	"github.com/victor-akande/weistack/internal/core/wiretime"
 )
 
-// timeLayout is the timestamp format of the VPC v1 API: UTC, second
-// resolution, no zone designator ("2022-12-15T02:25:11").
-const timeLayout = "2006-01-02T15:04:05"
-
-// Time is a timestamp in the VPC v1 wire format.
+// Time is a timestamp in the VPC v1 wire format: UTC, second resolution,
+// no zone designator ("2022-12-15T02:25:11").
 type Time time.Time
 
 // MarshalJSON implements json.Marshaler.
 func (t Time) MarshalJSON() ([]byte, error) {
-	return []byte(`"` + time.Time(t).UTC().Format(timeLayout) + `"`), nil
+	return wiretime.AppendQuoted(make([]byte, 0, 24), time.Time(t), false), nil
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
 func (t *Time) UnmarshalJSON(b []byte) error {
-	if len(b) < 2 || b[0] != '"' || b[len(b)-1] != '"' {
-		return fmt.Errorf("vpc: timestamp %s is not a string", b)
-	}
-	parsed, err := time.ParseInLocation(timeLayout, string(b[1:len(b)-1]), time.UTC)
+	parsed, err := wiretime.ParseQuoted(b, false)
 	if err != nil {
-		return fmt.Errorf("vpc: parsing timestamp: %w", err)
+		return fmt.Errorf("vpc: timestamp %s: %w", b, err)
 	}
 	*t = Time(parsed)
 	return nil
