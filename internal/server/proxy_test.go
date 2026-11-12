@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -359,5 +360,57 @@ func TestHostRegion(t *testing.T) {
 		if got := hostRegion(host); got != want {
 			t.Errorf("hostRegion(%q) = %q, want %q", host, got, want)
 		}
+	}
+}
+
+// A refused request says why and how to allow it, where clients that show
+// only the status line of a failed CONNECT can still find it.
+func TestRefusalsExplainThemselves(t *testing.T) {
+	t.Parallel()
+	off := newProxyEnv(t, PassthroughNone, true)
+
+	conn, err := net.Dial("tcp", off.url.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := io.WriteString(conn, "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	res, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	status := res.Header.Get("Proxy-Status")
+	if res.StatusCode != http.StatusForbidden ||
+		!strings.HasPrefix(status, "weistack; error=http_request_denied; details=") || !strings.Contains(status, "-proxy-passthrough none") ||
+		!strings.Contains(string(body), "not proxying to example.com") || !strings.Contains(string(body), "NO_PROXY") {
+		t.Fatalf("refused CONNECT: %d, Proxy-Status %q, body %q", res.StatusCode, status, body)
+	}
+
+	// Plain HTTP to a host that is not emulated.
+	plain, err := off.client(nil).Get("http://example.com/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ = io.ReadAll(plain.Body)
+	plain.Body.Close()
+	if plain.StatusCode != http.StatusForbidden || !strings.Contains(plain.Header.Get("Proxy-Status"), "plain HTTP") ||
+		!strings.Contains(string(body), "use HTTPS for this host") {
+		t.Fatalf("refused plain HTTP: %d, Proxy-Status %q, body %q", plain.StatusCode, plain.Header.Get("Proxy-Status"), body)
+	}
+}
+
+// The usual container case: loopback passthrough, a client on another
+// address. The advice names the setting to change.
+func TestRefusalAdviceForAContainer(t *testing.T) {
+	t.Parallel()
+	p := newProxy(ProxyOptions{Passthrough: PassthroughLoopback}, nil, nil)
+	why := p.tunnelRefusal("172.17.0.1:40000")
+	if !strings.Contains(why.reason, "172.17.0.1:40000 is not one") || !strings.Contains(why.fix, "-proxy-passthrough all") ||
+		!strings.Contains(why.fix, "WEISTACK_PROXY_PASSTHROUGH=all") || !strings.Contains(why.fix, "NO_PROXY") {
+		t.Fatalf("advice = %+v", why)
 	}
 }
