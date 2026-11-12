@@ -47,6 +47,8 @@ snapshot:
 changelog:
   use: git
   sort: asc
+  # Short hashes keep the release notes readable.
+  abbrev: 7
   groups:
     - title: Features
       regexp: '^feat(\([^)]*\))?!?:'
