@@ -115,7 +115,10 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			host = r.URL.Host
 		}
 		if !p.intercepts(host) {
-			http.Error(w, fmt.Sprintf("weistack proxies plain HTTP only for %s, not %s", strings.Join(p.opts.Domains, ", "), host), http.StatusForbidden)
+			p.refuse(w, r, host, refusal{
+				reason: "WeiStack relays plain HTTP only for the hosts it emulates (" + strings.Join(p.opts.Domains, ", ") + ")",
+				fix:    "use HTTPS for this host, or send it around the proxy with NO_PROXY",
+			})
 			return
 		}
 		p.handler.ServeHTTP(w, r)
@@ -136,9 +139,37 @@ func (p *proxy) connect(w http.ResponseWriter, r *http.Request) {
 	case p.mayPassThrough(r.RemoteAddr):
 		p.passthrough(w, r, net.JoinHostPort(host, port))
 	default:
-		p.log.Warn("proxy tunnel refused", "target", r.Host, "client", r.RemoteAddr)
-		http.Error(w, fmt.Sprintf("weistack: tunnelling to %s is not allowed for this client (passthrough %s)", host, p.opts.Passthrough), http.StatusForbidden)
+		p.refuse(w, r, host, p.tunnelRefusal(r.RemoteAddr))
 	}
+}
+
+// refusal explains why the proxy will not reach a host, and what would
+// change that.
+type refusal struct {
+	reason, fix string
+}
+
+// tunnelRefusal explains a refused tunnel under the passthrough setting.
+func (p *proxy) tunnelRefusal(client string) refusal {
+	if p.opts.Passthrough == PassthroughNone {
+		return refusal{
+			reason: "passing traffic through to hosts WeiStack does not emulate is off (-proxy-passthrough none)",
+			fix:    "start WeiStack with -proxy-passthrough loopback or all, or send this host around the proxy with NO_PROXY",
+		}
+	}
+	return refusal{
+		reason: fmt.Sprintf("only clients on WeiStack's own machine may reach other hosts through it, and %s is not one (-proxy-passthrough loopback)", client),
+		fix:    "start WeiStack with -proxy-passthrough all (WEISTACK_PROXY_PASSTHROUGH=all, as a container usually needs), or send this host around the proxy with NO_PROXY",
+	}
+}
+
+// refuse answers 403 for a host the proxy will not reach. The reason and
+// the fix go to the log, the body and a Proxy-Status header (RFC 9209),
+// because many clients show only the status line of a failed CONNECT.
+func (p *proxy) refuse(w http.ResponseWriter, r *http.Request, host string, why refusal) {
+	p.log.Warn("proxy refused a request", "target", r.Host, "client", r.RemoteAddr, "reason", why.reason, "fix", why.fix)
+	w.Header().Set("Proxy-Status", fmt.Sprintf("weistack; error=http_request_denied; details=%q", why.reason+"; "+why.fix))
+	http.Error(w, fmt.Sprintf("weistack: not proxying to %s: %s.\nTo allow it: %s.", host, why.reason, why.fix), http.StatusForbidden)
 }
 
 // hijack takes over the client connection and confirms the tunnel.
