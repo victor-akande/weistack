@@ -51,6 +51,35 @@ With Docker:
 docker compose up --build
 ```
 
+## Install
+
+Each [release](https://github.com/victor-akande/weistack/releases) has
+binaries for Linux, macOS and Windows on amd64 and arm64, with a
+`checksums.txt`. They have no dependencies:
+
+```bash
+tar -xzf weistack_<version>_linux_amd64.tar.gz
+./weistack version
+```
+
+The image is multi-architecture (linux/amd64 and linux/arm64):
+
+```bash
+docker run -p 127.0.0.1:8780:8780 victhedev/weistack:latest
+```
+
+Or build from source with `make build` (Go 1.26 or later).
+
+## Releasing
+
+Pushing a version tag such as `v0.1.0` runs
+[.github/workflows/release.yml](.github/workflows/release.yml): GoReleaser
+publishes the binaries and release notes as a GitHub Release, and the image
+is built for both architectures and pushed to Docker Hub. That needs the
+variable `DOCKERHUB_REPOSITORY` and the secrets `DOCKERHUB_USERNAME` and
+`DOCKERHUB_TOKEN` in the repository's Actions settings. `goreleaser release
+--snapshot --clean` builds every archive locally without publishing.
+
 ## How requests are routed
 
 One listener (default port `8780`) serves every service. A request is matched,

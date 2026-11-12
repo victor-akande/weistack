@@ -125,6 +125,31 @@ jobs:
               'to_entries[] | "| \(.key) | \(.value) | \($base[0][.key] // "–") |"' "$RUNNER_TEMP/perf.json"
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
+  release-check:
+    name: release-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      # Every release target must keep compiling, not only Linux.
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: check
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: build --snapshot --clean
+      - name: Built targets
+        run: ls -l dist/*/weistack* | tee -a "$GITHUB_STEP_SUMMARY"
+
   image:
     name: image
     runs-on: ubuntu-latest
