@@ -28,9 +28,11 @@ import (
 	"github.com/victor-akande/weistack/internal/server"
 	"github.com/victor-akande/weistack/internal/services/ecs"
 	"github.com/victor-akande/weistack/internal/services/evs"
+	"github.com/victor-akande/weistack/internal/services/iam"
 	"github.com/victor-akande/weistack/internal/services/ims"
 	"github.com/victor-akande/weistack/internal/services/obs"
 	"github.com/victor-akande/weistack/internal/services/rds"
+	"github.com/victor-akande/weistack/internal/services/sts"
 	"github.com/victor-akande/weistack/internal/services/vpc"
 	"github.com/victor-akande/weistack/internal/tlsca"
 	"github.com/victor-akande/weistack/internal/version"
@@ -120,15 +122,6 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 	}
 	defer removeObjectDir()
 
-	services, err := buildServices(ctx, cfg, projectID, objectDir, st, engine, gen, log)
-	if err != nil {
-		return err
-	}
-
-	ca, err := loadCA(cfg, log)
-	if err != nil {
-		return err
-	}
 	account, err := loadAccount(cfg)
 	if err != nil {
 		return err
@@ -138,6 +131,15 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		return err
 	}
 	directory := identity.NewDirectory(account, admin)
+	services, err := buildServices(ctx, cfg, projectID, objectDir, st, engine, gen, log, directory)
+	if err != nil {
+		return err
+	}
+
+	ca, err := loadCA(cfg, log)
+	if err != nil {
+		return err
+	}
 
 	// Validated with the configuration, so compiling cannot fail here.
 	bypass := make([]*hostpattern.Pattern, 0, len(cfg.ProxyBypass))
@@ -255,7 +257,7 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 // added here.
 func buildServices(
 	ctx context.Context, cfg config.Config, projectID, objectDir string,
-	st store.Store, engine *lifecycle.Engine, gen *ids.Generator, log *slog.Logger,
+	st store.Store, engine *lifecycle.Engine, gen *ids.Generator, log *slog.Logger, directory *identity.Directory,
 ) ([]server.Service, error) {
 	vpcSvc, err := vpc.New(vpc.Deps{Store: st, Engine: engine, IDs: gen, Logger: log})
 	if err != nil {
@@ -314,7 +316,20 @@ func buildServices(
 	if err := rdsSvc.Resume(ctx); err != nil {
 		return nil, err
 	}
-	return []server.Service{vpcSvc, imsSvc, ecsSvc, evsSvc, obsSvc, rdsSvc}, nil
+	iamSvc, err := iam.New(iam.Deps{
+		Store: st, Logger: log, Directory: directory, DefaultRegion: cfg.Region, DefaultProjectID: projectID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := iamSvc.Resume(ctx); err != nil {
+		return nil, err
+	}
+	stsSvc, err := sts.New(log, directory)
+	if err != nil {
+		return nil, err
+	}
+	return []server.Service{vpcSvc, imsSvc, ecsSvc, evsSvc, obsSvc, rdsSvc, iamSvc, stsSvc}, nil
 }
 
 // objectDataDir returns the directory for OBS object bodies and a
