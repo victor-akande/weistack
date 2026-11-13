@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/victor-akande/weistack/internal/core/config"
@@ -232,4 +233,43 @@ func (i *instance) getAuthorized(t *testing.T, path, authorization string) (int,
 	defer res.Body.Close()
 	body, _ := io.ReadAll(res.Body)
 	return res.StatusCode, string(body)
+}
+
+// Emulators starting at once with the same directories agree on one
+// account and one set of administrator credentials, and none fails.
+func TestConcurrentStartsAgreeOnIdentity(t *testing.T) {
+	t.Parallel()
+	data, tls := t.TempDir(), t.TempDir()
+	cfg := mustConfig(t, map[string]string{"WEISTACK_PERSIST": "1", "WEISTACK_DATA_DIR": data, "WEISTACK_TLS_DIR": tls})
+
+	const n = 16
+	accts := make([]identity.Account, n)
+	creds := make([]identity.Credentials, n)
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Go(func() {
+			if accts[i], errs[i] = loadAccount(cfg); errs[i] == nil {
+				creds[i], _, errs[i] = loadAdmin(cfg, nil)
+			}
+		})
+	}
+	wg.Wait()
+	for i := range n {
+		if errs[i] != nil {
+			t.Fatalf("start %d: %v", i, errs[i])
+		}
+		if accts[i] != accts[0] || creds[i] != creds[0] {
+			t.Fatalf("start %d got a different identity", i)
+		}
+	}
+	if got := readAdminFile(t, tls); got != creds[0] {
+		t.Fatal("the credentials file differs from what the starts returned")
+	}
+	for _, dir := range []string{data, tls} {
+		left, _ := filepath.Glob(filepath.Join(dir, "*.tmp"))
+		if len(left) != 0 {
+			t.Fatalf("temporary files left behind: %v", left)
+		}
+	}
 }

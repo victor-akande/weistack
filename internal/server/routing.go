@@ -83,9 +83,12 @@ func dispatch(m *mounted, w http.ResponseWriter, r *http.Request) {
 //	vpc.ap-southeast-1.myhuaweicloud.com
 //	my-bucket.obs.ap-southeast-1.myhuaweicloud.com   (OBS virtual-hosted)
 //	ecs.localhost:8780                               (local convenience)
+//	iam.myhuaweicloud.com                            (global services)
 //
 // A label names a service only when the label after it is a region or
-// "localhost", so a bucket that happens to be called "vpc" is not
+// "localhost", or when only the two labels of a domain follow it, as for
+// the region-less hosts of global services such as IAM; those take the
+// default region. So a bucket that happens to be called "vpc" is not
 // mistaken for the VPC service.
 func (s *Server) byHost(hostport string) (m *mounted, region string, ok bool) {
 	host := hostport
@@ -103,6 +106,8 @@ func (s *Server) byHost(hostport string) (m *mounted, region string, ok bool) {
 		case regionLabelRE.MatchString(next):
 			return m, next, true
 		case next == "localhost" && i+2 == len(labels):
+			return m, "", true
+		case i+3 == len(labels):
 			return m, "", true
 		}
 	}

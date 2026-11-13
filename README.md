@@ -16,8 +16,9 @@ Early development. The **core framework** (M1) and **VPC** (M2) are in
 place, and so are **IMS** (M3), **ECS** (M4), **OBS** (M5) and **RDS**
 (M6). Per-service coverage tables: [VPC](docs/services/vpc.md),
 [IMS](docs/services/ims.md), [ECS](docs/services/ecs.md),
-[OBS](docs/services/obs.md), [RDS](docs/services/rds.md), and the read-only
-[EVS](docs/services/evs.md) view of server disks.
+[OBS](docs/services/obs.md), [RDS](docs/services/rds.md), the read-only
+[EVS](docs/services/evs.md) view of server disks, and [IAM](docs/services/iam.md)
+discovery, so clients need no project or domain ID.
 
 | Milestone | Scope | State |
 | --- | --- | --- |

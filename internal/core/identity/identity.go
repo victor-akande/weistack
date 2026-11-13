@@ -43,6 +43,19 @@ func (a Account) ProjectID(region, defaultRegion, defaultProjectID string) strin
 	return hex.EncodeToString(sum[:16])
 }
 
+// RootUserID is the ID of the account's root user, its owner: the user
+// the bootstrap administrator's keys belong to. It is derived from the
+// account, so it never changes.
+func (a Account) RootUserID() string {
+	sum := sha256.Sum256([]byte("weistack:root-user:" + a.ID))
+	return hex.EncodeToString(sum[:16])
+}
+
+// UserURN is the IAM 5.0 URN of a user: iam::<account-id>:user:<name>.
+func (a Account) UserURN(userName string) string {
+	return "iam::" + a.ID + ":user:" + userName
+}
+
 // Credentials are a permanent access key pair.
 type Credentials struct {
 	AccessKey string `json:"access_key"`
