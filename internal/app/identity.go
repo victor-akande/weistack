@@ -28,21 +28,12 @@ func loadAccount(cfg config.Config) (identity.Account, error) {
 		return identity.NewAccount()
 	}
 	path := filepath.Join(cfg.DataDir, accountFile)
-	var acct identity.Account
-	if err := readJSON(path, &acct); err == nil {
-		if !acct.Valid() {
-			return identity.Account{}, fmt.Errorf("%s does not describe a valid account; delete it to create a new one", path)
-		}
-		return acct, nil
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return identity.Account{}, fmt.Errorf("reading the account: %w", err)
-	}
-	acct, err := identity.NewAccount()
-	if err != nil {
-		return identity.Account{}, err
-	}
-	if err := writeJSON(path, acct); err != nil {
-		return identity.Account{}, fmt.Errorf("saving the account: %w", err)
+	acct, err := loadOrCreate(path, identity.NewAccount, identity.Account.Valid)
+	switch {
+	case errors.Is(err, errInvalid):
+		return identity.Account{}, fmt.Errorf("%s does not describe a valid account; delete it to create a new one", path)
+	case err != nil:
+		return identity.Account{}, fmt.Errorf("the account: %w", err)
 	}
 	return acct, nil
 }
@@ -72,52 +63,88 @@ func loadAdmin(cfg config.Config, log *slog.Logger) (identity.Credentials, strin
 
 func adminFromDir(dir string) (identity.Credentials, error) {
 	path := filepath.Join(dir, adminCredentialsFile)
-	var creds identity.Credentials
-	err := readJSON(path, &creds)
+	creds, err := loadOrCreate(path, identity.NewCredentials, identity.Credentials.Valid)
 	switch {
-	case err == nil && creds.Valid():
-		return creds, nil
-	case err == nil:
+	case errors.Is(err, errInvalid):
 		return identity.Credentials{}, fmt.Errorf("%s does not hold valid credentials; delete it to generate new ones", path)
-	case !errors.Is(err, fs.ErrNotExist):
-		return identity.Credentials{}, fmt.Errorf("reading the administrator's credentials: %w", err)
-	}
-	if creds, err = identity.NewCredentials(); err != nil {
-		return identity.Credentials{}, err
-	}
-	if err := writeJSON(path, creds); err != nil {
-		return identity.Credentials{}, fmt.Errorf("saving the administrator's credentials: %w", err)
+	case err != nil:
+		return identity.Credentials{}, fmt.Errorf("the administrator's credentials: %w", err)
 	}
 	return creds, nil
 }
 
-func readJSON(path string, v any) error {
-	raw, err := os.ReadFile(path) //nolint:gosec // an operator-chosen directory
-	if err != nil {
-		return err
+var errInvalid = errors.New("invalid contents")
+
+// loadOrCreate reads the JSON value kept at path, or creates it with
+// fresh() if there is none. Emulators starting at once with the same
+// directory agree on one value: the file appears complete or not at all,
+// is never overwritten, and whoever loses the race reads the winner's.
+func loadOrCreate[T any](path string, fresh func() (T, error), valid func(T) bool) (T, error) {
+	var zero T
+	for range 2 {
+		v, err := readJSON[T](path)
+		switch {
+		case err == nil && valid(v):
+			return v, nil
+		case err == nil:
+			return zero, errInvalid
+		case !errors.Is(err, fs.ErrNotExist):
+			return zero, fmt.Errorf("reading %s: %w", path, err)
+		}
+		if v, err = fresh(); err != nil {
+			return zero, err
+		}
+		err = createJSON(path, v)
+		switch {
+		case err == nil:
+			return v, nil
+		case !errors.Is(err, fs.ErrExist):
+			return zero, fmt.Errorf("saving %s: %w", path, err)
+		}
+		// Another emulator created it first: read theirs.
 	}
-	return json.Unmarshal(raw, v)
+	return zero, fmt.Errorf("%s keeps appearing and disappearing", path)
 }
 
-// writeJSON creates path, readable by its owner only, and fails if it
-// exists: two emulators starting at once must not overwrite each other.
-func writeJSON(path string, v any) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+func readJSON[T any](path string) (T, error) {
+	var v T
+	raw, err := os.ReadFile(path) //nolint:gosec // an operator-chosen directory
+	if err != nil {
+		return v, err
+	}
+	return v, json.Unmarshal(raw, &v)
+}
+
+// createJSON writes v to path, readable by its owner only. It writes a
+// temporary file and links it into place, so path appears complete, and
+// fails with fs.ErrExist if path already exists.
+func createJSON(path string, v any) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // an operator-chosen directory
+	f, err := os.CreateTemp(dir, filepath.Base(path)+".*.tmp")
 	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer func() { _ = os.Remove(tmp) }()
+	if err := f.Chmod(0o600); err != nil {
+		_ = f.Close()
 		return err
 	}
 	if _, err := f.Write(append(data, '\n')); err != nil {
 		_ = f.Close()
 		return err
 	}
-	return f.Close()
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Link(tmp, path)
 }
 
 // printCredentials writes the administrator's credentials as shell
