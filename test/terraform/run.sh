@@ -113,7 +113,7 @@ import json, sys
 state = json.load(sys.stdin)["resources"]
 def records(kind):
     return [r["data"] for scope, recs in state.items() if scope.endswith("/" + kind) for r in recs]
-# Job history, the seeded public images, the account's projects and the
+# Job history, the seeded public images, the projects of the account and the
 # project default security group with its rules outlive the scenario, as
 # in the real cloud.
 kept = ("job", "ims.image", "iam.project", "vpc.secgroup", "vpc.secgroup-rule")
