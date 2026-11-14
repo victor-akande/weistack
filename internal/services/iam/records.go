@@ -128,6 +128,11 @@ func (s *Service) deleteUser(ctx context.Context, id string) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.detachAll(ctx, func(a policyAttachment) bool {
+		return a.Subject == subjectUser && a.SubjectID == id
+	}); err != nil {
+		return err
+	}
 	in, err := s.groupsOf(ctx, id)
 	if err != nil {
 		return err

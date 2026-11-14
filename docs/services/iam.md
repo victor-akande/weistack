@@ -23,7 +23,6 @@ client needs only an access key and a secret key.
 | KeystoneShowProject | `GET /v3/projects/{project_id}` | Yes | |
 | KeystoneListAuthProjects | `GET /v3/auth/projects` | Yes | |
 | GetCallerIdentity (STS) | `GET /v5/caller-identity` | Yes | The account and the caller |
-| IAM 5.0 policies | `/v5/policies/...` | No | Coming next |
 
 ## Users and groups
 
@@ -178,6 +177,42 @@ WeiStack has one enterprise project, the default (ID `0`), served by
 | ListEnterpriseProjectsForGroup, ListEnterpriseProjectsForUser | `GET /v3.0/OS-PERMISSION/groups/{group_id}/enterprise-projects`, `/v3.0/OS-PERMISSION/users/{user_id}/enterprise-projects` | Yes | |
 | Agency grants | `/v3.0/OS-PERMISSION/subjects/agency/scopes/enterprise-project/role-assignments` | No | |
 
+## Identity policies (IAM 5.0)
+
+IAM 5.0's custom identity policies, attached to users and groups.
+
+| Operation | Method and path | Status | Notes |
+| --- | --- | --- | --- |
+| CreatePolicyV5, ListPoliciesV5 | `POST`, `GET /v5/policies` | Yes | Filters `policy_type`, `path_prefix`, `only_attached`; `limit` and `marker` |
+| GetPolicyV5, UpdatePolicyV5, DeletePolicyV5 | `GET`, `PUT`, `DELETE /v5/policies/{policy_id}` | Yes | Update sets the description. Delete is refused while the policy is attached |
+| CreatePolicyVersionV5, ListPolicyVersionsV5 | `POST`, `GET /v5/policies/{policy_id}/versions` | Yes | Newest first; `limit` and `marker` |
+| GetPolicyVersionV5, DeletePolicyVersionV5 | `GET`, `DELETE /v5/policies/{policy_id}/versions/{version_id}` | Yes | The default version cannot be deleted |
+| SetDefaultPolicyVersionV5 | `POST /v5/policies/{policy_id}/versions/{version_id}/set-default` | Yes | |
+| AttachUserPolicyV5, DetachUserPolicyV5, AttachGroupPolicyV5, DetachGroupPolicyV5 | `POST /v5/policies/{policy_id}/attach-user`, `detach-user`, `attach-group`, `detach-group` | Yes | |
+| ListAttachedUserPoliciesV5, ListAttachedGroupPoliciesV5 | `GET /v5/users/{user_id}/attached-policies`, `/v5/groups/{group_id}/attached-policies` | Yes | `limit` and `marker` |
+| ListEntitiesForPolicyV5 | `GET /v5/policies/{policy_id}/attached-entities` | Yes | Filter `entity_type`; `limit` and `marker` |
+| Agency attachments, trust policies | `/v5/policies/{policy_id}/attach-agency`, `/v5/agencies/...` | No | Agencies are not emulated |
+| Password and login policies | `/v5/password-policy`, `/v5/login-policy` | No | |
+
+- **Documents** follow IAM 5.0's grammar: `Version` `5.0` and a non-empty
+  `Statement` list. Each statement has an optional `Sid`, an `Effect` of
+  `Allow` or `Deny`, exactly one of `Action` and `NotAction`, at most one
+  of `Resource` and `NotResource`, and an optional `Condition` map.
+  Anything else is `PAP5.0011`. A document is at most 6,144 bytes once
+  compacted.
+- **Names** have 1 to 128 letters, digits and `_+=.@-`, and are unique in
+  the account. A path is empty or segments that each end with `/`. The URN
+  is `iam::<account ID>:policy:<path><name>`.
+- **Versions** are numbered `v1`, `v2` and so on, and numbers are not
+  reused. A policy has at most 5 versions, and a version becomes the
+  default when created with `set_as_default` or by `set-default`.
+- **Quotas:** 1,500 custom policies per account, and 10 policies attached
+  to a user or a group.
+- **System policies** are not emulated: their names and IDs in IAM 5.0 are
+  not published, so `policy_type=system` lists none. Classic IAM's
+  [system permissions](#permissions) are.
+- Deleting a user or a group detaches its policies.
+
 ## Tokens
 
 | Operation | Method and path | Status | Notes |
@@ -260,11 +295,20 @@ IAM 5.0:
 | Code | Status | When |
 | --- | --- | --- |
 | `PAP5.0001` | 403 | Renaming or disabling the root user |
-| `PAP5.0007` | 409 | Deleting the root user |
+| `PAP5.0004`, `PAP5.0005` | 409 | A group or a user already has 10 policies attached |
+| `PAP5.0007` | 409 | Deleting the root user, an attached policy, or a policy's default version |
 | `PAP5.0010` | 400 | An unknown `marker` |
+| `PAP5.0011` | 400 | A malformed policy document |
 | `PAP5.0016` | 404 | No such group |
+| `PAP5.0018`, `PAP5.0019`, `PAP5.0020` | 404 | No such policy, policy attachment or policy version |
 | `PAP5.0021` | 404 | No such user, also removing a non-member |
 | `PAP5.0042` | 409 | The username is taken |
 | `PAP5.0043` | 409 | The group name is taken |
 | `PAP5.0044` | 409 | Adding a member again |
+| `PAP5.0024` | 409 | The account has 1,500 custom policies |
+| `PAP5.0025` | 409 | The policy name is taken |
+| `PAP5.0026` | 409 | Attaching a policy again |
+| `PAP5.0027` | 409 | A policy document over 6,144 bytes |
+| `PAP5.0028` | 409 | A sixth version |
+| `PAP5.0030` | 400 | An invalid `path` or `path_prefix` |
 | `PAP5.0257` | 400 | Any invalid input, also a third access key for a user (IAM 5.0 documents a 400 but no code for it) |
