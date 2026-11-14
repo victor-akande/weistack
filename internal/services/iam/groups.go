@@ -155,6 +155,11 @@ func (s *Service) deleteGroup(r *http.Request, e groupErrs) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.detachAll(r.Context(), func(a policyAttachment) bool {
+		return a.Subject == subjectGroup && a.SubjectID == id
+	}); err != nil {
+		return err
+	}
 	err := s.groups().Delete(r.Context(), id)
 	if errors.Is(err, store.ErrNotFound) {
 		return e.notFound(id)

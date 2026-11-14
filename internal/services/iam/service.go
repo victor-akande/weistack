@@ -85,7 +85,7 @@ func (s *Service) Name() string { return "iam" }
 
 // Version implements server.Service.
 func (s *Service) Version() string {
-	return "v3, v3.0, v5 (users, groups, tokens, access keys, roles, custom policies, role assignments)"
+	return "v3, v3.0, v5 (users, groups, tokens, access keys, roles, custom policies, role assignments, identity policies)"
 }
 
 // Routes implements server.Service.
@@ -130,6 +130,7 @@ func (s *Service) Routes(r chi.Router) {
 	r.Delete("/v3.0/OS-CREDENTIAL/credentials/{access_key}", s.handle("DeletePermanentAccessKey", s.handleDeleteCredential))
 
 	s.roleRoutes(r)
+	s.policyRoutes(r)
 
 	r.Post("/v5/users", s.handle("CreateUserV5", s.handleCreateUserV5))
 	r.Get("/v5/users", s.handle("ListUsersV5", s.handleListUsersV5))
