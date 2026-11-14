@@ -53,8 +53,9 @@ version. If a guide does not work for you, please open an issue.
 ## Terraform
 
 See [getting started](getting-started.md#4-use-huaweis-terraform-provider)
-for a complete example. In short, set `project_id` and any `domain_id` in
-the provider block, add `skip_check_website_type = true` and
+for a complete example. In short, set `project_id` in the provider block
+(with v0.1.x, also any `domain_id` of 32 hex characters; later versions
+find the account through IAM), add `skip_check_website_type = true` and
 `skip_check_upgrade = true`, and then:
 
 ```bash
@@ -63,7 +64,8 @@ terraform apply
 ```
 
 [test/terraform/main.tf](../test/terraform/main.tf) is a fuller example
-covering VPC, ECS, OBS and RDS.
+covering VPC, ECS, OBS and RDS, and [test/terraform/iam.tf](../test/terraform/iam.tf)
+covers IAM users, groups, roles, grants, identity policies and access keys.
 
 ## Go SDK
 

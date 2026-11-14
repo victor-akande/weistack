@@ -7,13 +7,23 @@ request for anything WeiStack does not emulate fails instead of reaching
 the real cloud.
 
 1. `terraform apply` creates a VPC, subnet, security group and rule, an ECS
-   server, an OBS bucket and an RDS MySQL instance, and the outputs show
-   them in their final states.
+   server, an OBS bucket and an RDS MySQL instance (`main.tf`), and IAM
+   resources through both of IAM's APIs (`iam.tf`):
+   - classic IAM: a user, a group and its members, a custom role, the
+     group's grants for one project, all projects, global services and
+     the default enterprise project, a user's enterprise project grant,
+     and an access key;
+   - IAM 5.0: a user, a group and its members, an identity policy attached
+     to both, and an access key.
+
+   The outputs show them in their final states. The provider is given no
+   domain ID: it finds the account through IAM.
 2. A second `terraform plan` must find no changes. This catches every read
    that disagrees with what was written.
 3. `terraform destroy` deletes everything, and the emulator must hold
    nothing but what outlives a project's resources in the cloud: job
-   history, public images and the default security group.
+   history, public images, the default security group, and the account's
+   projects and root user.
 
 ```bash
 make test-terraform

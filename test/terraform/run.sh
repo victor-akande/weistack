@@ -59,12 +59,18 @@ curl -fsS "$admin/health" >/dev/null
 
 # The module is copied so that .terraform and the state stay out of the
 # repository. The lock file pins the provider's checksums.
-cp "$here/main.tf" "$here/.terraform.lock.hcl" "$work/"
+cp "$here"/*.tf "$here/.terraform.lock.hcl" "$work/"
 cd "$work"
 export TF_IN_AUTOMATION=1 TF_INPUT=0 TF_VAR_project_id="$project"
-# A fresh password per run, meeting RDS's rule of four character kinds.
-TF_VAR_db_password="Ws-1$(python3 -c 'import secrets; print(secrets.token_hex(8))')"
-export TF_VAR_db_password
+TF_VAR_account_id="$(curl -fsS "$admin/services" | python3 -c 'import json, sys; print(json.load(sys.stdin)["account_id"])')"
+export TF_VAR_account_id
+# Fresh passwords per run, for the RDS root user and the IAM user. Each
+# has the four character kinds RDS requires: an upper-case letter, a
+# symbol, a digit, and lower-case hex.
+fresh_secret() { python3 -c 'import secrets; print("Ws-1" + secrets.token_hex(8))'; }
+TF_VAR_db_password="$(fresh_secret)"
+TF_VAR_iam_password="$(fresh_secret)"
+export TF_VAR_db_password TF_VAR_iam_password
 
 step "terraform init"
 # Without the proxy: the provider comes from the public registry.
@@ -83,7 +89,9 @@ python3 - "$outputs" <<'PY'
 import json, sys
 out = {k: v["value"] for k, v in json.loads(sys.argv[1]).items()}
 want = {"server_status": "ACTIVE", "rds_status": "ACTIVE",
-        "bucket_domain": "tf-assets-bucket.obs.ap-southeast-1.myhuaweicloud.com"}
+        "bucket_domain": "tf-assets-bucket.obs.ap-southeast-1.myhuaweicloud.com",
+        "iam": {"v5_policy_type": "custom", "access_key_status": "active",
+                "v5_policy_version": "v1", "v5_key_status": "active"}}
 bad = {k: out.get(k) for k, v in want.items() if out.get(k) != v}
 if not out.get("server_ip", "").startswith("192.168.1."):
     bad["server_ip"] = out.get("server_ip")
@@ -115,7 +123,8 @@ def records(kind):
     return [r["data"] for scope, recs in state.items() if scope.endswith("/" + kind) for r in recs]
 # Job history, the seeded public images, the projects of the account, its
 # root user and the project default security group with its rules outlive
-# the scenario, as in the real cloud.
+# the scenario, as in the real cloud. Every other IAM record (groups,
+# keys, roles, grants, policies, attachments) must be gone.
 kept = ("job", "ims.image", "iam.project", "iam.user", "vpc.secgroup", "vpc.secgroup-rule")
 left = {scope: len(recs) for scope, recs in state.items()
         if recs and not scope.endswith(kept)}

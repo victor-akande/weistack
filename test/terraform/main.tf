@@ -29,8 +29,8 @@ provider "huaweicloud" {
   access_key = "AKWEISTACKTERRAFORM"
   secret_key = "weistack-does-not-verify-signatures"
   project_id = var.project_id
-  # Any domain ID: it spares the provider an IAM lookup.
-  domain_id = "fedcba9876543210fedcba9876543210"
+  # No domain_id: the provider finds the account through IAM, as with the
+  # real cloud.
 
   skip_check_website_type = true
   skip_check_upgrade      = true
