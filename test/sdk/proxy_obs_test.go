@@ -24,7 +24,7 @@ func TestOBSThroughProxyTrustingTheCA(t *testing.T) {
 		t.Fatalf("GET /_weistack/ca = %d %q", res.StatusCode, caPEM)
 	}
 
-	c, err := obs.New("AKproxyobs", "weistack-does-not-verify-signatures", "https://obs."+region+".myhuaweicloud.com",
+	c, err := obs.New(signingAK("AKproxyobs"), signingSK(), "https://obs."+region+".myhuaweicloud.com",
 		obs.WithProxyUrl("http://"+emulatorAddr),
 		obs.WithSslVerifyAndPemCerts(true, caPEM),
 		obs.WithSignature(obs.SignatureObs),

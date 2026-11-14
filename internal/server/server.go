@@ -208,7 +208,7 @@ func (s *Server) ServiceHandler(name string) (http.Handler, bool) {
 			return
 		}
 		reqctx.From(r.Context()).Service = name
-		s.dispatch(m, w, r, []string{r.URL.Path})
+		s.dispatch(m, w, r, r.URL)
 	}
 	return s.wrap(http.HandlerFunc(route)), true
 }

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -31,6 +32,13 @@ func newOBS(t *testing.T, accessKey string, signature obs.SignatureType, pathSty
 
 func newOBSAt(t *testing.T, addr, accessKey string, signature obs.SignatureType, pathStyle bool) *obs.ObsClient {
 	t.Helper()
+	return newOBSWithKey(t, addr, signingAK(accessKey), signingSK(), signature, pathStyle)
+}
+
+// newOBSWithKey builds an OBS client that signs with exactly this key
+// pair, whatever the suite's mode.
+func newOBSWithKey(t *testing.T, addr, accessKey, secretKey string, signature obs.SignatureType, pathStyle bool) *obs.ObsClient {
+	t.Helper()
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
 			var d net.Dialer
@@ -38,7 +46,7 @@ func newOBSAt(t *testing.T, addr, accessKey string, signature obs.SignatureType,
 		},
 		ResponseHeaderTimeout: 10 * time.Second,
 	}
-	client, err := obs.New(accessKey, "weistack-does-not-verify-signatures", obsEndpoint,
+	client, err := obs.New(accessKey, secretKey, obsEndpoint,
 		obs.WithSignature(signature),
 		obs.WithPathStyle(pathStyle),
 		obs.WithRegion(region),
@@ -120,20 +128,36 @@ func TestOBSBuckets(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ListBuckets: %v", err)
 			}
-			if len(list.Buckets) != 1 || list.Buckets[0].Name != bucket || list.Owner.ID == "" ||
-				time.Since(list.Buckets[0].CreationDate) > time.Hour {
-				t.Fatalf("ListBuckets = %+v, want exactly this client's bucket with a recent creation date", list)
-			}
+			if enforcing {
+				// Every test signs as the administrator: the list is the
+				// account's, and a key WeiStack does not know is refused.
+				if !slices.ContainsFunc(list.Buckets, func(b obs.Bucket) bool { return b.Name == bucket }) || list.Owner.ID == "" {
+					t.Fatalf("ListBuckets = %+v, want it to include %s", list, bucket)
+				}
+				// S3 signature version 4 is not checked yet.
+				if mode.signature != obs.SignatureV4 {
+					unknown := newOBSWithKey(t, emulatorAddr, "UNKNOWNOBSKEY0000000", fakeSecret, mode.signature, mode.pathStyle)
+					_, err = unknown.ListBuckets(nil)
+					wantOBSError(t, err, 403, "InvalidAccessKeyId")
+					_, err = unknown.DeleteBucket(bucket)
+					wantOBSError(t, err, 403, "InvalidAccessKeyId")
+				}
+			} else {
+				if len(list.Buckets) != 1 || list.Buckets[0].Name != bucket || list.Owner.ID == "" ||
+					time.Since(list.Buckets[0].CreationDate) > time.Hour {
+					t.Fatalf("ListBuckets = %+v, want exactly this client's bucket with a recent creation date", list)
+				}
 
-			// Another access key cannot see or touch the bucket.
-			other := newOBS(t, ak+"-other", mode.signature, mode.pathStyle)
-			if theirs, err := other.ListBuckets(nil); err != nil || len(theirs.Buckets) != 0 {
-				t.Errorf("another access key lists %+v, %v", theirs, err)
+				// Another access key cannot see or touch the bucket.
+				other := newOBS(t, ak+"-other", mode.signature, mode.pathStyle)
+				if theirs, err := other.ListBuckets(nil); err != nil || len(theirs.Buckets) != 0 {
+					t.Errorf("another access key lists %+v, %v", theirs, err)
+				}
+				_, err = other.DeleteBucket(bucket)
+				wantOBSError(t, err, 403, "AccessDenied")
+				_, err = other.CreateBucket(&obs.CreateBucketInput{Bucket: bucket})
+				wantOBSError(t, err, 409, "BucketAlreadyExists")
 			}
-			_, err = other.DeleteBucket(bucket)
-			wantOBSError(t, err, 403, "AccessDenied")
-			_, err = other.CreateBucket(&obs.CreateBucketInput{Bucket: bucket})
-			wantOBSError(t, err, 409, "BucketAlreadyExists")
 
 			if deleted, err := c.DeleteBucket(bucket); err != nil || deleted.StatusCode != 204 {
 				t.Fatalf("DeleteBucket = %+v, %v", deleted, err)

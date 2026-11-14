@@ -140,13 +140,9 @@ func TestEnforceAcceptsValidCredentials(t *testing.T) {
 	if code, out := e.send(t, http.MethodGet, "http://vpc.localhost"+thingsPath, "", "", "", "", "X-Auth-Token", goodToken); code != http.StatusOK {
 		t.Fatalf("token = %d %v", code, out)
 	}
-	// Signing in needs no credentials; OBS and the admin API are not
-	// checked here.
+	// Signing in needs no credentials; the admin API is not checked.
 	if code, _ := e.send(t, http.MethodPost, "http://iam.localhost/v3/auth/tokens", "{}", "", "", ""); code == http.StatusUnauthorized {
 		t.Fatal("password sign-in needed credentials")
-	}
-	if code, _ := e.send(t, http.MethodGet, "http://obs.localhost"+thingsPath, "", "", "", ""); code != http.StatusOK {
-		t.Fatalf("OBS = %d", code)
 	}
 	if code, _ := e.send(t, http.MethodGet, "http://127.0.0.1:8780/_weistack/health", "", "", "", ""); code != http.StatusOK {
 		t.Fatalf("admin API = %d", code)
