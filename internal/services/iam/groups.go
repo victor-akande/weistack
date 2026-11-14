@@ -67,7 +67,7 @@ func (s *Service) checkGroupChange(c groupChange) error {
 	if c.DomainID != nil && *c.DomainID != s.account().ID {
 		return errInvalidField("domain_id", *c.DomainID)
 	}
-	if c.Name != nil && !groupNameRE.MatchString(*c.Name) {
+	if c.Name != nil && !validGroupName(*c.Name) {
 		return errInvalidField("name", *c.Name)
 	}
 	if c.Description != nil && !validDescription(*c.Description) {

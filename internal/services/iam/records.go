@@ -143,16 +143,27 @@ func (s *Service) countUsers(ctx context.Context) (int, error) {
 }
 
 // Name and text rules, from Huawei's documentation of IAM's constraints.
+// Lengths are checked apart from the patterns: a bounded repeat of a
+// Unicode class, such as {0,63}, makes Go copy the class once per
+// repetition, megabytes for these two.
 var (
 	// A username has at most 64 characters: letters, digits, spaces, "-",
 	// "_" and "."; it does not start with a digit or a space.
-	usernameRE = regexp.MustCompile(`^[\p{L}\-_.][\p{L}0-9 \-_.]{0,63}$`)
+	usernameRE = regexp.MustCompile(`^[\p{L}\-_.][\p{L}0-9 \-_.]*$`)
 	// A group name has at most 128 characters: letters, digits, spaces,
 	// "-" and "_".
-	groupNameRE = regexp.MustCompile(`^[\p{L}0-9 \-_]{1,128}$`)
+	groupNameRE = regexp.MustCompile(`^[\p{L}0-9 \-_]+$`)
 	emailRE     = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
 	digitsRE    = regexp.MustCompile(`^[0-9]{1,32}$`)
 )
+
+func validUsername(n string) bool {
+	return utf8.RuneCountInString(n) <= 64 && usernameRE.MatchString(n)
+}
+
+func validGroupName(n string) bool {
+	return utf8.RuneCountInString(n) <= 128 && groupNameRE.MatchString(n)
+}
 
 // validDescription: at most 255 characters, none of @#%&<>\$^*.
 func validDescription(d string) bool {

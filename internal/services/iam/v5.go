@@ -258,7 +258,7 @@ type v5GroupResponse struct {
 }
 
 func validGroupFields(name, description *string) bool {
-	return (name == nil || groupNameRE.MatchString(*name)) && (description == nil || validDescription(*description))
+	return (name == nil || validGroupName(*name)) && (description == nil || validDescription(*description))
 }
 
 // POST /v5/groups.

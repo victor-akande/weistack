@@ -100,7 +100,7 @@ func (s *Service) apply(c userChange, u *user, now time.Time) error {
 		return errInvalidField("domain_id", *c.DomainID)
 	}
 	if c.Name != nil {
-		if !usernameRE.MatchString(*c.Name) {
+		if !validUsername(*c.Name) {
 			return errBadUsername
 		}
 		if u.Root && *c.Name != u.Name {
