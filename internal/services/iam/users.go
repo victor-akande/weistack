@@ -3,6 +3,7 @@ package iam
 import (
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -465,15 +466,20 @@ func (s *Service) handleListProjectsForUser(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		return err
 	}
+	// The root user has every project; others those their groups have
+	// roles in.
+	ids, all, err := s.projectsOf(r.Context(), u.ID)
+	if err != nil {
+		return err
+	}
+	all = all || u.Root
+	projects, err := s.projects().List(r.Context(), func(p project) bool { return all || slices.Contains(ids, p.ID) })
+	if err != nil {
+		return err
+	}
 	out := listProjectsResponse{Projects: []projectView{}, Links: selfLinks(r, "/v3/users/"+u.ID+"/projects")}
-	if u.Root {
-		all, err := s.projects().List(r.Context(), nil)
-		if err != nil {
-			return err
-		}
-		for _, p := range all {
-			out.Projects = append(out.Projects, p.view(r))
-		}
+	for _, p := range projects {
+		out.Projects = append(out.Projects, p.view(r))
 	}
 	return httpx.WriteJSON(w, http.StatusOK, out)
 }

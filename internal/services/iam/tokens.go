@@ -345,6 +345,15 @@ func (s *Service) writeToken(w http.ResponseWriter, r *http.Request, status int,
 	case tok.Domain:
 		v.Domain = &dom
 	}
+	if tok.ProjectID != "" || tok.Domain {
+		roles, err := s.effectiveRoles(r.Context(), u.ID, tok.ProjectID)
+		if err != nil {
+			return err
+		}
+		for _, ro := range roles {
+			v.Roles = append(v.Roles, nameID{ID: ro.ID, Name: ro.Name})
+		}
+	}
 	w.Header().Set("X-Subject-Token", id)
 	return httpx.WriteJSON(w, status, struct {
 		Token tokenView `json:"token"`

@@ -23,7 +23,7 @@ client needs only an access key and a secret key.
 | KeystoneShowProject | `GET /v3/projects/{project_id}` | Yes | |
 | KeystoneListAuthProjects | `GET /v3/auth/projects` | Yes | |
 | GetCallerIdentity (STS) | `GET /v5/caller-identity` | Yes | The account and the caller |
-| Roles, policies | `/v3/...`, `/v3.0/...`, `/v5/...` | No | Coming next |
+| IAM 5.0 policies | `/v5/policies/...` | No | Coming next |
 
 ## Users and groups
 
@@ -40,7 +40,7 @@ through either API is visible, and can be changed, through both.
 | KeystoneShowUser, KeystoneUpdateUserByAdmin, KeystoneDeleteUser | `GET`, `PATCH`, `DELETE /v3/users/{user_id}` | Yes | |
 | KeystoneUpdateUserPassword | `POST /v3/users/{user_id}/password` | Yes | Needs the current password |
 | KeystoneListGroupsForUser | `GET /v3/users/{user_id}/groups` | Yes | |
-| KeystoneListProjectsForUser | `GET /v3/users/{user_id}/projects` | Yes | Every project for the root user; none for others until role assignments arrive |
+| KeystoneListProjectsForUser | `GET /v3/users/{user_id}/projects` | Yes | Every project for the root user; for others, the projects their groups have roles in (all of them with an all-projects grant) |
 | KeystoneCreateGroup, KeystoneListGroups | `POST`, `GET /v3/groups` | Yes | Filters `name`, `domain_id` |
 | KeystoneShowGroup, KeystoneUpdateGroup, KeystoneDeleteGroup | `GET`, `PATCH`, `DELETE /v3/groups/{group_id}` | Yes | |
 | KeystoneListUsersForGroupByAdmin | `GET /v3/groups/{group_id}/users` | Yes | |
@@ -102,6 +102,82 @@ returned only when the key is created. A user has at most 2 keys.
 - The administrator's key (`weistack credentials`) is not an IAM access
   key and is not listed.
 
+## Permissions
+
+Classic IAM's permissions are the system-defined roles and policies every
+account has, and the account's custom policies. They are granted to user
+groups, and in an enterprise project also to users.
+
+| Operation | Method and path | Status | Notes |
+| --- | --- | --- | --- |
+| KeystoneListPermissions | `GET /v3/roles` | Yes | System permissions; with `domain_id`, the account's custom policies. Filters `name`, `display_name` (an exact name, or part of one), `type` (`domain`, `project`, `all`), `permission_type` (`role`, `policy`), `catalog`; `page` with `per_page` (at most 500) |
+| KeystoneShowPermission | `GET /v3/roles/{role_id}` | Yes | |
+| CreateCloudServiceCustomPolicy, ListCustomPolicies | `POST`, `GET /v3.0/OS-ROLE/roles` | Yes | `page` with `per_page` (at most 300) |
+| ShowCustomPolicy, UpdateCloudServiceCustomPolicy, DeleteCustomPolicy | `GET`, `PATCH`, `DELETE /v3.0/OS-ROLE/roles/{role_id}` | Yes | Show includes `references`, the number of grants. Delete also removes the grants |
+| CreateAgencyCustomPolicy, UpdateAgencyCustomPolicy | | No | Agencies are not emulated |
+| KeystoneListDomainPermissionsForGroup, KeystoneAssociateGroupWithDomainPermission, KeystoneCheckDomainPermissionForGroup, KeystoneRemoveDomainPermissionFromGroup | `GET /v3/domains/{domain_id}/groups/{group_id}/roles`, `PUT`, `HEAD`, `DELETE .../roles/{role_id}` | Yes | Global services |
+| KeystoneListProjectPermissionsForGroup, KeystoneAssociateGroupWithProjectPermission, KeystoneCheckProjectPermissionForGroup, KeystoneRemoveProjectPermissionFromGroup | `GET /v3/projects/{project_id}/groups/{group_id}/roles`, `PUT`, `HEAD`, `DELETE .../roles/{role_id}` | Yes | One region's project |
+| KeystoneListAllProjectPermissionsForGroup | `GET /v3/OS-INHERIT/domains/{domain_id}/groups/{group_id}/roles/inherited_to_projects` | Yes | |
+| UpdateDomainGroupInheritRole, KeystoneCheckroleForGroup, DeleteDomainGroupInheritedRole | `PUT`, `HEAD`, `DELETE /v3/OS-INHERIT/domains/{domain_id}/groups/{group_id}/roles/{role_id}/inherited_to_projects` | Yes | All projects, including later ones |
+| ShowDomainRoleAssignments | `GET /v3.0/OS-PERMISSION/role-assignments` | Yes | Filters `role_id`, `subject` or `subject.user_id` / `subject.group_id`, `scope` or `scope.project_id` / `scope.domain_id` / `scope.enterprise_projects_id`, `is_inherited`, `include_group`; `page` with `per_page` (at most 50) |
+| Agency grants | `/v3.0/OS-AGENCY/...`, `/v3.0/OS-INHERIT/.../agencies/...` | No | Agencies are not emulated |
+
+A grant answers 204 even when the role is already granted. A check answers
+204 if the role is granted and 404 if not.
+
+**The system permissions** are those of the services WeiStack emulates, and
+the account-wide ones: FullAccess, Tenant Administrator, Tenant Guest and
+Security Administrator. Their names, display names and descriptions are
+Huawei's. Each has a stable ID, which is WeiStack's own: look permissions up
+by name or display name, as Terraform's `huaweicloud_identity_role` does.
+
+- **Scope (`type`)** follows Huawei's table of system permissions: `AX` for
+  global services (such as OBS), `XA` for region-specific projects (such as
+  ECS), `AA` for both.
+- **Kind:** fine-grained policies have `flag` `fine_grained` and policy
+  version `1.1`; roles have version `1.0`.
+- **Catalog:** `BASE` for the account-wide permissions and Server
+  Administrator, as Huawei's examples show; otherwise the service's
+  abbreviation, which is assumed.
+- **Statements** are not emulated yet: every system permission's policy has
+  an empty `Statement` list.
+
+**Custom policies** are checked as Huawei documents:
+
+- `display_name` is required: at most 128 letters, digits, spaces and
+  `-_.,`.
+- `type` is `AX` or `XA`.
+- The policy has `Version` `1.1` and 1 to 8 statements, is at most 6,144
+  characters, and each statement has an `Effect` of `Allow` or `Deny` and an
+  `Action` (or `NotAction`) list of at most 100 actions such as
+  `obs:bucket:GetBucketAcl`.
+
+A custom policy is named `custom_<account ID>_<n>`, with catalog
+`CUSTOMED`, and its times are Unix milliseconds, as on Huawei Cloud. The
+documented quota of 200 custom policies is not enforced: no error code is
+documented for it.
+
+Deleting a user group, a user or a custom policy removes its grants.
+
+**Tokens** list the roles their user holds through their groups: in a
+project, those granted for that project and for all projects; in the
+domain, those granted for global services.
+
+Permissions are not enforced yet: credentials are still not checked.
+
+### Enterprise projects
+
+WeiStack has one enterprise project, the default (ID `0`), served by
+[EPS](eps.md). Roles can be granted in it to user groups and to users.
+
+| Operation | Method and path | Status | Notes |
+| --- | --- | --- | --- |
+| ListRolesForGroupOnEnterpriseProject, AssociateRoleToGroupOnEnterpriseProject, RevokeRoleFromGroupOnEnterpriseProject | `GET /v3.0/OS-PERMISSION/enterprise-projects/{enterprise_project_id}/groups/{group_id}/roles`, `PUT`, `DELETE .../roles/{role_id}` | Yes | |
+| ListRolesForUserOnEnterpriseProject, AssociateRoleToUserOnEnterpriseProject, RevokeRoleFromUserOnEnterpriseProject | `GET /v3.0/OS-PERMISSION/enterprise-projects/{enterprise_project_id}/users/{user_id}/roles`, `PUT`, `DELETE .../roles/{role_id}` | Yes | |
+| ListGroupsForEnterpriseProject, ListUsersForEnterpriseProject | `GET /v3.0/OS-PERMISSION/enterprise-projects/{enterprise_project_id}/groups`, `.../users` | Yes | Those with roles in it |
+| ListEnterpriseProjectsForGroup, ListEnterpriseProjectsForUser | `GET /v3.0/OS-PERMISSION/groups/{group_id}/enterprise-projects`, `/v3.0/OS-PERMISSION/users/{user_id}/enterprise-projects` | Yes | |
+| Agency grants | `/v3.0/OS-PERMISSION/subjects/agency/scopes/enterprise-project/role-assignments` | No | |
+
 ## Tokens
 
 | Operation | Method and path | Status | Notes |
@@ -113,8 +189,8 @@ returned only when the key is created. A user has at most 2 keys.
 
 A token is returned in the `X-Subject-Token` header and lasts 24 hours.
 Its scope is a project (by ID, or by name: a region's name) or the
-account's domain. The catalog is empty, and the roles list is empty until
-role assignments arrive. Tokens are kept in memory, so a restart or a
+account's domain. The catalog is empty. The roles are those the user holds
+in the token's scope, as [Permissions](#permissions) describes. Tokens are kept in memory, so a restart or a
 reset ends them. A token also ends when its user is deleted or disabled,
 or changes password. Users with `access_mode` `console` cannot get one.
 Tokens are not yet accepted in place of a signature: credentials are
@@ -164,15 +240,18 @@ Classic IAM:
 | `akSkNumExceed` | 400 | A third access key for a user. This one is documented in Keystone's envelope, `{"error": {"message": "akSkNumExceed", "code": 400, "title": "Bad Request", ...}}`, and WeiStack answers it that way |
 | `IAM.0001` | 401 | A token request for an unknown user or another domain |
 | `IAM.0002` | 403 | Renaming or disabling the root user |
-| `IAM.0004` | 404 | `Could not find <project, user, group or credential>: <id>.`, also removing or checking a non-member, and from IAM 5.0 for an access key the user does not have (IAM 5.0 documents no code for it) |
+| `IAM.0004` | 404 | `Could not find <project, user, group, credential, role, role assignment, domain or enterprise project>: <id>.`, also removing or checking a non-member, and from IAM 5.0 for an access key the user does not have (IAM 5.0 documents no code for it) |
 | `IAM.0005` | 409 | The group name is taken |
-| `IAM.0007` | 400 | `Request parameter <key> is invalid.`: `page`, `per_page`, `enabled` or `is_domain` |
+| `IAM.0007` | 400 | `Request parameter <key> is invalid.`: `page`, `per_page`, `enabled`, `is_domain`, `type`, `permission_type`, `subject`, `scope`, `is_inherited` or `include_group` |
 | `IAM.0009` | 400 | Validating without `X-Subject-Token` |
 | `IAM.0011` | 400 | A body that is not JSON |
 | `IAM.0062` | 401 | A wrong password at sign-in |
 | `IAM.0066`, `IAM.0067` | 401 | An expired, or unknown or ended, token |
 | `IAM.0072` | 400 | `'<key>' is a required property.` |
 | `IAM.0073` | 400 | An invalid group name or description, another account's `domain_id`, an unknown `verification_method`, or an access key `status` other than `active` or `inactive` |
+| `IAM.1001` to `IAM.1004`, `IAM.1009` | 400 | A custom policy's `display_name` is blank, too long or has invalid characters; its `type` is missing or not `AX` or `XA` |
+| `IAM.1018`, `IAM.1019` | 400 | A custom policy's `description` or `description_cn` is not a string |
+| `IAM.1020`, `IAM.1021`, `IAM.1024`, `IAM.1027` to `IAM.1031`, `IAM.1033` to `IAM.1035`, `IAM.1037` | 400 | A custom policy document that is not an object, is too large, has the wrong `Version`, or has an invalid statement, `Effect`, `Action` or `Resource` list |
 | `IAM.0081` | 403 | A token for a console-only user |
 | `IAM.0082` | 403 | A token for a disabled user |
 

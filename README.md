@@ -17,8 +17,10 @@ place, and so are **IMS** (M3), **ECS** (M4), **OBS** (M5) and **RDS**
 (M6). Per-service coverage tables: [VPC](docs/services/vpc.md),
 [IMS](docs/services/ims.md), [ECS](docs/services/ecs.md),
 [OBS](docs/services/obs.md), [RDS](docs/services/rds.md), the read-only
-[EVS](docs/services/evs.md) view of server disks, and [IAM](docs/services/iam.md)
-discovery, so clients need no project or domain ID.
+[EVS](docs/services/evs.md) view of server disks, and [IAM](docs/services/iam.md):
+discovery (so clients need no project or domain ID), users and groups,
+access keys, and permissions with their assignments, including the default
+[enterprise project](docs/services/eps.md).
 
 | Milestone | Scope | State |
 | --- | --- | --- |

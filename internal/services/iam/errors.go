@@ -13,6 +13,12 @@ import (
 
 // Classic IAM.
 
+// apiErr400 is a classic IAM code answered with 400 and a published
+// message.
+func apiErr400(code, msg string) *apierr.Error {
+	return apierr.New(http.StatusBadRequest, code, "%s", msg)
+}
+
 // errNotFound is IAM.0004: "Could not find %(target)s: %(target_id)s."
 func errNotFound(target, id string) *apierr.Error {
 	return apierr.New(http.StatusNotFound, "IAM.0004", "Could not find %s: %s.", target, id)

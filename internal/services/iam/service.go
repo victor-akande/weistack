@@ -84,7 +84,9 @@ func New(d Deps) (*Service, error) {
 func (s *Service) Name() string { return "iam" }
 
 // Version implements server.Service.
-func (s *Service) Version() string { return "v3, v3.0, v5 (users, groups, tokens, access keys)" }
+func (s *Service) Version() string {
+	return "v3, v3.0, v5 (users, groups, tokens, access keys, roles, custom policies, role assignments)"
+}
 
 // Routes implements server.Service.
 func (s *Service) Routes(r chi.Router) {
@@ -126,6 +128,8 @@ func (s *Service) Routes(r chi.Router) {
 	r.Get("/v3.0/OS-CREDENTIAL/credentials/{access_key}", s.handle("ShowPermanentAccessKey", s.handleShowCredential))
 	r.Put("/v3.0/OS-CREDENTIAL/credentials/{access_key}", s.handle("UpdatePermanentAccessKey", s.handleUpdateCredential))
 	r.Delete("/v3.0/OS-CREDENTIAL/credentials/{access_key}", s.handle("DeletePermanentAccessKey", s.handleDeleteCredential))
+
+	s.roleRoutes(r)
 
 	r.Post("/v5/users", s.handle("CreateUserV5", s.handleCreateUserV5))
 	r.Get("/v5/users", s.handle("ListUsersV5", s.handleListUsersV5))

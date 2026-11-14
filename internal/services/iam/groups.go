@@ -140,8 +140,21 @@ func (s *Service) getGroup(r *http.Request, e groupErrs) (group, error) {
 	return g, err
 }
 
+// deleteGroup removes a group and the roles granted to it.
 func (s *Service) deleteGroup(r *http.Request, e groupErrs) error {
 	id := chi.URLParam(r, "group_id")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.groups().Get(r.Context(), id); errors.Is(err, store.ErrNotFound) {
+		return e.notFound(id)
+	} else if err != nil {
+		return err
+	}
+	if err := s.deleteAssignments(r.Context(), func(a assignment) bool {
+		return a.Subject == subjectGroup && a.SubjectID == id
+	}); err != nil {
+		return err
+	}
 	err := s.groups().Delete(r.Context(), id)
 	if errors.Is(err, store.ErrNotFound) {
 		return e.notFound(id)
