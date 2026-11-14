@@ -16,6 +16,7 @@ import (
 	"math/big"
 	"regexp"
 	"sync"
+	"time"
 )
 
 // AccountName is the name of the emulator's account.
@@ -126,19 +127,21 @@ type Principal struct {
 	Admin bool
 }
 
-// Directory maps access keys to principals. It is safe for concurrent
-// use.
+// Directory maps access keys to principals, and remembers when each key
+// was last used. It is safe for concurrent use.
 type Directory struct {
 	account Account
+	now     func() time.Time
 
-	mu   sync.RWMutex
-	keys map[string]Principal
+	mu       sync.RWMutex
+	keys     map[string]Principal
+	lastUsed map[string]time.Time
 }
 
 // NewDirectory returns a directory for account in which admin's key is
 // the administrator's.
 func NewDirectory(account Account, admin Credentials) *Directory {
-	d := &Directory{account: account, keys: map[string]Principal{}}
+	d := &Directory{account: account, now: time.Now, keys: map[string]Principal{}, lastUsed: map[string]time.Time{}}
 	d.keys[admin.AccessKey] = Principal{AccountID: account.ID, UserName: "admin", Admin: true}
 	return d
 }
@@ -173,11 +176,48 @@ func (d *Directory) Register(accessKey string, p Principal) error {
 	return nil
 }
 
-// Forget removes a key, except the administrator's.
+// Forget removes a key and when it was last used, except the
+// administrator's.
 func (d *Directory) Forget(accessKey string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if p, ok := d.keys[accessKey]; ok && !p.Admin {
 		delete(d.keys, accessKey)
+		delete(d.lastUsed, accessKey)
 	}
+}
+
+// Clear forgets every key but the administrator's.
+func (d *Directory) Clear() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for k, p := range d.keys {
+		if !p.Admin {
+			delete(d.keys, k)
+			delete(d.lastUsed, k)
+		}
+	}
+}
+
+// KeyUsed records that a request was made with accessKey, if the key is
+// known. Times are kept in memory only.
+func (d *Directory) KeyUsed(accessKey string) {
+	if d == nil {
+		return
+	}
+	now := d.now().UTC()
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if _, ok := d.keys[accessKey]; ok {
+		d.lastUsed[accessKey] = now
+	}
+}
+
+// LastUsed returns when accessKey was last used since it became known, or
+// false if it has not been.
+func (d *Directory) LastUsed(accessKey string) (time.Time, bool) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	t, ok := d.lastUsed[accessKey]
+	return t, ok
 }

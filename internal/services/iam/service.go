@@ -28,6 +28,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/reqctx"
 	"github.com/victor-akande/weistack/internal/core/store"
+	"github.com/victor-akande/weistack/internal/core/vault"
 )
 
 // Store kinds. IAM records belong to the account, so they live in the
@@ -40,6 +41,8 @@ type Deps struct {
 	Logger    *slog.Logger
 	Directory *identity.Directory
 	IDs       *ids.Generator
+	// Vault seals the secret keys of access keys in the store.
+	Vault *vault.Vault
 	// DefaultRegion and DefaultProjectID are the emulator's; that
 	// region's project keeps the configured ID.
 	DefaultRegion    string
@@ -56,6 +59,7 @@ type Service struct {
 	defaultRegion string
 	defaultProj   string
 	ids           *ids.Generator
+	vault         *vault.Vault
 	now           func() time.Time
 	// mu serialises changes that span records or need unique names.
 	mu     sync.Mutex
@@ -64,14 +68,14 @@ type Service struct {
 
 // New returns the IAM service.
 func New(d Deps) (*Service, error) {
-	if d.Store == nil || d.Logger == nil || d.Directory == nil || d.IDs == nil || d.DefaultRegion == "" || d.DefaultProjectID == "" {
-		return nil, errors.New("iam: Store, Logger, Directory, IDs, DefaultRegion and DefaultProjectID are required")
+	if d.Store == nil || d.Logger == nil || d.Directory == nil || d.IDs == nil || d.Vault == nil || d.DefaultRegion == "" || d.DefaultProjectID == "" {
+		return nil, errors.New("iam: Store, Logger, Directory, IDs, Vault, DefaultRegion and DefaultProjectID are required")
 	}
 	if d.Now == nil {
 		d.Now = time.Now
 	}
 	return &Service{
-		store: d.Store, log: d.Logger, dir: d.Directory, ids: d.IDs,
+		store: d.Store, log: d.Logger, dir: d.Directory, ids: d.IDs, vault: d.Vault,
 		defaultRegion: d.DefaultRegion, defaultProj: d.DefaultProjectID, now: d.Now,
 	}, nil
 }
@@ -80,7 +84,7 @@ func New(d Deps) (*Service, error) {
 func (s *Service) Name() string { return "iam" }
 
 // Version implements server.Service.
-func (s *Service) Version() string { return "v3, v3.0, v5 (users, groups, tokens)" }
+func (s *Service) Version() string { return "v3, v3.0, v5 (users, groups, tokens, access keys)" }
 
 // Routes implements server.Service.
 func (s *Service) Routes(r chi.Router) {
@@ -117,12 +121,23 @@ func (s *Service) Routes(r chi.Router) {
 	r.Head("/v3/groups/{group_id}/users/{user_id}", s.handle("KeystoneCheckUserInGroup", s.handleCheckUserInGroup))
 	r.Delete("/v3/groups/{group_id}/users/{user_id}", s.handle("KeystoneRemoveUserFromGroup", s.handleRemoveUserFromGroup))
 
+	r.Post("/v3.0/OS-CREDENTIAL/credentials", s.handle("CreatePermanentAccessKey", s.handleCreateCredential))
+	r.Get("/v3.0/OS-CREDENTIAL/credentials", s.handle("ListPermanentAccessKeys", s.handleListCredentials))
+	r.Get("/v3.0/OS-CREDENTIAL/credentials/{access_key}", s.handle("ShowPermanentAccessKey", s.handleShowCredential))
+	r.Put("/v3.0/OS-CREDENTIAL/credentials/{access_key}", s.handle("UpdatePermanentAccessKey", s.handleUpdateCredential))
+	r.Delete("/v3.0/OS-CREDENTIAL/credentials/{access_key}", s.handle("DeletePermanentAccessKey", s.handleDeleteCredential))
+
 	r.Post("/v5/users", s.handle("CreateUserV5", s.handleCreateUserV5))
 	r.Get("/v5/users", s.handle("ListUsersV5", s.handleListUsersV5))
 	r.Get("/v5/users/{user_id}", s.handle("ShowUserV5", s.handleShowUserV5))
 	r.Put("/v5/users/{user_id}", s.handle("UpdateUserV5", s.handleUpdateUserV5))
 	r.Delete("/v5/users/{user_id}", s.handle("DeleteUserV5", s.handleDeleteUserV5))
 	r.Get("/v5/users/{user_id}/last-login", s.handle("ShowUserLastLoginV5", s.handleShowUserLastLoginV5))
+	r.Post("/v5/users/{user_id}/access-keys", s.handle("CreateAccessKeyV5", s.handleCreateAccessKeyV5))
+	r.Get("/v5/users/{user_id}/access-keys", s.handle("ListAccessKeysV5", s.handleListAccessKeysV5))
+	r.Put("/v5/users/{user_id}/access-keys/{access_key_id}", s.handle("UpdateAccessKeyV5", s.handleUpdateAccessKeyV5))
+	r.Delete("/v5/users/{user_id}/access-keys/{access_key_id}", s.handle("DeleteAccessKeyV5", s.handleDeleteAccessKeyV5))
+	r.Get("/v5/users/{user_id}/access-keys/{access_key_id}/last-used", s.handle("ShowAccessKeyLastUsedV5", s.handleShowAccessKeyLastUsedV5))
 	r.Post("/v5/groups", s.handle("CreateGroupV5", s.handleCreateGroupV5))
 	r.Get("/v5/groups", s.handle("ListGroupsV5", s.handleListGroupsV5))
 	r.Get("/v5/groups/{group_id}", s.handle("ShowGroupV5", s.handleShowGroupV5))
@@ -166,17 +181,23 @@ func (s *Service) handle(op string, fn handler) http.HandlerFunc {
 var regionRE = regexp.MustCompile(`^[a-z]{2,}(-[a-z0-9]+)+$`)
 
 // Resume records the default region's project, so that it is listed
-// from the first request, and the root user.
+// from the first request, and the root user, and registers the stored
+// access keys with the directory.
 func (s *Service) Resume(ctx context.Context) error {
 	if err := s.ensureProject(ctx, s.defaultRegion); err != nil {
 		return err
 	}
-	return s.ensureRoot(ctx)
+	if err := s.ensureRoot(ctx); err != nil {
+		return err
+	}
+	return s.registerAllKeys(ctx)
 }
 
-// Reset implements server.Resetter: after the store is wiped, tokens end
-// and the account's project and root user are recorded again.
+// Reset implements server.Resetter: after the store is wiped, tokens end,
+// users' access keys are forgotten, and the account's project and root
+// user are recorded again.
 func (s *Service) Reset(ctx context.Context) error {
 	s.tokens.clear()
+	s.dir.Clear()
 	return s.Resume(ctx)
 }

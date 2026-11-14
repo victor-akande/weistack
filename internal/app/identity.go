@@ -12,6 +12,7 @@ import (
 
 	"github.com/victor-akande/weistack/internal/core/config"
 	"github.com/victor-akande/weistack/internal/core/identity"
+	"github.com/victor-akande/weistack/internal/core/vault"
 )
 
 const (
@@ -19,7 +20,43 @@ const (
 	accountFile = "account.json"
 	// adminCredentialsFile keeps the administrator's keys beside the CA.
 	adminCredentialsFile = "admin-credentials.json" //nolint:gosec // a file name, not a credential
+	// vaultKeyFile keeps the key that seals secrets in the store, with
+	// the data under -persist.
+	vaultKeyFile = "vault-key.json"
 )
+
+// vaultKey is the contents of vaultKeyFile.
+type vaultKey struct {
+	Key []byte `json:"key"`
+}
+
+func newVaultKey() (vaultKey, error) {
+	k, err := vault.NewKey()
+	return vaultKey{Key: k}, err
+}
+
+func (k vaultKey) valid() bool { return len(k.Key) == vault.KeyLen }
+
+// loadVault returns the vault that seals secrets in the store. Its key is
+// kept with the data under -persist, since the data cannot be read
+// without it, and is new on every start without it.
+func loadVault(cfg config.Config) (*vault.Vault, error) {
+	key, err := newVaultKey()
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Persist {
+		path := filepath.Join(cfg.DataDir, vaultKeyFile)
+		key, err = loadOrCreate(path, newVaultKey, vaultKey.valid)
+		switch {
+		case errors.Is(err, errInvalid):
+			return nil, fmt.Errorf("%s does not hold a valid key; the access keys stored with it cannot be used", path)
+		case err != nil:
+			return nil, fmt.Errorf("the vault key: %w", err)
+		}
+	}
+	return vault.New(key.Key)
+}
 
 // loadAccount returns the emulator's account: kept in the data directory
 // with -persist, new on every start without it, like the project ID.

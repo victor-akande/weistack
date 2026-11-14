@@ -23,7 +23,7 @@ client needs only an access key and a secret key.
 | KeystoneShowProject | `GET /v3/projects/{project_id}` | Yes | |
 | KeystoneListAuthProjects | `GET /v3/auth/projects` | Yes | |
 | GetCallerIdentity (STS) | `GET /v5/caller-identity` | Yes | The account and the caller |
-| Access keys, roles, policies | `/v3/...`, `/v3.0/...`, `/v5/...` | No | Coming next |
+| Roles, policies | `/v3/...`, `/v3.0/...`, `/v5/...` | No | Coming next |
 
 ## Users and groups
 
@@ -45,7 +45,7 @@ through either API is visible, and can be changed, through both.
 | KeystoneShowGroup, KeystoneUpdateGroup, KeystoneDeleteGroup | `GET`, `PATCH`, `DELETE /v3/groups/{group_id}` | Yes | |
 | KeystoneListUsersForGroupByAdmin | `GET /v3/groups/{group_id}/users` | Yes | |
 | KeystoneAddUserToGroup, KeystoneCheckUserInGroup, KeystoneRemoveUserFromGroup | `PUT`, `HEAD`, `DELETE /v3/groups/{group_id}/users/{user_id}` | Yes | |
-| CreateUserV5, ListUsersV5 | `POST`, `GET /v5/users` | Yes | Filter `group_id`; `limit` and `marker` |
+| CreateUserV5, ListUsersV5 | `POST`, `GET /v5/users` | Yes | Filters `group_id`, `access_key_id`; `limit` and `marker` |
 | ShowUserV5, UpdateUserV5, DeleteUserV5 | `GET`, `PUT`, `DELETE /v5/users/{user_id}` | Yes | |
 | ShowUserLastLoginV5 | `GET /v5/users/{user_id}/last-login` | Yes | The last password sign-in |
 | CreateGroupV5, ListGroupsV5 | `POST`, `GET /v5/groups` | Yes | Filter `user_id`; `limit` and `marker` |
@@ -68,6 +68,39 @@ username, or the username reversed. WeiStack also applies what it assumes
 is the default password policy, not checked against Huawei's
 documentation: 8 to 32 characters, with at least two of lowercase letters,
 uppercase letters, digits and special characters.
+
+## Access keys
+
+Permanent access keys, through both APIs over one set of keys.
+
+| Operation | Method and path | Status | Notes |
+| --- | --- | --- | --- |
+| CreatePermanentAccessKey, ListPermanentAccessKeys | `POST`, `GET /v3.0/OS-CREDENTIAL/credentials` | Yes | Without `user_id`, the list is the caller's own keys |
+| ShowPermanentAccessKey, UpdatePermanentAccessKey, DeletePermanentAccessKey | `GET`, `PUT`, `DELETE /v3.0/OS-CREDENTIAL/credentials/{access_key}` | Yes | `status` and `description` |
+| CreateAccessKeyV5, ListAccessKeysV5 | `POST`, `GET /v5/users/{user_id}/access-keys` | Yes | `limit` and `marker` |
+| UpdateAccessKeyV5, DeleteAccessKeyV5 | `PUT`, `DELETE /v5/users/{user_id}/access-keys/{access_key_id}` | Yes | `status` |
+| ShowAccessKeyLastUsedV5 | `GET /v5/users/{user_id}/access-keys/{access_key_id}/last-used` | Yes | |
+| Temporary keys | `POST /v3.0/OS-CREDENTIAL/securitytokens` | No | |
+
+A key is 20 characters, its secret 40, as on Huawei Cloud. The secret is
+returned only when the key is created. A user has at most 2 keys.
+
+- **A key acts as its user.** A request signed with an active key is
+  known as that user's, for example to STS's caller identity. An inactive
+  key is treated like any unknown key. Signatures are still not checked.
+- **Secrets are sealed.** WeiStack keeps each secret key, since checking
+  signatures will need it, but encrypted (AES-256-GCM), so it never
+  appears in the data file or in `/_weistack/state`. With `-persist` the
+  encryption key is `vault-key.json` in the data directory: keep it with
+  the data, which cannot be used without it.
+- **Last use** is the last request made with the key. It is kept in
+  memory, so a restart loses it, except that it is saved when a key is
+  deactivated. Classic IAM shows a never-used key's creation time as its
+  last use, as documented; IAM 5.0 shows no time.
+- **Deleting a user deletes its keys.** Huawei documents a 409 for
+  `DeleteUserV5` without saying when; WeiStack does not refuse.
+- The administrator's key (`weistack credentials`) is not an IAM access
+  key and is not listed.
 
 ## Tokens
 
@@ -128,9 +161,10 @@ Classic IAM:
 | `1117` | 400 | An invalid user description |
 | `1118` | 400 | A weak password |
 | `1120` | 400 | An `access_mode` other than `default`, `console` or `programmatic` |
+| `akSkNumExceed` | 400 | A third access key for a user. This one is documented in Keystone's envelope, `{"error": {"message": "akSkNumExceed", "code": 400, "title": "Bad Request", ...}}`, and WeiStack answers it that way |
 | `IAM.0001` | 401 | A token request for an unknown user or another domain |
 | `IAM.0002` | 403 | Renaming or disabling the root user |
-| `IAM.0004` | 404 | `Could not find <project, user or group>: <id>.`, also removing or checking a non-member |
+| `IAM.0004` | 404 | `Could not find <project, user, group or credential>: <id>.`, also removing or checking a non-member, and from IAM 5.0 for an access key the user does not have (IAM 5.0 documents no code for it) |
 | `IAM.0005` | 409 | The group name is taken |
 | `IAM.0007` | 400 | `Request parameter <key> is invalid.`: `page`, `per_page`, `enabled` or `is_domain` |
 | `IAM.0009` | 400 | Validating without `X-Subject-Token` |
@@ -138,7 +172,7 @@ Classic IAM:
 | `IAM.0062` | 401 | A wrong password at sign-in |
 | `IAM.0066`, `IAM.0067` | 401 | An expired, or unknown or ended, token |
 | `IAM.0072` | 400 | `'<key>' is a required property.` |
-| `IAM.0073` | 400 | An invalid group name or description, another account's `domain_id`, or an unknown `verification_method` |
+| `IAM.0073` | 400 | An invalid group name or description, another account's `domain_id`, an unknown `verification_method`, or an access key `status` other than `active` or `inactive` |
 | `IAM.0081` | 403 | A token for a console-only user |
 | `IAM.0082` | 403 | A token for a disabled user |
 
@@ -154,4 +188,4 @@ IAM 5.0:
 | `PAP5.0042` | 409 | The username is taken |
 | `PAP5.0043` | 409 | The group name is taken |
 | `PAP5.0044` | 409 | Adding a member again |
-| `PAP5.0257` | 400 | Any invalid input |
+| `PAP5.0257` | 400 | Any invalid input, also a third access key for a user (IAM 5.0 documents a 400 but no code for it) |

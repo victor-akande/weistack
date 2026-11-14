@@ -204,7 +204,11 @@ func (s *Service) updateUser(r *http.Request, c userChange) (user, error) {
 	if errors.Is(err, store.ErrNotFound) {
 		return user{}, errNotFound("user", id)
 	}
-	return u, err
+	if err != nil {
+		return user{}, err
+	}
+	// The user's keys now act under the new name.
+	return u, s.registerKeysOf(ctx, u)
 }
 
 func (s *Service) getUser(r *http.Request) (user, error) {
