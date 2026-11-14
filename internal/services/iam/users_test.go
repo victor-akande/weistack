@@ -304,7 +304,7 @@ func TestV5UsersAndGroups(t *testing.T) {
 		t.Fatalf("v5 group = %v", g)
 	}
 	e.wantErr(t, http.StatusConflict, "PAP5.0043", http.MethodPost, "/v5/groups", `{"group_name":"ops"}`)
-	if w, out := e.do(t, http.MethodPost, "/v5/groups/"+gid+"/add-user", `{"user_id":"`+uid+`"}`); w.Code != http.StatusNoContent {
+	if w, out := e.do(t, http.MethodPost, "/v5/groups/"+gid+"/add-user", `{"user_id":"`+uid+`"}`); w.Code != http.StatusOK {
 		t.Fatalf("add-user = %d %v", w.Code, out)
 	}
 	e.wantErr(t, http.StatusConflict, "PAP5.0044", http.MethodPost, "/v5/groups/"+gid+"/add-user", `{"user_id":"`+uid+`"}`)
@@ -321,7 +321,7 @@ func TestV5UsersAndGroups(t *testing.T) {
 	if w, _ := e.do(t, http.MethodHead, "/v3/groups/"+gid+"/users/"+uid, ""); w.Code != http.StatusNoContent {
 		t.Fatalf("classic HEAD = %d", w.Code)
 	}
-	if w, _ := e.do(t, http.MethodPost, "/v5/groups/"+gid+"/remove-user", `{"user_id":"`+uid+`"}`); w.Code != http.StatusNoContent {
+	if w, _ := e.do(t, http.MethodPost, "/v5/groups/"+gid+"/remove-user", `{"user_id":"`+uid+`"}`); w.Code != http.StatusOK {
 		t.Fatalf("remove-user = %d", w.Code)
 	}
 	e.wantErr(t, http.StatusNotFound, "PAP5.0021", http.MethodPost, "/v5/groups/"+gid+"/remove-user", `{"user_id":"`+uid+`"}`)

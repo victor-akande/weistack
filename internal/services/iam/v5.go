@@ -374,7 +374,8 @@ func (s *Service) v5Membership(member bool) handler {
 		if err != nil {
 			return err
 		}
-		w.WriteHeader(http.StatusNoContent)
+		// 200, as documented: Terraform's group membership accepts no 204.
+		w.WriteHeader(http.StatusOK)
 		return nil
 	}
 }
