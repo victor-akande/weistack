@@ -35,7 +35,7 @@ func newEnv(t *testing.T) *env {
 	st := store.NewMemory()
 	t.Cleanup(func() { _ = st.Close() })
 	dir := identity.NewDirectory(testAccount, identity.Credentials{AccessKey: "ADMINKEY000000000000", SecretKey: "s"})
-	svc, err := New(Deps{Store: st, Logger: log, Directory: dir, DefaultRegion: testRegion, DefaultProjectID: testProject})
+	svc, err := New(Deps{Store: st, Logger: log, Directory: dir, IDs: ids.NewSeeded(1), DefaultRegion: testRegion, DefaultProjectID: testProject})
 	if err != nil {
 		t.Fatal(err)
 	}

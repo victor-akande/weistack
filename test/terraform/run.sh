@@ -113,12 +113,15 @@ import json, sys
 state = json.load(sys.stdin)["resources"]
 def records(kind):
     return [r["data"] for scope, recs in state.items() if scope.endswith("/" + kind) for r in recs]
-# Job history, the seeded public images, the projects of the account and the
-# project default security group with its rules outlive the scenario, as
-# in the real cloud.
-kept = ("job", "ims.image", "iam.project", "vpc.secgroup", "vpc.secgroup-rule")
+# Job history, the seeded public images, the projects of the account, its
+# root user and the project default security group with its rules outlive
+# the scenario, as in the real cloud.
+kept = ("job", "ims.image", "iam.project", "iam.user", "vpc.secgroup", "vpc.secgroup-rule")
 left = {scope: len(recs) for scope, recs in state.items()
         if recs and not scope.endswith(kept)}
+users = [u["name"] for u in records("iam.user") if not u.get("root")]
+if users:
+    left["IAM users"] = users
 groups = {g["id"]: g["name"] for g in records("vpc.secgroup")}
 if any(name != "default" for name in groups.values()):
     left["security groups"] = sorted(groups.values())
