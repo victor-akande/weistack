@@ -1,6 +1,7 @@
 package iam
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
@@ -9,7 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/victor-akande/weistack/internal/core/auth"
 	"github.com/victor-akande/weistack/internal/core/httpx"
+	"github.com/victor-akande/weistack/internal/core/identity"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
@@ -358,4 +361,26 @@ func (s *Service) writeToken(w http.ResponseWriter, r *http.Request, status int,
 	return httpx.WriteJSON(w, status, struct {
 		Token tokenView `json:"token"`
 	}{v})
+}
+
+// CheckToken implements auth.TokenChecker: the principal a token acts as,
+// by the same rules as token validation.
+func (s *Service) CheckToken(ctx context.Context, id string) (identity.Principal, error) {
+	tok, ok := s.tokens.get(id)
+	if !ok {
+		return identity.Principal{}, auth.ErrTokenUnknown
+	}
+	if !s.now().Before(tok.ExpiresAt) {
+		return identity.Principal{}, auth.ErrTokenExpired
+	}
+	u, err := s.users().Get(ctx, tok.UserID)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return identity.Principal{}, auth.ErrTokenUnknown
+	case err != nil:
+		return identity.Principal{}, err
+	case !u.Enabled || u.PasswordChangedAt.After(tok.IssuedAt):
+		return identity.Principal{}, auth.ErrTokenUnknown
+	}
+	return identity.Principal{AccountID: s.account().ID, UserID: u.ID, UserName: u.Name}, nil
 }

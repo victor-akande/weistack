@@ -15,7 +15,7 @@ func TestKnownKeysShareTheAccountsBuckets(t *testing.T) {
 	t.Parallel()
 	acct := identity.Account{ID: "0123456789abcdef0123456789abcdef", Name: identity.AccountName}
 	keys := identity.NewDirectory(acct, identity.Credentials{AccessKey: "ADMINKEY000000000000", SecretKey: "s"})
-	if err := keys.Register("USERKEY0000000000000", identity.Principal{AccountID: acct.ID, UserName: "dev"}); err != nil {
+	if err := keys.Register("USERKEY0000000000000", identity.Principal{AccountID: acct.ID, UserName: "dev"}, "secret"); err != nil {
 		t.Fatal(err)
 	}
 	e := newEnvDir(t, store.NewMemory(), t.TempDir(), keys)

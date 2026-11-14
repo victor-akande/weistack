@@ -6,7 +6,9 @@ path prefix. STS: `sts.{region}.myhuaweicloud.com` or `/sts`.
 
 IAM belongs to the account, not to a project. WeiStack has one account
 (Huawei Cloud's "domain"), named `weistack`; `/_weistack/services` shows its
-ID. **Credentials are not checked**: every caller acts for that account.
+ID. By default **credentials are not checked**: every caller acts for that
+account. With `-iam=enforce` every request needs a valid signature or IAM
+token; see [Authentication](../../README.md#authentication).
 
 Legend: **Yes** implemented, **No** returns `501 WeiStack.0501`.
 
@@ -86,7 +88,9 @@ returned only when the key is created. A user has at most 2 keys.
 
 - **A key acts as its user.** A request signed with an active key is
   known as that user's, for example to STS's caller identity. An inactive
-  key is treated like any unknown key. Signatures are still not checked.
+  key is treated like any unknown key. With `-iam=enforce` its signature
+  is checked against its secret key, and an inactive key, or a disabled
+  user's, is refused.
 - **Secrets are sealed.** WeiStack keeps each secret key, since checking
   signatures will need it, but encrypted (AES-256-GCM), so it never
   appears in the data file or in `/_weistack/state`. With `-persist` the
@@ -162,7 +166,8 @@ Deleting a user group, a user or a custom policy removes its grants.
 project, those granted for that project and for all projects; in the
 domain, those granted for global services.
 
-Permissions are not enforced yet: credentials are still not checked.
+Permissions are not enforced yet: even with `-iam=enforce`, which checks
+who is calling, any valid principal may use every API.
 
 ### Enterprise projects
 
@@ -228,8 +233,8 @@ account's domain. The catalog is empty. The roles are those the user holds
 in the token's scope, as [Permissions](#permissions) describes. Tokens are kept in memory, so a restart or a
 reset ends them. A token also ends when its user is deleted or disabled,
 or changes password. Users with `access_mode` `console` cannot get one.
-Tokens are not yet accepted in place of a signature: credentials are
-still not checked.
+With `-iam=enforce`, a valid token is accepted in place of a signature on
+every API, as on Huawei Cloud.
 
 ## Projects
 

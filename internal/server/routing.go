@@ -39,13 +39,14 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 		if region != "" {
 			info.Region = region
 		}
-		dispatch(m, w, r)
+		s.dispatch(m, w, r, []string{r.URL.Path})
 		return
 	}
 
 	if m, rest, ok := s.byPath(r.URL); ok {
 		info.Service = m.svc.Name()
-		dispatch(m, w, rest(r))
+		served := rest(r)
+		s.dispatch(m, w, served, signedPaths(r.URL.Path, served.URL.Path))
 		return
 	}
 
@@ -71,9 +72,15 @@ func hostRegion(hostport string) string {
 	return ""
 }
 
-func dispatch(m *mounted, w http.ResponseWriter, r *http.Request) {
+// paths are the paths the client may have signed, for enforcement.
+func (s *Server) dispatch(m *mounted, w http.ResponseWriter, r *http.Request, paths []string) {
 	if m.maxBody > 0 {
 		r.Body = http.MaxBytesReader(w, r.Body, m.maxBody)
+	}
+	if s.enforcing() {
+		if r = s.authenticate(m, w, r, paths); r == nil {
+			return
+		}
 	}
 	m.handler.ServeHTTP(w, r)
 }

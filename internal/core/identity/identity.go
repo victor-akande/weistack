@@ -125,24 +125,53 @@ type Principal struct {
 	UserName string
 	// Admin marks the bootstrap administrator.
 	Admin bool
+	// Disabled marks a key whose user is disabled. It still names its
+	// user, but enforcement refuses it.
+	Disabled bool
 }
 
-// Directory maps access keys to principals, and remembers when each key
-// was last used. It is safe for concurrent use.
+// The lockout Huawei documents for AK/SK authentication: more than five
+// consecutive failures lock the access key for five minutes.
+const (
+	MaxFailures = 5
+	LockFor     = 5 * time.Minute
+)
+
+type entry struct {
+	principal Principal
+	// secret is the secret key, kept in memory to check signatures.
+	secret string
+}
+
+type lockout struct {
+	failures int
+	until    time.Time
+}
+
+// Directory maps access keys to principals and their secret keys,
+// remembers when each key was last used, and counts signature failures.
+// It is safe for concurrent use. Secrets are never logged.
 type Directory struct {
 	account Account
 	now     func() time.Time
 
 	mu       sync.RWMutex
-	keys     map[string]Principal
+	keys     map[string]entry
 	lastUsed map[string]time.Time
+	locks    map[string]*lockout
 }
 
 // NewDirectory returns a directory for account in which admin's key is
 // the administrator's.
 func NewDirectory(account Account, admin Credentials) *Directory {
-	d := &Directory{account: account, now: time.Now, keys: map[string]Principal{}, lastUsed: map[string]time.Time{}}
-	d.keys[admin.AccessKey] = Principal{AccountID: account.ID, UserName: "admin", Admin: true}
+	d := &Directory{
+		account: account, now: time.Now,
+		keys: map[string]entry{}, lastUsed: map[string]time.Time{}, locks: map[string]*lockout{},
+	}
+	d.keys[admin.AccessKey] = entry{
+		principal: Principal{AccountID: account.ID, UserName: "admin", Admin: true},
+		secret:    admin.SecretKey,
+	}
 	return d
 }
 
@@ -157,33 +186,45 @@ func (d *Directory) Lookup(accessKey string) (Principal, bool) {
 	}
 	d.mu.RLock()
 	defer d.mu.RUnlock()
-	p, ok := d.keys[accessKey]
-	return p, ok
+	e, ok := d.keys[accessKey]
+	return e.principal, ok
 }
 
-// Register makes accessKey known as p, replacing any earlier entry. It
-// refuses to take over the administrator's key.
-func (d *Directory) Register(accessKey string, p Principal) error {
+// Secret returns the secret key of a known access key.
+func (d *Directory) Secret(accessKey string) (string, bool) {
+	if d == nil || accessKey == "" {
+		return "", false
+	}
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	e, ok := d.keys[accessKey]
+	return e.secret, ok && e.secret != ""
+}
+
+// Register makes accessKey known as p, with its secret key, replacing
+// any earlier entry. It refuses to take over the administrator's key.
+func (d *Directory) Register(accessKey string, p Principal, secret string) error {
 	if !ValidKey(accessKey) {
 		return fmt.Errorf("identity: %q is not a valid access key", accessKey)
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if old, ok := d.keys[accessKey]; ok && old.Admin {
+	if old, ok := d.keys[accessKey]; ok && old.principal.Admin {
 		return fmt.Errorf("identity: %s is the administrator's key", accessKey)
 	}
-	d.keys[accessKey] = p
+	d.keys[accessKey] = entry{principal: p, secret: secret}
 	return nil
 }
 
-// Forget removes a key and when it was last used, except the
-// administrator's.
+// Forget removes a key, when it was last used and its failures, except
+// the administrator's.
 func (d *Directory) Forget(accessKey string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if p, ok := d.keys[accessKey]; ok && !p.Admin {
+	if e, ok := d.keys[accessKey]; ok && !e.principal.Admin {
 		delete(d.keys, accessKey)
 		delete(d.lastUsed, accessKey)
+		delete(d.locks, accessKey)
 	}
 }
 
@@ -191,12 +232,13 @@ func (d *Directory) Forget(accessKey string) {
 func (d *Directory) Clear() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	for k, p := range d.keys {
-		if !p.Admin {
+	for k, e := range d.keys {
+		if !e.principal.Admin {
 			delete(d.keys, k)
 			delete(d.lastUsed, k)
 		}
 	}
+	clear(d.locks)
 }
 
 // KeyUsed records that a request was made with accessKey, if the key is
@@ -220,4 +262,44 @@ func (d *Directory) LastUsed(accessKey string) (time.Time, bool) {
 	defer d.mu.RUnlock()
 	t, ok := d.lastUsed[accessKey]
 	return t, ok
+}
+
+// Locked reports whether accessKey is locked out after too many failed
+// signatures. The administrator's key is never locked, so that a typo
+// cannot lock out the emulator's operator.
+func (d *Directory) Locked(accessKey string) bool {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	l, ok := d.locks[accessKey]
+	return ok && d.now().Before(l.until)
+}
+
+// SignatureFailed counts a failed signature for accessKey. The failure
+// after MaxFailures in a row locks the key for LockFor.
+func (d *Directory) SignatureFailed(accessKey string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	e, ok := d.keys[accessKey]
+	if !ok || e.principal.Admin {
+		return
+	}
+	l := d.locks[accessKey]
+	if l == nil {
+		l = &lockout{}
+		d.locks[accessKey] = l
+	}
+	if now := d.now(); !l.until.IsZero() && !now.Before(l.until) {
+		*l = lockout{} // the last lock has passed: count afresh
+	}
+	l.failures++
+	if l.failures > MaxFailures {
+		l.until = d.now().Add(LockFor)
+	}
+}
+
+// SignatureSucceeded clears accessKey's failures.
+func (d *Directory) SignatureSucceeded(accessKey string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	delete(d.locks, accessKey)
 }

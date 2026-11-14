@@ -17,7 +17,7 @@ var sdkPassword = strings.Join([]string{"Passw0rd", "!sdk"}, "")
 
 func iamClients(t *testing.T, ak string) (*iamv3.IamClient, *iamv5.IamClient) {
 	t.Helper()
-	creds, err := global.NewCredentialsBuilder().WithAk(ak).WithSk("weistack-does-not-verify-signatures").SafeBuild()
+	creds, err := global.NewCredentialsBuilder().WithAk(signingAK(ak)).WithSk(signingSK()).SafeBuild()
 	if err != nil {
 		t.Fatal(err)
 	}

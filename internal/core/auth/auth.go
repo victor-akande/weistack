@@ -8,6 +8,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -188,3 +189,19 @@ func Middleware(log *slog.Logger, resolver Resolver) func(http.Handler) http.Han
 		})
 	}
 }
+
+// TokenChecker validates IAM tokens (X-Auth-Token) for enforcement.
+type TokenChecker interface {
+	// CheckToken returns the principal a token acts as, or
+	// ErrTokenUnknown or ErrTokenExpired.
+	CheckToken(ctx context.Context, token string) (identity.Principal, error)
+}
+
+// Token errors.
+var (
+	// ErrTokenUnknown is a token WeiStack did not issue, or one that has
+	// ended (its user was deleted or disabled, or changed password).
+	ErrTokenUnknown = errors.New("auth: unknown token")
+	// ErrTokenExpired is a token past its expiry.
+	ErrTokenExpired = errors.New("auth: token expired")
+)

@@ -37,8 +37,8 @@ func httpConfigAt(addr string) *config.HttpConfig {
 func credentials(t *testing.T) *basic.Credentials {
 	t.Helper()
 	cred, err := basic.NewCredentialsBuilder().
-		WithAk("AKWEISTACKEXAMPLE").
-		WithSk("weistack-does-not-verify-signatures").
+		WithAk(signingAK("AKWEISTACKEXAMPLE")).
+		WithSk(signingSK()).
 		WithProjectId(projectID).
 		SafeBuild()
 	if err != nil {

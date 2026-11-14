@@ -50,9 +50,21 @@ func TestClassicAccessKeys(t *testing.T) {
 		t.Fatalf("Open = %q, %v", got, err)
 	}
 
-	// The key acts as alice.
-	if p, ok := e.svc.dir.Lookup(ak); !ok || p.UserID != uid || p.UserName != "alice" || p.Admin {
+	// The key acts as alice, and its secret is there to check signatures.
+	if p, ok := e.svc.dir.Lookup(ak); !ok || p.UserID != uid || p.UserName != "alice" || p.Admin || p.Disabled {
 		t.Fatalf("directory = %+v, %v", p, ok)
+	}
+	if got, ok := e.svc.dir.Secret(ak); !ok || got != sk {
+		t.Fatal("the directory does not hold the key's secret")
+	}
+	// Disabling alice marks her keys, and enabling her clears the mark.
+	e.want(t, http.StatusOK, http.MethodPut, "/v3.0/OS-USER/users/"+uid, `{"user":{"enabled":false}}`)
+	if p, _ := e.svc.dir.Lookup(ak); !p.Disabled {
+		t.Fatal("a disabled user's key is not marked")
+	}
+	e.want(t, http.StatusOK, http.MethodPut, "/v3.0/OS-USER/users/"+uid, `{"user":{"enabled":true}}`)
+	if p, _ := e.svc.dir.Lookup(ak); p.Disabled {
+		t.Fatal("an enabled user's key is still marked")
 	}
 
 	// Never used: the last use is the creation time, as documented.

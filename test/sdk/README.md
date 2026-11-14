@@ -20,6 +20,18 @@ image:
 WEISTACK_ADDR=127.0.0.1:8780 WEISTACK_PROJECT_ID=<its project id> make test-sdk
 ```
 
+To run the same tests with credentials enforced (`-iam=enforce`), set
+`WEISTACK_SDK_IAM=enforce`. The suite then gives the emulator an
+administrator key pair it generates, and signs every request with it; CI
+runs the suite both ways. `TestEnforcedSignatures` runs only in this mode
+and checks that wrong signatures are refused. Against an emulator started
+elsewhere, also set `WEISTACK_SDK_AK` and `WEISTACK_SDK_SK` to its
+administrator's keys (`weistack credentials`).
+
+```bash
+WEISTACK_SDK_IAM=enforce make test-sdk
+```
+
 `TestPersistenceAcrossRestarts` starts emulators of its own with
 `-persist`, so it is skipped when `WEISTACK_ADDR` names an existing one. It
 stops one in the middle of server and database creation and of a multipart
