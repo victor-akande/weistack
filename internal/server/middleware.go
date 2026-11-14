@@ -94,7 +94,7 @@ func (s *Server) recoverPanics(next http.Handler) http.Handler {
 // corsExposed lists response headers browser clients may read.
 var corsExposed = strings.Join([]string{
 	requestIDHeader, "ETag", "Content-Length", "Content-Range", "Last-Modified",
-	"X-Obs-Request-Id", "X-Obs-Id-2", "X-Amz-Request-Id",
+	"X-Obs-Request-Id", "X-Obs-Id-2", "X-Amz-Request-Id", "X-Subject-Token", "X-IAM-Trace-Id",
 }, ", ")
 
 // cors lets browser-based tools (and a future dashboard) call the

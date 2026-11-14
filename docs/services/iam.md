@@ -23,7 +23,69 @@ client needs only an access key and a secret key.
 | KeystoneShowProject | `GET /v3/projects/{project_id}` | Yes | |
 | KeystoneListAuthProjects | `GET /v3/auth/projects` | Yes | |
 | GetCallerIdentity (STS) | `GET /v5/caller-identity` | Yes | The account and the caller |
-| Users, groups, access keys, tokens, policies | `/v3/...`, `/v3.0/...`, `/v5/...` | No | Coming next |
+| Access keys, roles, policies | `/v3/...`, `/v3.0/...`, `/v5/...` | No | Coming next |
+
+## Users and groups
+
+Classic IAM and IAM 5.0 share one set of users and groups: a user created
+through either API is visible, and can be changed, through both.
+
+| Operation | Method and path | Status | Notes |
+| --- | --- | --- | --- |
+| CreateUser | `POST /v3.0/OS-USER/users` | Yes | What Terraform uses; `domain_id` is required |
+| ShowUser, UpdateUser | `GET`, `PUT /v3.0/OS-USER/users/{user_id}` | Yes | |
+| UpdateUserInformation | `PUT /v3.0/OS-USER/users/{user_id}/info` | Yes | `mobile` as `<country code>-<number>` |
+| ShowUserLoginProtect, UpdateLoginProtect | `GET`, `PUT /v3.0/OS-USER/users/{user_id}/login-protect` | Yes | Kept, not enforced |
+| KeystoneCreateUser, KeystoneListUsers | `POST`, `GET /v3/users` | Yes | Filters `name`, `enabled`, `domain_id` |
+| KeystoneShowUser, KeystoneUpdateUserByAdmin, KeystoneDeleteUser | `GET`, `PATCH`, `DELETE /v3/users/{user_id}` | Yes | |
+| KeystoneUpdateUserPassword | `POST /v3/users/{user_id}/password` | Yes | Needs the current password |
+| KeystoneListGroupsForUser | `GET /v3/users/{user_id}/groups` | Yes | |
+| KeystoneListProjectsForUser | `GET /v3/users/{user_id}/projects` | Yes | Every project for the root user; none for others until role assignments arrive |
+| KeystoneCreateGroup, KeystoneListGroups | `POST`, `GET /v3/groups` | Yes | Filters `name`, `domain_id` |
+| KeystoneShowGroup, KeystoneUpdateGroup, KeystoneDeleteGroup | `GET`, `PATCH`, `DELETE /v3/groups/{group_id}` | Yes | |
+| KeystoneListUsersForGroupByAdmin | `GET /v3/groups/{group_id}/users` | Yes | |
+| KeystoneAddUserToGroup, KeystoneCheckUserInGroup, KeystoneRemoveUserFromGroup | `PUT`, `HEAD`, `DELETE /v3/groups/{group_id}/users/{user_id}` | Yes | |
+| CreateUserV5, ListUsersV5 | `POST`, `GET /v5/users` | Yes | Filter `group_id`; `limit` and `marker` |
+| ShowUserV5, UpdateUserV5, DeleteUserV5 | `GET`, `PUT`, `DELETE /v5/users/{user_id}` | Yes | |
+| ShowUserLastLoginV5 | `GET /v5/users/{user_id}/last-login` | Yes | The last password sign-in |
+| CreateGroupV5, ListGroupsV5 | `POST`, `GET /v5/groups` | Yes | Filter `user_id`; `limit` and `marker` |
+| ShowGroupV5, UpdateGroupV5, DeleteGroupV5 | `GET`, `PUT`, `DELETE /v5/groups/{group_id}` | Yes | |
+| AddUserToGroupV5, RemoveUserFromGroupV5 | `POST /v5/groups/{group_id}/add-user`, `remove-user` | Yes | |
+
+The account's **root user** is named `weistack`, like the account. It
+exists from the start, holds the administrator's keys, and cannot be
+renamed, disabled or deleted. It has no password until one is set with
+`UpdateUser`.
+
+Names follow Huawei's rules: a username has at most 64 letters, digits,
+spaces, `-`, `_` and `.`, and does not start with a digit or a space; a
+group name has at most 128 letters, digits, spaces, `-` and `_`.
+Descriptions have at most 255 characters and none of `@#%&<>\$^*`. An
+account has at most 50 IAM users besides the root user.
+
+**Passwords** are stored only as a salted hash. A password may not be the
+username, or the username reversed. WeiStack also applies what it assumes
+is the default password policy, not checked against Huawei's
+documentation: 8 to 32 characters, with at least two of lowercase letters,
+uppercase letters, digits and special characters.
+
+## Tokens
+
+| Operation | Method and path | Status | Notes |
+| --- | --- | --- | --- |
+| KeystoneCreateUserTokenByPassword | `POST /v3/auth/tokens` | Yes | `methods: ["password"]`, the user by name with the account's domain, or by ID |
+| KeystoneCreateScopedToken | `POST /v3/auth/tokens` | Yes | `methods: ["token"]`, to rescope a token |
+| KeystoneValidateToken | `GET /v3/auth/tokens` | Yes | `X-Subject-Token` |
+| Agency tokens, MFA | `POST /v3/auth/tokens` | No | |
+
+A token is returned in the `X-Subject-Token` header and lasts 24 hours.
+Its scope is a project (by ID, or by name: a region's name) or the
+account's domain. The catalog is empty, and the roles list is empty until
+role assignments arrive. Tokens are kept in memory, so a restart or a
+reset ends them. A token also ends when its user is deleted or disabled,
+or changes password. Users with `access_mode` `console` cannot get one.
+Tokens are not yet accepted in place of a signature: credentials are
+still not checked.
 
 ## Projects
 
@@ -51,7 +113,45 @@ error envelope is not documented; WeiStack uses the flat
 `{"error_code", "error_msg"}` form IAM 5.0 documents, which the SDKs read
 for both.
 
+Classic IAM:
+
 | Code | Status | When |
 | --- | --- | --- |
-| `IAM.0004` | 404 | `Could not find project: <id>.` |
+| `1100` | 400 | `CreateUser` without `name` or `domain_id` |
+| `1101` | 400 | An invalid username |
+| `1102`, `1104`, `1106` | 400 | An invalid email address or mobile number, or only one of `areacode` and `phone` |
+| `1103` | 400 | A wrong current password when changing it |
+| `1107` | 400 | Deleting the root user |
+| `1108` | 400 | A new password the same as the current one |
+| `1109` | 400 | The username is taken |
+| `1115` | 400 | The 50-user quota is reached (from IAM 5.0 too, which documents no code for it) |
+| `1117` | 400 | An invalid user description |
+| `1118` | 400 | A weak password |
+| `1120` | 400 | An `access_mode` other than `default`, `console` or `programmatic` |
+| `IAM.0001` | 401 | A token request for an unknown user or another domain |
+| `IAM.0002` | 403 | Renaming or disabling the root user |
+| `IAM.0004` | 404 | `Could not find <project, user or group>: <id>.`, also removing or checking a non-member |
+| `IAM.0005` | 409 | The group name is taken |
 | `IAM.0007` | 400 | `Request parameter <key> is invalid.`: `page`, `per_page`, `enabled` or `is_domain` |
+| `IAM.0009` | 400 | Validating without `X-Subject-Token` |
+| `IAM.0011` | 400 | A body that is not JSON |
+| `IAM.0062` | 401 | A wrong password at sign-in |
+| `IAM.0066`, `IAM.0067` | 401 | An expired, or unknown or ended, token |
+| `IAM.0072` | 400 | `'<key>' is a required property.` |
+| `IAM.0073` | 400 | An invalid group name or description, another account's `domain_id`, or an unknown `verification_method` |
+| `IAM.0081` | 403 | A token for a console-only user |
+| `IAM.0082` | 403 | A token for a disabled user |
+
+IAM 5.0:
+
+| Code | Status | When |
+| --- | --- | --- |
+| `PAP5.0001` | 403 | Renaming or disabling the root user |
+| `PAP5.0007` | 409 | Deleting the root user |
+| `PAP5.0010` | 400 | An unknown `marker` |
+| `PAP5.0016` | 404 | No such group |
+| `PAP5.0021` | 404 | No such user, also removing a non-member |
+| `PAP5.0042` | 409 | The username is taken |
+| `PAP5.0043` | 409 | The group name is taken |
+| `PAP5.0044` | 409 | Adding a member again |
+| `PAP5.0257` | 400 | Any invalid input |

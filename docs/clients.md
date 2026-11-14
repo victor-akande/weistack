@@ -153,8 +153,8 @@ client = (VpcClient.new_builder()
 print(client.list_vpcs(ListVpcsRequest()))
 ```
 
-Give the `project_id` explicitly. Without it the SDK asks IAM for one, and
-WeiStack does not emulate IAM.
+Without `project_id`, the SDK asks IAM for the region's project, and
+WeiStack answers (see [IAM](services/iam.md#discovery)).
 
 ## OBS SDK for Python
 

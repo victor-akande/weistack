@@ -317,6 +317,7 @@ func buildServices(
 		return nil, err
 	}
 	iamSvc, err := iam.New(iam.Deps{
+		IDs:   gen,
 		Store: st, Logger: log, Directory: directory, DefaultRegion: cfg.Region, DefaultProjectID: projectID,
 	})
 	if err != nil {
