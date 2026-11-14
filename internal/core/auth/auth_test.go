@@ -172,4 +172,7 @@ func TestMiddlewareResolves(t *testing.T) {
 	if ResolverFromContext(context.Background()) != nil {
 		t.Fatal("a resolver came from an empty context")
 	}
+	if _, used := dir.LastUsed("ADMINKEY000000000000"); !used {
+		t.Fatal("the request did not record the key as used")
+	}
 }

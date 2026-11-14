@@ -3,6 +3,7 @@ package identity
 import (
 	"regexp"
 	"testing"
+	"time"
 )
 
 func TestNewCredentialsLookLikeHuaweiKeys(t *testing.T) {
@@ -112,5 +113,40 @@ func TestDirectory(t *testing.T) {
 	}
 	if d.Account() != acct {
 		t.Fatal("Account() changed")
+	}
+}
+
+func TestDirectoryLastUsedAndClear(t *testing.T) {
+	t.Parallel()
+	acct := Account{ID: "0123456789abcdef0123456789abcdef", Name: AccountName}
+	admin := Credentials{AccessKey: "ADMINKEY00000000000A", SecretKey: "secret"}
+	d := NewDirectory(acct, admin)
+	at := time.Date(2026, 11, 14, 10, 0, 0, 0, time.UTC)
+	d.now = func() time.Time { return at }
+	const key = "USERKEY000000000000A"
+
+	d.KeyUsed(key) // unknown: not recorded
+	if _, ok := d.LastUsed(key); ok {
+		t.Fatal("an unknown key has a last use")
+	}
+	if err := d.Register(key, Principal{AccountID: acct.ID, UserID: "u1", UserName: "alice"}); err != nil {
+		t.Fatal(err)
+	}
+	d.KeyUsed(key)
+	if got, ok := d.LastUsed(key); !ok || !got.Equal(at) {
+		t.Fatalf("LastUsed = %v, %v", got, ok)
+	}
+	var nilDir *Directory
+	nilDir.KeyUsed(key) // no panic
+
+	d.Clear()
+	if _, ok := d.Lookup(key); ok {
+		t.Fatal("Clear kept a user's key")
+	}
+	if _, ok := d.LastUsed(key); ok {
+		t.Fatal("Clear kept a last use")
+	}
+	if _, ok := d.Lookup(admin.AccessKey); !ok {
+		t.Fatal("Clear forgot the administrator's key")
 	}
 }

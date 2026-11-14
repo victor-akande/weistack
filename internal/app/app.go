@@ -25,6 +25,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/store"
+	"github.com/victor-akande/weistack/internal/core/vault"
 	"github.com/victor-akande/weistack/internal/server"
 	"github.com/victor-akande/weistack/internal/services/ecs"
 	"github.com/victor-akande/weistack/internal/services/evs"
@@ -131,7 +132,11 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		return err
 	}
 	directory := identity.NewDirectory(account, admin)
-	services, err := buildServices(ctx, cfg, projectID, objectDir, st, engine, gen, log, directory)
+	vlt, err := loadVault(cfg)
+	if err != nil {
+		return err
+	}
+	services, err := buildServices(ctx, cfg, projectID, objectDir, st, engine, gen, log, directory, vlt)
 	if err != nil {
 		return err
 	}
@@ -258,6 +263,7 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 func buildServices(
 	ctx context.Context, cfg config.Config, projectID, objectDir string,
 	st store.Store, engine *lifecycle.Engine, gen *ids.Generator, log *slog.Logger, directory *identity.Directory,
+	vlt *vault.Vault,
 ) ([]server.Service, error) {
 	vpcSvc, err := vpc.New(vpc.Deps{Store: st, Engine: engine, IDs: gen, Logger: log})
 	if err != nil {
@@ -317,7 +323,7 @@ func buildServices(
 		return nil, err
 	}
 	iamSvc, err := iam.New(iam.Deps{
-		IDs:   gen,
+		IDs: gen, Vault: vlt,
 		Store: st, Logger: log, Directory: directory, DefaultRegion: cfg.Region, DefaultProjectID: projectID,
 	})
 	if err != nil {

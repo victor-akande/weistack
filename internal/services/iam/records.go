@@ -117,9 +117,12 @@ func (s *Service) groupsOf(ctx context.Context, userID string) ([]group, error) 
 	return s.groups().List(ctx, func(g group) bool { return g.has(userID) })
 }
 
-// deleteUser removes a user and its group memberships. The caller holds
-// s.mu.
+// deleteUser removes a user, its access keys and its group memberships.
+// The caller holds s.mu.
 func (s *Service) deleteUser(ctx context.Context, id string) error {
+	if err := s.deleteKeysOf(ctx, id); err != nil {
+		return err
+	}
 	in, err := s.groupsOf(ctx, id)
 	if err != nil {
 		return err

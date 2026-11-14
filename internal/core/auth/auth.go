@@ -73,13 +73,23 @@ type Resolver interface {
 	Lookup(accessKey string) (identity.Principal, bool)
 }
 
-// Resolve completes id with what resolver knows about its access key.
+// UsageRecorder is implemented by a Resolver that remembers when each
+// known key was last used.
+type UsageRecorder interface {
+	KeyUsed(accessKey string)
+}
+
+// Resolve completes id with what resolver knows about its access key. A
+// known key is reported as used, if the resolver records usage.
 func Resolve(id Identity, resolver Resolver) Identity {
 	if resolver == nil || id.AccessKey == "" {
 		return id
 	}
 	if p, ok := resolver.Lookup(id.AccessKey); ok {
 		id.Known, id.Principal = true, p
+		if rec, ok := resolver.(UsageRecorder); ok {
+			rec.KeyUsed(id.AccessKey)
+		}
 	}
 	return id
 }

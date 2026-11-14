@@ -14,6 +14,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/store"
+	"github.com/victor-akande/weistack/internal/core/vault"
 	"github.com/victor-akande/weistack/internal/server"
 )
 
@@ -35,7 +36,15 @@ func newEnv(t *testing.T) *env {
 	st := store.NewMemory()
 	t.Cleanup(func() { _ = st.Close() })
 	dir := identity.NewDirectory(testAccount, identity.Credentials{AccessKey: "ADMINKEY000000000000", SecretKey: "s"})
-	svc, err := New(Deps{Store: st, Logger: log, Directory: dir, IDs: ids.NewSeeded(1), DefaultRegion: testRegion, DefaultProjectID: testProject})
+	key, err := vault.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	vlt, err := vault.New(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc, err := New(Deps{Store: st, Logger: log, Directory: dir, IDs: ids.NewSeeded(1), Vault: vlt, DefaultRegion: testRegion, DefaultProjectID: testProject})
 	if err != nil {
 		t.Fatal(err)
 	}

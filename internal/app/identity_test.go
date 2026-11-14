@@ -273,3 +273,46 @@ func TestConcurrentStartsAgreeOnIdentity(t *testing.T) {
 		}
 	}
 }
+
+// The vault key is kept with persistent data, so secrets sealed before a
+// restart open after it.
+func TestVaultKeyIsKeptWithPersistentData(t *testing.T) {
+	t.Parallel()
+	data := t.TempDir()
+	cfg := mustConfig(t, map[string]string{"WEISTACK_PERSIST": "1", "WEISTACK_DATA_DIR": data})
+	first, err := loadVault(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := first.Seal("secret", "AK")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := loadVault(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := second.Open(sealed, "AK"); err != nil || got != "secret" {
+		t.Fatalf("after a restart: %q, %v", got, err)
+	}
+	info, err := os.Stat(filepath.Join(data, vaultKeyFile))
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("vault key file: %v, %v", info, err)
+	}
+
+	// Without -persist the key is new on every start.
+	mem, err := loadVault(mustConfig(t, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mem.Open(sealed, "AK"); err == nil {
+		t.Fatal("an in-memory vault opened a persisted secret")
+	}
+
+	if err := os.WriteFile(filepath.Join(data, vaultKeyFile), []byte(`{"key":"AAAA"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadVault(cfg); err == nil || !strings.Contains(err.Error(), "valid key") {
+		t.Fatalf("a corrupt vault key: %v", err)
+	}
+}

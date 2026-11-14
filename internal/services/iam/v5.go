@@ -140,13 +140,20 @@ type v5UsersResponse struct {
 	PageInfo pageInfo     `json:"page_info"`
 }
 
-// GET /v5/users, optionally the members of group_id. Access keys arrive
-// later, so a lookup by access_key_id finds no one yet.
+// GET /v5/users, optionally the members of group_id or the owner of
+// access_key_id. Service-specific credentials are not emulated, so a
+// lookup by one finds no one.
 func (s *Service) handleListUsersV5(w http.ResponseWriter, r *http.Request) error {
 	q := r.URL.Query()
 	keep := func(user) bool { return true }
 	switch {
-	case q.Get("access_key_id") != "" || q.Get("service_specific_credential_id") != "":
+	case q.Get("access_key_id") != "":
+		k, err := s.accessKeys().Get(r.Context(), q.Get("access_key_id"))
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
+		keep = func(u user) bool { return err == nil && u.ID == k.UserID }
+	case q.Get("service_specific_credential_id") != "":
 		keep = func(user) bool { return false }
 	case q.Get("group_id") != "":
 		g, err := s.groups().Get(r.Context(), q.Get("group_id"))
