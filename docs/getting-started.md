@@ -88,8 +88,9 @@ provider "huaweicloud" {
   access_key = "any-access-key"
   secret_key = "any-secret-key"
   project_id = var.project_id
-  # Any 32 hex characters: it spares the provider an IAM lookup.
-  domain_id = "fedcba9876543210fedcba9876543210"
+  # After v0.1.1 the provider finds the account through WeiStack's IAM, so
+  # no domain_id is needed. With v0.1.x, add any 32 hex characters:
+  # domain_id = "fedcba9876543210fedcba9876543210"
 
   skip_check_website_type = true
   skip_check_upgrade      = true
