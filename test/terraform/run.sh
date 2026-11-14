@@ -64,12 +64,13 @@ cd "$work"
 export TF_IN_AUTOMATION=1 TF_INPUT=0 TF_VAR_project_id="$project"
 TF_VAR_account_id="$(curl -fsS "$admin/services" | python3 -c 'import json, sys; print(json.load(sys.stdin)["account_id"])')"
 export TF_VAR_account_id
-# A fresh password per run, meeting RDS's rule of four character kinds.
-TF_VAR_db_password="Ws-1$(python3 -c 'import secrets; print(secrets.token_hex(8))')"
-export TF_VAR_db_password
-# And one for the IAM user: 8 to 32 characters of at least two kinds.
-TF_VAR_iam_password="Iam-1$(python3 -c 'import secrets; print(secrets.token_hex(8))')"
-export TF_VAR_iam_password
+# Fresh passwords per run, for the RDS root user and the IAM user. Each
+# has the four character kinds RDS requires: an upper-case letter, a
+# symbol, a digit, and lower-case hex.
+fresh_secret() { python3 -c 'import secrets; print("Ws-1" + secrets.token_hex(8))'; }
+TF_VAR_db_password="$(fresh_secret)"
+TF_VAR_iam_password="$(fresh_secret)"
+export TF_VAR_db_password TF_VAR_iam_password
 
 step "terraform init"
 # Without the proxy: the provider comes from the public registry.
