@@ -1,11 +1,12 @@
 package obs
 
 import (
-	"net"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/victor-akande/weistack/internal/core/sigcheck"
 )
 
 // target is what a request addresses: nothing (the service), a bucket,
@@ -14,8 +15,6 @@ type target struct {
 	Bucket string
 	Key    string
 }
-
-var regionLabelRE = regexp.MustCompile(`^[a-z]{2,}(-[a-z0-9]+)+$`)
 
 // resolve works out the bucket and key a request addresses, in either
 // style:
@@ -26,7 +25,7 @@ var regionLabelRE = regexp.MustCompile(`^[a-z]{2,}(-[a-z0-9]+)+$`)
 // A bucket name may itself contain periods, so in the virtual-hosted
 // style everything before the "obs" label is the bucket.
 func resolve(r *http.Request) (target, error) {
-	bucket := hostBucket(r.Host)
+	bucket := sigcheck.HostBucket(r.Host)
 
 	// The escaped path is used so that an encoded slash inside a key
 	// (%2F) is not mistaken for a separator.
@@ -45,28 +44,6 @@ func resolve(r *http.Request) (target, error) {
 		return target{}, err
 	}
 	return target{Bucket: bucket, Key: key}, nil
-}
-
-// hostBucket extracts the bucket from a virtual-hosted style host name,
-// or returns "" when the host addresses the service itself.
-func hostBucket(hostport string) string {
-	host := hostport
-	if h, _, err := net.SplitHostPort(hostport); err == nil {
-		host = h
-	}
-	labels := strings.Split(strings.ToLower(host), ".")
-	// The service label is the last "obs" that is followed by a region
-	// or by "localhost"; a bucket may be called "obs" too.
-	for i := len(labels) - 2; i >= 1; i-- {
-		if labels[i] != "obs" {
-			continue
-		}
-		next := labels[i+1]
-		if regionLabelRE.MatchString(next) || (next == "localhost" && i+2 == len(labels)) {
-			return strings.Join(labels[:i], ".")
-		}
-	}
-	return ""
 }
 
 var (

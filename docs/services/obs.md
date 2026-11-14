@@ -69,11 +69,22 @@ dialect with `obs.WithSignature(obs.SignatureObs)`.
   shaped like an IP address, and have no `..`, `.-` or `-.`.
 - A bucket's region is that of the endpoint it was created through. A
   location in the request body must name the same region.
-- **Ownership follows the access key.** Signatures are not verified, but the
-  access key a request claims is its identity: it owns the buckets it
-  creates, lists only those, and gets `AccessDenied` on anyone else's.
-  Requests without credentials share one `anonymous` identity. The owner ID
-  shown in listings is derived from the access key, never the key itself.
+- **Credentials.** By default signatures are not verified. With
+  `-iam=enforce`, OBS and S3 v2 signatures are, in the `Authorization`
+  header and in pre-signed URLs (see [Authentication](../../README.md#authentication)).
+  Failures get OBS's documented codes: `InvalidAccessKeyId`,
+  `SignatureDoesNotMatch`, `RequestTimeTooSkewed` (a clock more than 15
+  minutes off), `AccessDenied` (no credentials, no date, or an expired
+  URL) and `TooManyWrongSignature` (a locked key). S3 signature version 4
+  is not checked yet.
+- **Ownership follows the access key.** A key WeiStack knows (the
+  administrator's or an IAM user's) acts for the account, so all of them
+  share the account's buckets, as on Huawei Cloud. Any other key, as
+  before, is an owner of its own: it owns the buckets it creates, lists
+  only those, and gets `AccessDenied` on anyone else's. Requests without
+  credentials share one `anonymous` identity. The owner ID shown in
+  listings is the account's, or one derived from the key, never the key
+  itself.
 
 ## Bucket configuration
 

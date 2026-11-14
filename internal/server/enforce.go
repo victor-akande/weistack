@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 
 	"github.com/victor-akande/weistack/internal/core/apierr"
 	"github.com/victor-akande/weistack/internal/core/auth"
@@ -45,17 +46,18 @@ func noCredentialsNeeded(service string, r *http.Request) bool {
 	return service == "iam" && r.Method == http.MethodPost && r.URL.Path == "/v3/auth/tokens"
 }
 
-// authenticate checks r's credentials in enforce mode. paths are the
-// paths the client may have signed. It returns the request to serve,
-// carrying the verified identity, or writes the error and returns nil.
-func (s *Server) authenticate(m *mounted, w http.ResponseWriter, r *http.Request, paths []string) *http.Request {
+// authenticate checks r's credentials in enforce mode. received is the
+// URL as the client sent it. It returns the request to serve, carrying
+// the verified identity, or writes the error and returns nil.
+func (s *Server) authenticate(m *mounted, w http.ResponseWriter, r *http.Request, received *url.URL) *http.Request {
 	name := m.svc.Name()
-	// OBS has signatures of its own (OBS, AWS v2 and v4); they are not
-	// checked yet.
-	if name == "obs" || noCredentialsNeeded(name, r) {
+	if name == "obs" {
+		return s.authenticateOBS(w, r, received)
+	}
+	if noCredentialsNeeded(name, r) {
 		return r
 	}
-	id, err := s.verify(m, r, paths)
+	id, err := s.verify(m, r, signedPaths(received.Path, r.URL.Path))
 	if err != nil {
 		var apiErr *apierr.Error
 		if !errors.As(err, &apiErr) {

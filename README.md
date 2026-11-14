@@ -259,9 +259,15 @@ administrator's key is never locked); `APIGW.0307` for an expired token;
 `APIGW.0305` without credentials. Signing in with a password needs no
 credentials.
 
+OBS takes OBS and S3 v2 signatures, in the `Authorization` header or a
+pre-signed URL, and answers failures with OBS's documented codes
+(`InvalidAccessKeyId`, `SignatureDoesNotMatch`, `RequestTimeTooSkewed`,
+`AccessDenied`, `TooManyWrongSignature`). Anonymous OBS requests are
+refused until bucket ACLs and policies are evaluated. Not checked yet: S3
+signature version 4, so requests signed with it are served as before.
+
 Enforcement checks who is calling, not what they may do: any valid
-principal of the account may use every API. Not checked yet: OBS's own
-signatures (OBS, AWS v2 and v4), so OBS requests are served as before.
+principal of the account may use every API.
 The admin API (`/_weistack/*`) is not protected by `-iam`: keep the
 emulator's port to yourself.
 
