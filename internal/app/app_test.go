@@ -560,4 +560,12 @@ func TestBannerAndLogFormat(t *testing.T) {
 	if !strings.Contains(buf.String(), "kept in /srv/weistack") {
 		t.Errorf("persistent banner:\n%s", buf.String())
 	}
+	if !strings.Contains(buf.String(), "any accepted") {
+		t.Errorf("accept-mode banner:\n%s", buf.String())
+	}
+	buf.Reset()
+	printBanner(&buf, config.Config{IAM: config.IAMEnforce}, "127.0.0.1:8780", "0123456789abcdef0123456789abcdef", testAccount, testAdmin)
+	if !strings.Contains(buf.String(), "enforced: every request needs a valid signature or IAM token") {
+		t.Errorf("enforce-mode banner:\n%s", buf.String())
+	}
 }

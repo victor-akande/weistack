@@ -87,10 +87,10 @@ func startEmulator() (stop func(), err error) {
 		cleanup()
 		return nil, err
 	}
-	e, err := launch(emulatorBin, port,
-		"WEISTACK_TLS_DIR="+filepath.Join(dir, "tls"),
-		"WEISTACK_LIFECYCLE_DELAY="+lifecycleDelay.String(),
-	)
+	e, err := launch(emulatorBin, port, append([]string{
+		"WEISTACK_TLS_DIR=" + filepath.Join(dir, "tls"),
+		"WEISTACK_LIFECYCLE_DELAY=" + lifecycleDelay.String(),
+	}, emulatorIAMEnv()...)...)
 	if err != nil {
 		cleanup()
 		return nil, err

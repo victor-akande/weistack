@@ -74,6 +74,10 @@ jobs:
             test/sdk/go.sum
       - name: Tests driven by the official Huawei Cloud Go SDK
         run: make test-sdk
+      - name: The same tests with credentials enforced (-iam=enforce)
+        run: make test-sdk
+        env:
+          WEISTACK_SDK_IAM: enforce
 
   terraform:
     name: terraform

@@ -121,7 +121,7 @@ func TestIAMRolesAndAssignments(t *testing.T) {
 	}
 
 	// The default enterprise project, through EPS.
-	creds, err := global.NewCredentialsBuilder().WithAk("AKIAMROLES0000000000").WithSk("weistack-does-not-verify-signatures").SafeBuild()
+	creds, err := global.NewCredentialsBuilder().WithAk(signingAK("AKIAMROLES0000000000")).WithSk(signingSK()).SafeBuild()
 	if err != nil {
 		t.Fatal(err)
 	}

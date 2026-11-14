@@ -88,6 +88,10 @@ type Config struct {
 	// neither.
 	AdminAccessKey string
 	AdminSecretKey string
+	// IAM is how credentials are treated: IAMAccept takes any, as v0.1
+	// did; IAMEnforce requires a valid signature or token on every
+	// request to an emulated service.
+	IAM string
 	// ServicePorts gives services a listener of their own, on which every
 	// request goes to that service: for clients that cannot address a
 	// service by host name or path prefix. Keyed by service name.
@@ -143,6 +147,7 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 	fs.StringVar(&cfg.ProxyPassthrough, "proxy-passthrough", env.str("PROXY_PASSTHROUGH", "loopback"), "who may tunnel to other hosts through the proxy: loopback, all or none")
 	fs.StringVar(&cfg.AdminAccessKey, "admin-access-key", env.str("ADMIN_ACCESS_KEY", ""), "the administrator's access key, instead of the generated one")
 	fs.StringVar(&cfg.AdminSecretKey, "admin-secret-key", env.str("ADMIN_SECRET_KEY", ""), "the administrator's secret key (prefer WEISTACK_ADMIN_SECRET_KEY: flags show in process lists)")
+	fs.StringVar(&cfg.IAM, "iam", env.str("IAM", IAMAccept), "credentials: accept (any, as before) or enforce (a valid signature or IAM token on every request)")
 	fs.StringVar(&cfg.TLSDir, "tls-dir", env.str("TLS_DIR", ""), "directory of the local CA (default: weistack/tls in the user config directory)")
 	fs.StringVar(&servicePorts, "service-ports", env.str("SERVICE_PORTS", ""), "extra per-service listeners, for example obs=9000,ecs=9001")
 	fs.StringVar(&services, "services", env.str("SERVICES", ""), "comma-separated services to enable (default all)")
@@ -192,6 +197,11 @@ func (c Config) Validate() error {
 	}
 	if c.Persist && c.DataDir == "" {
 		errs = append(errs, errors.New("no data directory for -persist: set -data-dir"))
+	}
+	switch c.IAM {
+	case IAMAccept, IAMEnforce:
+	default:
+		errs = append(errs, fmt.Errorf("iam mode %q must be accept or enforce", c.IAM))
 	}
 	switch c.ProxyPassthrough {
 	case "loopback", "all", "none":
@@ -302,6 +312,12 @@ func splitList(s string) []string {
 	}
 	return out
 }
+
+// IAM modes.
+const (
+	IAMAccept  = "accept"
+	IAMEnforce = "enforce"
+)
 
 // DefaultProxyBypass are the hosts under myhuaweicloud.com that Huawei's
 // tools download from before they call any API: KooCLI's version file and

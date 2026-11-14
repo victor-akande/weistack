@@ -3,6 +3,7 @@ package iam
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -64,14 +65,20 @@ func (s *Service) lastUsed(k accessKey) (time.Time, bool) {
 	return t, true
 }
 
-// register makes an active key known as its user's, and forgets an
-// inactive one, keeping when it was last used.
+// register makes an active key known as its user's, with its secret so
+// that signatures can be checked, and forgets an inactive one. A disabled
+// user's keys stay known, marked disabled.
 func (s *Service) register(k accessKey, u user) error {
 	if k.Status != keyActive {
 		s.dir.Forget(k.ID)
 		return nil
 	}
-	return s.dir.Register(k.ID, identity.Principal{AccountID: s.account().ID, UserID: u.ID, UserName: u.Name})
+	secret, err := s.vault.Open(k.Secret, k.ID)
+	if err != nil {
+		return fmt.Errorf("iam: opening the secret of %s: %w", k.ID, err)
+	}
+	p := identity.Principal{AccountID: s.account().ID, UserID: u.ID, UserName: u.Name, Disabled: !u.Enabled}
+	return s.dir.Register(k.ID, p, secret)
 }
 
 // registerKeysOf registers u's keys again, after a rename.

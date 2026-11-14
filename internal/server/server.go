@@ -73,6 +73,10 @@ type Options struct {
 	// Directory resolves access keys to their principals. Nil treats
 	// every key as unknown, as in v0.1.
 	Directory *identity.Directory
+	// Tokens validates IAM tokens when credentials are enforced.
+	Tokens auth.TokenChecker
+	// Now defaults to time.Now; enforcement checks signing times with it.
+	Now func() time.Time
 }
 
 // Server routes requests to services and serves the admin API.
@@ -93,6 +97,8 @@ type Server struct {
 	proxy    *proxy
 	ca       *tlsca.Authority
 	dir      *identity.Directory
+	tokens   auth.TokenChecker
+	now      func() time.Time
 }
 
 type mounted struct {
@@ -148,6 +154,14 @@ func New(opts Options) (*Server, error) {
 
 	s.ca = opts.Proxy.CA
 	s.dir = opts.Directory
+	s.tokens = opts.Tokens
+	s.now = opts.Now
+	if s.now == nil {
+		s.now = time.Now
+	}
+	if s.enforcing() && s.dir == nil {
+		return nil, errors.New("server: enforcing credentials needs a Directory")
+	}
 	s.admin = s.newAdmin()
 	s.handler = s.wrap(http.HandlerFunc(s.route))
 	s.proxy = newProxy(opts.Proxy, s.handler, s.log)
@@ -194,7 +208,7 @@ func (s *Server) ServiceHandler(name string) (http.Handler, bool) {
 			return
 		}
 		reqctx.From(r.Context()).Service = name
-		dispatch(m, w, r)
+		s.dispatch(m, w, r, []string{r.URL.Path})
 	}
 	return s.wrap(http.HandlerFunc(route)), true
 }

@@ -91,16 +91,16 @@ func TestDirectory(t *testing.T) {
 	}
 
 	user := Principal{AccountID: acct.ID, UserID: "u1", UserName: "alice"}
-	if err := d.Register("USERKEY000000000000A", user); err != nil {
+	if err := d.Register("USERKEY000000000000A", user, "secret"); err != nil {
 		t.Fatal(err)
 	}
 	if p, ok := d.Lookup("USERKEY000000000000A"); !ok || p.UserName != "alice" || p.Admin {
 		t.Fatalf("user lookup = %+v, %v", p, ok)
 	}
-	if err := d.Register(admin.AccessKey, user); err == nil {
+	if err := d.Register(admin.AccessKey, user, ""); err == nil {
 		t.Fatal("a user took over the administrator's key")
 	}
-	if err := d.Register("bad key", user); err == nil {
+	if err := d.Register("bad key", user, ""); err == nil {
 		t.Fatal("an invalid key was registered")
 	}
 	d.Forget("USERKEY000000000000A")
@@ -129,7 +129,7 @@ func TestDirectoryLastUsedAndClear(t *testing.T) {
 	if _, ok := d.LastUsed(key); ok {
 		t.Fatal("an unknown key has a last use")
 	}
-	if err := d.Register(key, Principal{AccountID: acct.ID, UserID: "u1", UserName: "alice"}); err != nil {
+	if err := d.Register(key, Principal{AccountID: acct.ID, UserID: "u1", UserName: "alice"}, "secret"); err != nil {
 		t.Fatal(err)
 	}
 	d.KeyUsed(key)
@@ -148,5 +148,68 @@ func TestDirectoryLastUsedAndClear(t *testing.T) {
 	}
 	if _, ok := d.Lookup(admin.AccessKey); !ok {
 		t.Fatal("Clear forgot the administrator's key")
+	}
+}
+
+func TestDirectorySecretsAndLockout(t *testing.T) {
+	t.Parallel()
+	acct := Account{ID: "0123456789abcdef0123456789abcdef", Name: AccountName}
+	admin := Credentials{AccessKey: "ADMINKEY00000000000A", SecretKey: "admin-secret"}
+	d := NewDirectory(acct, admin)
+	at := time.Date(2026, 11, 14, 10, 0, 0, 0, time.UTC)
+	d.now = func() time.Time { return at }
+	const key = "USERKEY000000000000A"
+
+	if s, ok := d.Secret(admin.AccessKey); !ok || s != "admin-secret" {
+		t.Fatalf("admin secret = %q, %v", s, ok)
+	}
+	if _, ok := d.Secret(key); ok {
+		t.Fatal("an unknown key has a secret")
+	}
+	if err := d.Register(key, Principal{AccountID: acct.ID, UserID: "u1", UserName: "alice", Disabled: true}, "user-secret"); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := d.Lookup(key); !p.Disabled {
+		t.Fatal("Disabled was lost")
+	}
+	if s, ok := d.Secret(key); !ok || s != "user-secret" {
+		t.Fatalf("user secret = %q, %v", s, ok)
+	}
+
+	// Five failures in a row are allowed; the sixth locks the key for
+	// five minutes.
+	for range MaxFailures {
+		d.SignatureFailed(key)
+	}
+	if d.Locked(key) {
+		t.Fatal("locked after five failures")
+	}
+	d.SignatureFailed(key)
+	if !d.Locked(key) {
+		t.Fatal("not locked after six failures")
+	}
+	at = at.Add(LockFor)
+	if d.Locked(key) {
+		t.Fatal("still locked after five minutes")
+	}
+	// After the lock, counting starts again; a success clears it.
+	d.SignatureFailed(key)
+	if d.Locked(key) {
+		t.Fatal("locked again by one failure")
+	}
+	d.SignatureSucceeded(key)
+	for range MaxFailures {
+		d.SignatureFailed(key)
+	}
+	if d.Locked(key) {
+		t.Fatal("a success did not reset the count")
+	}
+
+	// The administrator's key is never locked.
+	for range 3 * MaxFailures {
+		d.SignatureFailed(admin.AccessKey)
+	}
+	if d.Locked(admin.AccessKey) {
+		t.Fatal("the administrator's key was locked")
 	}
 }

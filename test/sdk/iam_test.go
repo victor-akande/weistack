@@ -40,8 +40,8 @@ func proxyConfig(t *testing.T) *config.HttpConfig {
 func TestDiscoveryWithoutProjectID(t *testing.T) {
 	t.Parallel()
 	creds, err := basic.NewCredentialsBuilder().
-		WithAk("AKDISCOVERY000000000"). // the SDK caches discoveries by key
-		WithSk("weistack-does-not-verify-signatures").
+		WithAk(signingAK("AKDISCOVERY000000000")). // the SDK caches discoveries by key
+		WithSk(signingSK()).
 		SafeBuild()
 	if err != nil {
 		t.Fatal(err)
@@ -73,8 +73,8 @@ func TestDiscoveryWithoutProjectID(t *testing.T) {
 func TestIAMDiscoveryAndCallerIdentity(t *testing.T) {
 	t.Parallel()
 	creds, err := global.NewCredentialsBuilder().
-		WithAk("AKGLOBAL000000000000").
-		WithSk("weistack-does-not-verify-signatures").
+		WithAk(signingAK("AKGLOBAL000000000000")).
+		WithSk(signingSK()).
 		SafeBuild()
 	if err != nil {
 		t.Fatal(err)
@@ -101,8 +101,8 @@ func TestIAMDiscoveryAndCallerIdentity(t *testing.T) {
 
 	// STS takes basic credentials; without a project ID it discovers one.
 	stsCreds, err := basic.NewCredentialsBuilder().
-		WithAk("AKSTSCALLER000000000").
-		WithSk("weistack-does-not-verify-signatures").
+		WithAk(signingAK("AKSTSCALLER000000000")).
+		WithSk(signingSK()).
 		SafeBuild()
 	if err != nil {
 		t.Fatal(err)

@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/victor-akande/weistack/internal/core/auth"
 	"github.com/victor-akande/weistack/internal/core/config"
 	"github.com/victor-akande/weistack/internal/core/hostpattern"
 	"github.com/victor-akande/weistack/internal/core/identity"
@@ -166,6 +167,7 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		IDs:       gen,
 		Services:  services,
 		Directory: directory,
+		Tokens:    tokenChecker(services),
 		Proxy: server.ProxyOptions{
 			CA: ca, Domains: cfg.ProxyDomains, Bypass: bypass, Passthrough: cfg.ProxyPassthrough,
 		},
@@ -216,6 +218,7 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		// The access key, never the secret key.
 		"admin_access_key", admin.AccessKey,
 		"admin_credentials", adminFrom,
+		"iam", cfg.IAM,
 		"persist", cfg.Persist,
 		"lifecycle_delay", cfg.LifecycleDelay.String(),
 		"services", srv.ServiceNames(),
@@ -256,6 +259,17 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		}
 	}
 	log.Info("stopped")
+	return nil
+}
+
+// tokenChecker returns the service that validates IAM tokens: IAM, if
+// it is among services.
+func tokenChecker(services []server.Service) auth.TokenChecker {
+	for _, svc := range services {
+		if tc, ok := svc.(auth.TokenChecker); ok {
+			return tc
+		}
+	}
 	return nil
 }
 
@@ -485,6 +499,7 @@ func printBanner(w io.Writer, cfg config.Config, addr, projectID string, account
 		{"Project ID", projectID + "  (" + project + ")"},
 		{"Account", account.Name + "  " + account.ID},
 		{"Admin keys", admin.AccessKey + "  " + admin.SecretKey + "  (weistack credentials)"},
+		{"Credentials", credentialsLine(cfg)},
 		{"As a proxy", "export HTTPS_PROXY=" + base},
 		{"Trust its CA", "curl -o weistack-ca.pem " + base + "/_weistack/ca"},
 		{"Directly", base + "/vpc/v1/" + projectID + "/vpcs, or /ecs, /ims, /evs, /obs, /rds"},
@@ -493,6 +508,14 @@ func printBanner(w io.Writer, cfg config.Config, addr, projectID string, account
 		fmt.Fprintf(w, "    %-14s%s\n", line[0], line[1])
 	}
 	fmt.Fprintln(w)
+}
+
+// credentialsLine says how the banner's emulator treats credentials.
+func credentialsLine(cfg config.Config) string {
+	if cfg.IAM == config.IAMEnforce {
+		return "enforced: every request needs a valid signature or IAM token (-iam=enforce)"
+	}
+	return "any accepted (-iam=enforce checks them)"
 }
 
 func newLogger(cfg config.Config, w io.Writer) *slog.Logger {

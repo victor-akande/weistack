@@ -16,7 +16,7 @@ func TestCallerIdentity(t *testing.T) {
 	t.Parallel()
 	acct := identity.Account{ID: "fedcba9876543210fedcba9876543210", Name: identity.AccountName}
 	dir := identity.NewDirectory(acct, identity.Credentials{AccessKey: "ADMINKEY000000000000", SecretKey: "s"})
-	if err := dir.Register("USERKEY0000000000000", identity.Principal{AccountID: acct.ID, UserID: "u-1", UserName: "dev"}); err != nil {
+	if err := dir.Register("USERKEY0000000000000", identity.Principal{AccountID: acct.ID, UserID: "u-1", UserName: "dev"}, "secret"); err != nil {
 		t.Fatal(err)
 	}
 	svc, err := New(slog.New(slog.NewTextHandler(io.Discard, nil)), dir)
