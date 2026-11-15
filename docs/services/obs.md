@@ -72,7 +72,7 @@ dialect with `obs.WithSignature(obs.SignatureObs)`.
 - **Credentials.** By default signatures are not verified. With
   `-iam=enforce`, OBS and S3 v2 signatures and S3 signature version 4
   are, in the `Authorization` header and in pre-signed URLs (see
-  [Authentication](../../README.md#authentication)), and so is each
+  [Checking credentials](../enforce.md)), and so is each
   chunk of an `aws-chunked` upload. Failures get OBS's documented codes:
   `InvalidAccessKeyId`, `SignatureDoesNotMatch` (also for a chunk, which
   ends the upload), `RequestTimeTooSkewed` (a clock more than 15 minutes
