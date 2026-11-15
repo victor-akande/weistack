@@ -13,7 +13,7 @@ import (
 // allows evaluates an action for a user in a scope, as authz would.
 func (e *env) allows(t *testing.T, userID string, sc authz.Scope, action string) bool {
 	t.Helper()
-	g, err := e.svc.Grants(t.Context(), identity.Principal{UserID: userID}, sc)
+	g, err := e.svc.Grants(t.Context(), identity.Principal{AccountID: testAccount.ID, UserID: userID}, sc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestGrantsV5AndCache(t *testing.T) {
 func TestGrantsAllPowerful(t *testing.T) {
 	t.Parallel()
 	e := newEnv(t)
-	for _, p := range []identity.Principal{{Admin: true}, {UserID: testAccount.RootUserID()}} {
+	for _, p := range []identity.Principal{{AccountID: testAccount.ID, Admin: true}, {AccountID: testAccount.ID, UserID: testAccount.RootUserID()}} {
 		g, err := e.svc.Grants(t.Context(), p, projectScope)
 		if err != nil || !g.All {
 			t.Errorf("Grants(%+v) = %+v, %v", p, g, err)
@@ -132,7 +132,7 @@ func TestGrantsAllPowerful(t *testing.T) {
 	if e.allows(t, uid, projectScope, "vpc:vpcs:create") {
 		t.Fatal("a new user may create VPCs")
 	}
-	adminID := e.svc.adminGroupID()
+	adminID := e.svc.adminGroupID(t.Context())
 	e.want(t, http.StatusNoContent, http.MethodPut, "/v3/groups/"+adminID+"/users/"+uid, "")
 	if !e.allows(t, uid, projectScope, "vpc:vpcs:create") || !e.allows(t, uid, authz.Scope{Service: "iam", Global: true}, "iam:users:create") {
 		t.Error("a member of the admin group is not all-powerful")
@@ -147,7 +147,7 @@ func TestGrantsKeys(t *testing.T) {
 	t.Parallel()
 	e := newEnv(t)
 	uid := e.newUser(t, "erin")
-	g, err := e.svc.Grants(t.Context(), identity.Principal{UserID: uid}, projectScope)
+	g, err := e.svc.Grants(t.Context(), identity.Principal{AccountID: testAccount.ID, UserID: uid}, projectScope)
 	if err != nil {
 		t.Fatal(err)
 	}

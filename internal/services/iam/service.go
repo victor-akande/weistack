@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/victor-akande/weistack/internal/core/apierr"
+	"github.com/victor-akande/weistack/internal/core/auth"
 	"github.com/victor-akande/weistack/internal/core/identity"
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/reqctx"
@@ -88,10 +89,42 @@ func (s *Service) Version() string {
 	return "v3, v3.0, v5 (users, groups, tokens, access keys, roles, custom policies, role assignments, identity policies)"
 }
 
-func (s *Service) account() identity.Account { return s.dir.Account() }
+// accountKey carries the account a background operation acts in.
+type accountKey struct{}
 
-func (s *Service) projects() store.Collection[project] {
-	return store.Of[project](s.store, store.Scope{Region: store.Global, ProjectID: store.Global, Kind: kindProject})
+// withAccount returns ctx acting in a, for work not done for a request.
+func withAccount(ctx context.Context, a identity.Account) context.Context {
+	return context.WithValue(ctx, accountKey{}, a)
+}
+
+// account returns the account ctx acts in: the one withAccount set, or
+// that of the request's known caller, or the primary account (for
+// callers WeiStack does not know, as in v0.1).
+func (s *Service) account(ctx context.Context) identity.Account {
+	if a, ok := ctx.Value(accountKey{}).(identity.Account); ok {
+		return a
+	}
+	if id := auth.FromContext(ctx); id.Known && id.Principal.AccountID != "" {
+		if a, ok := s.dir.AccountByID(id.Principal.AccountID); ok {
+			return a
+		}
+	}
+	return s.dir.Account()
+}
+
+// scope returns where ctx's account keeps records of kind. The primary
+// account's are in the store's global scope, as before there were other
+// accounts; another account's are under its ID.
+func (s *Service) scope(ctx context.Context, kind string) store.Scope {
+	a := s.account(ctx)
+	if s.dir.Primary(a) {
+		return global(kind)
+	}
+	return store.Scope{Region: store.Global, ProjectID: a.ID, Kind: kind}
+}
+
+func (s *Service) projects(ctx context.Context) store.Collection[project] {
+	return store.Of[project](s.store, s.scope(ctx, kindProject))
 }
 
 type handler func(w http.ResponseWriter, r *http.Request) error
@@ -158,23 +191,18 @@ var regionRE = regexp.MustCompile(`^[a-z]{2,}(-[a-z0-9]+)+$`)
 
 // Resume records the default region's project, so that it is listed
 // from the first request, the root user and the admin group, and
-// registers the stored access keys with the directory.
+// registers the stored access keys with the directory, for the primary
+// account and every added one.
 func (s *Service) Resume(ctx context.Context) error {
-	if err := s.ensureProject(ctx, s.defaultRegion); err != nil {
+	if err := s.prepare(withAccount(ctx, s.dir.Account())); err != nil {
 		return err
 	}
-	if err := s.ensureRoot(ctx); err != nil {
-		return err
-	}
-	if err := s.ensureAdminGroup(ctx); err != nil {
-		return err
-	}
-	return s.registerAllKeys(ctx)
+	return s.resumeAccounts(ctx)
 }
 
 // Reset implements server.Resetter: after the store is wiped, tokens end,
-// users' access keys are forgotten, and the account's project and root
-// user are recorded again.
+// added accounts and users' access keys are forgotten, and the primary
+// account's project, root user and admin group are recorded again.
 func (s *Service) Reset(ctx context.Context) error {
 	defer s.perms.changed()
 	s.tokens.clear()

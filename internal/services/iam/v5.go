@@ -1,6 +1,7 @@
 package iam
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"slices"
@@ -23,8 +24,8 @@ func v5At(t time.Time) string { return t.UTC().Format(v5Time) }
 
 // urn names a resource the IAM 5.0 way, as in Huawei's examples:
 // "iam::<account-id>:user:<name>".
-func (s *Service) urn(kind, name string) string {
-	return "iam::" + s.account().ID + ":" + kind + ":" + name
+func (s *Service) urn(ctx context.Context, kind, name string) string {
+	return "iam::" + s.account(ctx).ID + ":" + kind + ":" + name
 }
 
 // v5UserView mirrors the SDK model iam/v5 User.
@@ -38,10 +39,10 @@ type v5UserView struct {
 	CreatedAt   string `json:"created_at"`
 }
 
-func (s *Service) v5User(u user) v5UserView {
+func (s *Service) v5User(ctx context.Context, u user) v5UserView {
 	return v5UserView{
 		UserID: u.ID, UserName: u.Name, Description: u.Description, IsRootUser: u.Root, Enabled: u.Enabled,
-		URN: s.urn("user", u.Name), CreatedAt: v5At(u.CreatedAt),
+		URN: s.urn(ctx, "user", u.Name), CreatedAt: v5At(u.CreatedAt),
 	}
 }
 
@@ -54,8 +55,8 @@ type v5GroupView struct {
 	CreatedAt   string `json:"created_at"`
 }
 
-func (s *Service) v5Group(g group) v5GroupView {
-	return v5GroupView{GroupID: g.ID, GroupName: g.Name, Description: g.Description, URN: s.urn("group", g.Name), CreatedAt: v5At(g.CreatedAt)}
+func (s *Service) v5Group(ctx context.Context, g group) v5GroupView {
+	return v5GroupView{GroupID: g.ID, GroupName: g.Name, Description: g.Description, URN: s.urn(ctx, "group", g.Name), CreatedAt: v5At(g.CreatedAt)}
 }
 
 type pageInfo struct {
@@ -120,6 +121,7 @@ type v5UserResponse struct {
 
 // POST /v5/users.
 func (s *Service) handleCreateUserV5(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	var b struct {
 		Name        *string `json:"name"`
 		Description *string `json:"description"`
@@ -132,7 +134,7 @@ func (s *Service) handleCreateUserV5(w http.ResponseWriter, r *http.Request) err
 	if err != nil {
 		return fromClassic(err)
 	}
-	return httpx.WriteJSON(w, http.StatusCreated, v5UserResponse{s.v5User(u)})
+	return httpx.WriteJSON(w, http.StatusCreated, v5UserResponse{s.v5User(ctx, u)})
 }
 
 type v5UsersResponse struct {
@@ -144,11 +146,12 @@ type v5UsersResponse struct {
 // access_key_id. Service-specific credentials are not emulated, so a
 // lookup by one finds no one.
 func (s *Service) handleListUsersV5(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	q := r.URL.Query()
 	keep := func(user) bool { return true }
 	switch {
 	case q.Get("access_key_id") != "":
-		k, err := s.accessKeys().Get(r.Context(), q.Get("access_key_id"))
+		k, err := s.accessKeys(ctx).Get(ctx, q.Get("access_key_id"))
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
@@ -156,7 +159,7 @@ func (s *Service) handleListUsersV5(w http.ResponseWriter, r *http.Request) erro
 	case q.Get("service_specific_credential_id") != "":
 		keep = func(user) bool { return false }
 	case q.Get("group_id") != "":
-		g, err := s.groups().Get(r.Context(), q.Get("group_id"))
+		g, err := s.groups(ctx).Get(ctx, q.Get("group_id"))
 		if errors.Is(err, store.ErrNotFound) {
 			return errV5NoGroup
 		}
@@ -165,7 +168,7 @@ func (s *Service) handleListUsersV5(w http.ResponseWriter, r *http.Request) erro
 		}
 		keep = func(u user) bool { return g.has(u.ID) }
 	}
-	all, err := s.users().List(r.Context(), keep)
+	all, err := s.users(ctx).List(ctx, keep)
 	if err != nil {
 		return err
 	}
@@ -175,13 +178,14 @@ func (s *Service) handleListUsersV5(w http.ResponseWriter, r *http.Request) erro
 	}
 	out := v5UsersResponse{Users: make([]v5UserView, 0, len(got)), PageInfo: info}
 	for _, u := range got {
-		out.Users = append(out.Users, s.v5User(u))
+		out.Users = append(out.Users, s.v5User(ctx, u))
 	}
 	return httpx.WriteJSON(w, http.StatusOK, out)
 }
 
 func (s *Service) getUserV5(r *http.Request) (user, error) {
-	u, err := s.users().Get(r.Context(), chi.URLParam(r, "user_id"))
+	ctx := r.Context()
+	u, err := s.users(ctx).Get(ctx, chi.URLParam(r, "user_id"))
 	if errors.Is(err, store.ErrNotFound) {
 		return user{}, errV5NoUser
 	}
@@ -189,15 +193,17 @@ func (s *Service) getUserV5(r *http.Request) (user, error) {
 }
 
 func (s *Service) handleShowUserV5(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	u, err := s.getUserV5(r)
 	if err != nil {
 		return err
 	}
-	return httpx.WriteJSON(w, http.StatusOK, v5UserResponse{s.v5User(u)})
+	return httpx.WriteJSON(w, http.StatusOK, v5UserResponse{s.v5User(ctx, u)})
 }
 
 // PUT /v5/users/{user_id}.
 func (s *Service) handleUpdateUserV5(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	var b struct {
 		NewUserName    *string `json:"new_user_name"`
 		NewDescription *string `json:"new_description"`
@@ -214,7 +220,7 @@ func (s *Service) handleUpdateUserV5(w http.ResponseWriter, r *http.Request) err
 	if err != nil {
 		return fromClassic(err)
 	}
-	return httpx.WriteJSON(w, http.StatusOK, v5UserResponse{s.v5User(u)})
+	return httpx.WriteJSON(w, http.StatusOK, v5UserResponse{s.v5User(ctx, u)})
 }
 
 // DELETE /v5/users/{user_id}.
@@ -271,6 +277,7 @@ func validGroupFields(name, description *string) bool {
 
 // POST /v5/groups.
 func (s *Service) handleCreateGroupV5(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	var b struct {
 		GroupName   *string `json:"group_name"`
 		Description *string `json:"description"`
@@ -285,7 +292,7 @@ func (s *Service) handleCreateGroupV5(w http.ResponseWriter, r *http.Request) er
 	if err != nil {
 		return err
 	}
-	return httpx.WriteJSON(w, http.StatusCreated, v5GroupResponse{s.v5Group(g)})
+	return httpx.WriteJSON(w, http.StatusCreated, v5GroupResponse{s.v5Group(ctx, g)})
 }
 
 type v5GroupsResponse struct {
@@ -295,16 +302,17 @@ type v5GroupsResponse struct {
 
 // GET /v5/groups, optionally those user_id belongs to.
 func (s *Service) handleListGroupsV5(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	keep := func(group) bool { return true }
 	if id := r.URL.Query().Get("user_id"); id != "" {
-		if _, err := s.users().Get(r.Context(), id); errors.Is(err, store.ErrNotFound) {
+		if _, err := s.users(ctx).Get(ctx, id); errors.Is(err, store.ErrNotFound) {
 			return errV5NoUser
 		} else if err != nil {
 			return err
 		}
 		keep = func(g group) bool { return g.has(id) }
 	}
-	all, err := s.groups().List(r.Context(), keep)
+	all, err := s.groups(ctx).List(ctx, keep)
 	if err != nil {
 		return err
 	}
@@ -314,21 +322,23 @@ func (s *Service) handleListGroupsV5(w http.ResponseWriter, r *http.Request) err
 	}
 	out := v5GroupsResponse{Groups: make([]v5GroupView, 0, len(got)), PageInfo: info}
 	for _, g := range got {
-		out.Groups = append(out.Groups, s.v5Group(g))
+		out.Groups = append(out.Groups, s.v5Group(ctx, g))
 	}
 	return httpx.WriteJSON(w, http.StatusOK, out)
 }
 
 func (s *Service) handleShowGroupV5(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	g, err := s.getGroup(r, v5GroupErrs)
 	if err != nil {
 		return err
 	}
-	return httpx.WriteJSON(w, http.StatusOK, v5GroupResponse{s.v5Group(g)})
+	return httpx.WriteJSON(w, http.StatusOK, v5GroupResponse{s.v5Group(ctx, g)})
 }
 
 // PUT /v5/groups/{group_id}.
 func (s *Service) handleUpdateGroupV5(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	var b struct {
 		NewGroupName        *string `json:"new_group_name"`
 		NewGroupDescription *string `json:"new_group_description"`
@@ -343,7 +353,7 @@ func (s *Service) handleUpdateGroupV5(w http.ResponseWriter, r *http.Request) er
 	if err != nil {
 		return err
 	}
-	return httpx.WriteJSON(w, http.StatusOK, v5GroupResponse{s.v5Group(g)})
+	return httpx.WriteJSON(w, http.StatusOK, v5GroupResponse{s.v5Group(ctx, g)})
 }
 
 func (s *Service) handleDeleteGroupV5(w http.ResponseWriter, r *http.Request) error {

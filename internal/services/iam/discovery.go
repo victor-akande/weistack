@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/victor-akande/weistack/internal/core/httpx"
+	"github.com/victor-akande/weistack/internal/core/identity"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
@@ -25,13 +26,35 @@ type project struct {
 	DomainID string `json:"domain_id"`
 }
 
+// projectID returns a's project in region. The primary account's project
+// in the default region keeps the configured ID, as in v0.1; every other
+// project's ID is derived from its account and region.
+func (s *Service) projectID(a identity.Account, region string) string {
+	if s.dir.Primary(a) {
+		return a.ProjectID(region, s.defaultRegion, s.defaultProj)
+	}
+	return a.DerivedProjectID(region)
+}
+
+// ProjectOwner returns the ID of the account whose project in region
+// projectID is, if it is any account's: enforcement refuses a request on
+// another account's project.
+func (s *Service) ProjectOwner(projectID, region string) (string, bool) {
+	for _, a := range s.dir.Accounts() {
+		if s.projectID(a, region) == projectID {
+			return a.ID, true
+		}
+	}
+	return "", false
+}
+
 // ensureProject records region's project, if it is not yet known. Any
 // region name can have a project, as in an account that has every region
 // enabled.
 func (s *Service) ensureProject(ctx context.Context, region string) error {
-	acct := s.account()
-	p := project{ID: acct.ProjectID(region, s.defaultRegion, s.defaultProj), Name: region, DomainID: acct.ID}
-	if err := s.projects().Create(ctx, p.ID, p); err != nil && !errors.Is(err, store.ErrExists) {
+	acct := s.account(ctx)
+	p := project{ID: s.projectID(acct, region), Name: region, DomainID: acct.ID}
+	if err := s.projects(ctx).Create(ctx, p.ID, p); err != nil && !errors.Is(err, store.ErrExists) {
 		return err
 	}
 	return nil
@@ -86,7 +109,8 @@ type listAuthDomainsResponse struct {
 // emulator's one account. Credentials are not checked, so every caller
 // gets it.
 func (s *Service) handleListAuthDomains(w http.ResponseWriter, r *http.Request) error {
-	acct := s.account()
+	ctx := r.Context()
+	acct := s.account(ctx)
 	return httpx.WriteJSON(w, http.StatusOK, listAuthDomainsResponse{
 		Domains: []domainView{{Enabled: true, ID: acct.ID, Name: acct.Name, Links: linksSelf{Self: selfURL(r, "/v3/domains/"+acct.ID)}}},
 		Links:   linksSelf{Self: selfURL(r, "/v3/auth/domains")},
@@ -104,7 +128,8 @@ type listAuthProjectsResponse struct {
 }
 
 func (s *Service) handleListAuthProjects(w http.ResponseWriter, r *http.Request) error {
-	all, err := s.projects().List(r.Context(), nil)
+	ctx := r.Context()
+	all, err := s.projects(ctx).List(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -119,6 +144,7 @@ func (s *Service) handleListAuthProjects(w http.ResponseWriter, r *http.Request)
 // records) that region's project, which is how the SDK and Terraform look
 // up a project ID.
 func (s *Service) handleListProjects(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	q := r.URL.Query()
 	page, perPage, err := paging(q.Get("page"), q.Get("per_page"))
 	if err != nil {
@@ -131,11 +157,11 @@ func (s *Service) handleListProjects(w http.ResponseWriter, r *http.Request) err
 	}
 	name := q.Get("name")
 	if regionRE.MatchString(name) {
-		if err := s.ensureProject(r.Context(), name); err != nil {
+		if err := s.ensureProject(ctx, name); err != nil {
 			return err
 		}
 	}
-	all, err := s.projects().List(r.Context(), func(p project) bool {
+	all, err := s.projects(ctx).List(ctx, func(p project) bool {
 		eq := func(want, got string) bool { return want == "" || want == got }
 		return eq(name, p.Name) && eq(q.Get("domain_id"), p.DomainID) && eq(q.Get("parent_id"), p.DomainID) &&
 			q.Get("enabled") != "false" && q.Get("is_domain") != "true"
@@ -175,8 +201,9 @@ type projectResponse struct {
 }
 
 func (s *Service) handleShowProject(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	id := chi.URLParam(r, "project_id")
-	p, err := s.projects().Get(r.Context(), id)
+	p, err := s.projects(ctx).Get(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
 		return errNotFound("project", id)
 	}

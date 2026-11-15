@@ -43,6 +43,13 @@ func (a Account) ProjectID(region, defaultRegion, defaultProjectID string) strin
 	if region == defaultRegion {
 		return defaultProjectID
 	}
+	return a.DerivedProjectID(region)
+}
+
+// DerivedProjectID returns the project ID derived from the account and
+// region, the same on every start: every project's but the primary
+// account's in the default region.
+func (a Account) DerivedProjectID(region string) string {
 	sum := sha256.Sum256([]byte("weistack:project:" + a.ID + ":" + region))
 	return hex.EncodeToString(sum[:16])
 }

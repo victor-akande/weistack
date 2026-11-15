@@ -93,14 +93,19 @@ type callerIdentity struct {
 	PrincipalID  string `json:"principal_id"`
 }
 
-// handleCallerIdentity reports who signed the request. A user's key names
-// that user. Credentials are not checked, so any other key, the
-// administrator's included, stands for the account's root user.
+// handleCallerIdentity reports who signed the request, in its account. A
+// user's key names that user. Credentials are not checked, so any other
+// key, the administrator's included, stands for the primary account's
+// root user.
 func (s *Service) handleCallerIdentity(w http.ResponseWriter, r *http.Request) {
 	reqctx.From(r.Context()).SetOperation("GetCallerIdentity")
 	acct := s.dir.Account()
+	id := auth.FromContext(r.Context())
+	if a, ok := s.dir.AccountByID(id.Principal.AccountID); id.Known && ok {
+		acct = a
+	}
 	out := callerIdentity{AccountID: acct.ID, PrincipalURN: acct.UserURN(acct.Name), PrincipalID: acct.RootUserID()}
-	if id := auth.FromContext(r.Context()); id.Known && id.Principal.UserID != "" {
+	if id.Known && id.Principal.UserID != "" {
 		out.PrincipalURN, out.PrincipalID = acct.UserURN(id.Principal.UserName), id.Principal.UserID
 	}
 	if err := httpx.WriteJSON(w, http.StatusOK, out); err != nil {

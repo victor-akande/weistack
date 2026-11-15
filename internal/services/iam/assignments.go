@@ -56,12 +56,12 @@ func assignmentID(subject, subjectID, roleID, scope, scopeID string) string {
 	return hex.EncodeToString(sum[:16])
 }
 
-func (s *Service) assignments() store.Collection[assignment] {
-	return store.Of[assignment](s.store, global(kindAssignment))
+func (s *Service) assignments(ctx context.Context) store.Collection[assignment] {
+	return store.Of[assignment](s.store, s.scope(ctx, kindAssignment))
 }
 
 func (s *Service) assignmentsOf(ctx context.Context, keep func(assignment) bool) ([]assignment, error) {
-	return s.assignments().List(ctx, keep)
+	return s.assignments(ctx).List(ctx, keep)
 }
 
 // deleteAssignments removes those keep selects. The caller holds s.mu.
@@ -71,7 +71,7 @@ func (s *Service) deleteAssignments(ctx context.Context, keep func(assignment) b
 		return err
 	}
 	for _, a := range all {
-		if err := s.assignments().Delete(ctx, a.ID); err != nil && !errors.Is(err, store.ErrNotFound) {
+		if err := s.assignments(ctx).Delete(ctx, a.ID); err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
 	}
@@ -95,12 +95,12 @@ func (s *Service) target(r *http.Request, subject, scope string) (grantTarget, e
 	switch scope {
 	case scopeDomain, scopeInherited:
 		t.scopeID = chi.URLParam(r, "domain_id")
-		if t.scopeID != s.account().ID {
+		if t.scopeID != s.account(ctx).ID {
 			return t, errNotFound("domain", t.scopeID)
 		}
 	case scopeProject:
 		t.scopeID = chi.URLParam(r, "project_id")
-		if _, err := s.projects().Get(ctx, t.scopeID); errors.Is(err, store.ErrNotFound) {
+		if _, err := s.projects(ctx).Get(ctx, t.scopeID); errors.Is(err, store.ErrNotFound) {
 			return t, errNotFound("project", t.scopeID)
 		} else if err != nil {
 			return t, err
@@ -114,14 +114,14 @@ func (s *Service) target(r *http.Request, subject, scope string) (grantTarget, e
 	switch subject {
 	case subjectGroup:
 		t.subjectID = chi.URLParam(r, "group_id")
-		if _, err := s.groups().Get(ctx, t.subjectID); errors.Is(err, store.ErrNotFound) {
+		if _, err := s.groups(ctx).Get(ctx, t.subjectID); errors.Is(err, store.ErrNotFound) {
 			return t, errNotFound("group", t.subjectID)
 		} else if err != nil {
 			return t, err
 		}
 	case subjectUser:
 		t.subjectID = chi.URLParam(r, "user_id")
-		if _, err := s.users().Get(ctx, t.subjectID); errors.Is(err, store.ErrNotFound) {
+		if _, err := s.users(ctx).Get(ctx, t.subjectID); errors.Is(err, store.ErrNotFound) {
 			return t, errNotFound("user", t.subjectID)
 		} else if err != nil {
 			return t, err
@@ -133,6 +133,7 @@ func (s *Service) target(r *http.Request, subject, scope string) (grantTarget, e
 // grant answers PUT: 204, also when the role is already granted.
 func (s *Service) grant(subject, scope string) handler {
 	return func(w http.ResponseWriter, r *http.Request) error {
+		ctx := r.Context()
 		// Under s.mu, so a grant cannot race the delete of its subject
 		// or its custom role.
 		s.mu.Lock()
@@ -149,7 +150,7 @@ func (s *Service) grant(subject, scope string) handler {
 			ID: assignmentID(t.subject, t.subjectID, ro.ID, t.scope, t.scopeID), Subject: t.subject,
 			SubjectID: t.subjectID, RoleID: ro.ID, Scope: t.scope, ScopeID: t.scopeID, CreatedAt: s.now().UTC(),
 		}
-		if err := s.assignments().Create(r.Context(), a.ID, a); err != nil && !errors.Is(err, store.ErrExists) {
+		if err := s.assignments(ctx).Create(ctx, a.ID, a); err != nil && !errors.Is(err, store.ErrExists) {
 			return err
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -159,12 +160,13 @@ func (s *Service) grant(subject, scope string) handler {
 
 // granted finds the assignment a HEAD or DELETE names, or IAM.0004.
 func (s *Service) granted(r *http.Request, subject, scope string) (assignment, error) {
+	ctx := r.Context()
 	t, err := s.target(r, subject, scope)
 	if err != nil {
 		return assignment{}, err
 	}
 	roleID := chi.URLParam(r, "role_id")
-	a, err := s.assignments().Get(r.Context(), assignmentID(t.subject, t.subjectID, roleID, t.scope, t.scopeID))
+	a, err := s.assignments(ctx).Get(ctx, assignmentID(t.subject, t.subjectID, roleID, t.scope, t.scopeID))
 	if errors.Is(err, store.ErrNotFound) {
 		return assignment{}, errNotFound("role assignment", roleID)
 	}
@@ -185,11 +187,12 @@ func (s *Service) check(subject, scope string) handler {
 // revoke answers DELETE: 204.
 func (s *Service) revoke(subject, scope string) handler {
 	return func(w http.ResponseWriter, r *http.Request) error {
+		ctx := r.Context()
 		a, err := s.granted(r, subject, scope)
 		if err != nil {
 			return err
 		}
-		if err := s.assignments().Delete(r.Context(), a.ID); err != nil && !errors.Is(err, store.ErrNotFound) {
+		if err := s.assignments(ctx).Delete(ctx, a.ID); err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -314,6 +317,7 @@ func (s *Service) epSubjects(r *http.Request, subject string) ([]string, map[str
 
 // GET /v3.0/OS-PERMISSION/enterprise-projects/{ep}/users.
 func (s *Service) handleListEPUsers(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	ids, by, err := s.epSubjects(r, subjectUser)
 	if err != nil {
 		return err
@@ -331,7 +335,7 @@ func (s *Service) handleListEPUsers(w http.ResponseWriter, r *http.Request) erro
 		Users []epUser `json:"users"`
 	}{[]epUser{}}
 	for _, id := range ids {
-		u, err := s.users().Get(r.Context(), id)
+		u, err := s.users(ctx).Get(ctx, id)
 		if errors.Is(err, store.ErrNotFound) {
 			continue
 		}
@@ -340,7 +344,7 @@ func (s *Service) handleListEPUsers(w http.ResponseWriter, r *http.Request) erro
 		}
 		as := by[id]
 		out.Users = append(out.Users, epUser{
-			DomainID: s.account().ID, ID: u.ID, Name: u.Name, Enabled: u.Enabled, Description: u.Description,
+			DomainID: s.account(ctx).ID, ID: u.ID, Name: u.Name, Enabled: u.Enabled, Description: u.Description,
 			PolicyNum: len(as), LatestPolicyTime: as[len(as)-1].CreatedAt.UnixMilli(),
 		})
 	}
@@ -349,6 +353,7 @@ func (s *Service) handleListEPUsers(w http.ResponseWriter, r *http.Request) erro
 
 // GET /v3.0/OS-PERMISSION/enterprise-projects/{ep}/groups.
 func (s *Service) handleListEPGroups(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	ids, _, err := s.epSubjects(r, subjectGroup)
 	if err != nil {
 		return err
@@ -364,14 +369,14 @@ func (s *Service) handleListEPGroups(w http.ResponseWriter, r *http.Request) err
 		Groups []epGroup `json:"groups"`
 	}{[]epGroup{}}
 	for _, id := range ids {
-		g, err := s.groups().Get(r.Context(), id)
+		g, err := s.groups(ctx).Get(ctx, id)
 		if errors.Is(err, store.ErrNotFound) {
 			continue
 		}
 		if err != nil {
 			return err
 		}
-		v := epGroup{CreateTime: g.CreatedAt.UnixMilli(), DomainID: s.account().ID, ID: g.ID, Name: g.Name}
+		v := epGroup{CreateTime: g.CreatedAt.UnixMilli(), DomainID: s.account(ctx).ID, ID: g.ID, Name: g.Name}
 		if g.Description != "" {
 			v.Description = &g.Description
 		}
@@ -423,6 +428,7 @@ func viewAssignment(a assignment) assignmentView {
 // handleListRoleAssignments filters assignment records by role, subject
 // and scope, as ShowDomainRoleAssignments documents.
 func (s *Service) handleListRoleAssignments(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	q := r.URL.Query()
 	page, perPage, err := readPaging(r, 50)
 	if err != nil {
@@ -459,7 +465,7 @@ func (s *Service) handleListRoleAssignments(w http.ResponseWriter, r *http.Reque
 	// include_group is false.
 	var groupsOfUser []string
 	if subject == subjectUser && subjectID != "" && q.Get("include_group") != "false" {
-		gs, err := s.groupsOf(r.Context(), subjectID)
+		gs, err := s.groupsOf(ctx, subjectID)
 		if err != nil {
 			return err
 		}
@@ -468,7 +474,7 @@ func (s *Service) handleListRoleAssignments(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	if d := q.Get("domain_id"); d != "" && d != s.account().ID {
+	if d := q.Get("domain_id"); d != "" && d != s.account(ctx).ID {
 		return httpx.WriteJSON(w, http.StatusOK, assignmentsResponse{RoleAssignments: []assignmentView{}})
 	}
 	keep := func(a assignment) bool {
@@ -497,7 +503,7 @@ func (s *Service) handleListRoleAssignments(w http.ResponseWriter, r *http.Reque
 		}
 		return true
 	}
-	all, err := s.assignmentsOf(r.Context(), keep)
+	all, err := s.assignmentsOf(ctx, keep)
 	if err != nil {
 		return err
 	}
