@@ -271,7 +271,8 @@ protected by `-iam`: keep the emulator's port to yourself.
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow (GitHub flow,
-Conventional Commits) and [docs/adding-a-service.md](docs/adding-a-service.md)
+Conventional Commits), [docs/architecture.md](docs/architecture.md) for how
+WeiStack is put together, and [docs/adding-a-service.md](docs/adding-a-service.md)
 for how a service plugs into the core.
 
 ```bash
