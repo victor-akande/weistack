@@ -138,6 +138,49 @@ type Principal struct {
 	// Disabled marks a key whose user is disabled. It still names its
 	// user, but enforcement refuses it.
 	Disabled bool
+
+	// Temporary marks temporary credentials (a security token's).
+	Temporary bool
+	// AgencyID, AgencyName and SessionName name the agency an assumed
+	// agency's credentials act as, in AccountID, and the session. UserID
+	// and UserName are then empty.
+	AgencyID, AgencyName, SessionName string
+	// Session holds the policies temporary credentials were issued with,
+	// if any. A pointer keeps Principal comparable.
+	Session *Session
+}
+
+// Session is what narrows temporary credentials: an IAM 5.0 document and
+// policy IDs (STS) apply to every service; a classic document (IAM's
+// securitytokens) applies to OBS only, as Huawei documents.
+type Session struct {
+	Policy    string
+	PolicyIDs []string
+	OBSPolicy string
+}
+
+// TemporaryCredentials are an access key, its secret key and the
+// security token that must accompany them, until ExpiresAt.
+type TemporaryCredentials struct {
+	AccessKey, SecretKey, SecurityToken string
+	ExpiresAt                           time.Time
+}
+
+// Agency reports whether the principal is an assumed agency's session.
+func (p Principal) Agency() bool { return p.AgencyID != "" }
+
+// URN returns the principal's IAM 5.0 URN in account (whose name names
+// its root user): a user's iam::<account-id>:user:<name>, or an assumed
+// agency's sts::<account-id>:assumed-agency:<agency>/<session>. The
+// administrator's key stands for the account's root user.
+func (p Principal) URN(account Account) string {
+	switch {
+	case p.Agency():
+		return "sts::" + account.ID + ":assumed-agency:" + p.AgencyName + "/" + p.SessionName
+	case p.UserName != "" && !p.Admin:
+		return account.UserURN(p.UserName)
+	}
+	return account.UserURN(account.Name)
 }
 
 // The lockout Huawei documents for AK/SK authentication: more than five

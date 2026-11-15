@@ -84,6 +84,9 @@ type Options struct {
 	// Accounts manages the accounts besides the primary one (IAM). Nil
 	// leaves the admin API without /_weistack/accounts.
 	Accounts Accounts
+	// Temporary resolves temporary credentials (IAM). Nil treats them
+	// as unknown keys.
+	Temporary auth.TemporaryResolver
 	// Now defaults to time.Now; enforcement checks signing times with it.
 	Now func() time.Time
 }
@@ -98,19 +101,20 @@ type Server struct {
 	ids       *ids.Generator
 	started   time.Time
 
-	services map[string]*mounted
-	names    []string // enabled service names, sorted
-	metrics  *metrics
-	admin    http.Handler
-	handler  http.Handler
-	proxy    *proxy
-	ca       *tlsca.Authority
-	dir      *identity.Directory
-	tokens   auth.TokenChecker
-	perms    authz.Provider
-	sealer   authz.Sealer
-	accounts Accounts
-	now      func() time.Time
+	services  map[string]*mounted
+	names     []string // enabled service names, sorted
+	metrics   *metrics
+	admin     http.Handler
+	handler   http.Handler
+	proxy     *proxy
+	ca        *tlsca.Authority
+	dir       *identity.Directory
+	tokens    auth.TokenChecker
+	perms     authz.Provider
+	sealer    authz.Sealer
+	accounts  Accounts
+	temporary auth.TemporaryResolver
+	now       func() time.Time
 }
 
 type mounted struct {
@@ -169,6 +173,7 @@ func New(opts Options) (*Server, error) {
 	s.tokens = opts.Tokens
 	s.perms, s.sealer = opts.Permissions, opts.Sealer
 	s.accounts = opts.Accounts
+	s.temporary = opts.Temporary
 	s.now = opts.Now
 	if s.now == nil {
 		s.now = time.Now
@@ -244,10 +249,21 @@ func chain(h http.Handler, mws ...func(http.Handler) http.Handler) http.Handler 
 }
 
 // resolver returns the directory as an auth.Resolver, or nil when there
-// is none, so that "no resolver" stays a nil interface.
+// is none, so that "no resolver" stays a nil interface. With temporary
+// credentials it resolves those too.
 func (s *Server) resolver() auth.Resolver {
-	if s.dir == nil {
+	switch {
+	case s.dir == nil:
 		return nil
+	case s.temporary != nil:
+		return withTemporary{s.dir, s.temporary}
 	}
 	return s.dir
+}
+
+// withTemporary is the directory, which records key usage, resolving
+// temporary credentials as well.
+type withTemporary struct {
+	*identity.Directory
+	auth.TemporaryResolver
 }

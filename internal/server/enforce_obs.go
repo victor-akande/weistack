@@ -83,15 +83,14 @@ func (s *Server) verifyOBS(r *http.Request, received *url.URL) (auth.Identity, *
 		return id, nil, errOBSAnonymous
 	}
 
-	p, known := s.dir.Lookup(ak)
-	secret, hasSecret := s.dir.Secret(ak)
-	if !known || !hasSecret || p.Disabled {
+	key, ok := s.credentials(r, ak)
+	if !ok {
 		return id, nil, errOBSUnknownKey
 	}
-	if s.dir.Locked(ak) {
+	if key.locked() {
 		return id, nil, errOBSLocked
 	}
-	chunks, err := verify(secret)
+	chunks, err := verify(key.secret)
 	switch {
 	case errors.Is(err, sigcheck.ErrNoDate):
 		return id, nil, errOBSNoDate
@@ -100,11 +99,11 @@ func (s *Server) verifyOBS(r *http.Request, received *url.URL) (auth.Identity, *
 	case errors.Is(err, sigcheck.ErrSkewed):
 		return id, nil, errOBSSkewed
 	case err != nil:
-		s.dir.SignatureFailed(ak)
+		key.failed()
 		return id, nil, errOBSBadSignature
 	}
-	s.dir.SignatureSucceeded(ak)
-	id.AccessKey, id.Known, id.Principal = ak, true, p
+	key.succeeded()
+	id.AccessKey, id.Known, id.Principal, id.Temporary = ak, true, key.principal, key.temporary
 	return id, chunks, nil
 }
 

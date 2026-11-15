@@ -73,7 +73,7 @@ func caller(r *http.Request) string {
 	q := r.URL.Query()
 	for _, name := range []string{"AccessKeyId", "AWSAccessKeyId"} {
 		if ak := q.Get(name); ak != "" {
-			return auth.Resolve(auth.Identity{AccessKey: ak}, auth.ResolverFromContext(r.Context())).Owner()
+			return auth.ResolveRequest(r, auth.Identity{AccessKey: ak}, auth.ResolverFromContext(r.Context())).Owner()
 		}
 	}
 	return anonymous
