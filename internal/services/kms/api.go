@@ -42,6 +42,11 @@ func (s *Service) Routes(r chi.Router) {
 		r.With(authz.Defer()).Post("/encrypt-datakey", s.handle("EncryptDatakey", s.handleEncryptDatakey))
 		r.With(authz.Defer()).Post("/decrypt-datakey", s.handle("DecryptDatakey", s.handleDecryptDatakey))
 		r.With(act("kms::generateRandom")).Post("/gen-random", s.handle("CreateRandom", s.handleGenRandom))
+		r.With(authz.Defer()).Post("/sign", s.handle("CreateSign", s.handleSign))
+		r.With(authz.Defer()).Post("/verify", s.handle("ValidateSignature", s.handleVerify))
+		r.With(authz.Defer()).Post("/get-publickey", s.handle("ShowPublicKey", s.keyed("kms:cmk:getPublicKey", s.handlePublicKey)))
+		r.With(authz.Defer()).Post("/generate-mac", s.handle("GenerateMac", s.handleGenerateMac))
+		r.With(authz.Defer()).Post("/verify-mac", s.handle("VerifyMac", s.handleVerifyMac))
 
 		r.With(authz.Defer()).Post("/enable-key-rotation", s.handle("EnableKeyRotation", s.keyed("kms:cmk:enableRotation", s.handleEnableRotation)))
 		r.With(authz.Defer()).Post("/disable-key-rotation", s.handle("DisableKeyRotation", s.keyed("kms:cmk:disableRotation", s.handleDisableRotation)))
@@ -485,12 +490,25 @@ func (s *Service) handleEncryptData(w http.ResponseWriter, r *http.Request, t te
 	case len(b.AdditionalAuthenticatedData) > maxAAD:
 		return errParam
 	}
-	if err := forEncryption(k, b.EncryptionAlgorithm); err != nil {
-		return err
-	}
-	sealed, err := s.encrypt(r, t, k, []byte(b.PlainText), []byte(b.AdditionalAuthenticatedData))
-	if err != nil {
-		return err
+	var sealed []byte
+	if specs[k.Spec] == asymmetric {
+		if err := forAsymmetricEncryption(k); err != nil {
+			return err
+		}
+		priv, err := s.privateKey(k)
+		if err != nil {
+			return err
+		}
+		if sealed, err = encryptAsymmetric(priv, b.EncryptionAlgorithm, []byte(b.PlainText)); err != nil {
+			return err
+		}
+	} else {
+		if err := forEncryption(k, b.EncryptionAlgorithm); err != nil {
+			return err
+		}
+		if sealed, err = s.encrypt(r, t, k, []byte(b.PlainText), []byte(b.AdditionalAuthenticatedData)); err != nil {
+			return err
+		}
 	}
 	return write(w, struct {
 		KeyID      string `json:"key_id"`
@@ -513,6 +531,10 @@ func (s *Service) handleDecryptData(w http.ResponseWriter, r *http.Request, t te
 	if len(b.AdditionalAuthenticatedData) > maxAAD {
 		return errParam
 	}
+	if b.EncryptionAlgorithm == algRSAOAEP || b.EncryptionAlgorithm == algSM2 {
+		// Asymmetric ciphertexts do not name their key: the request does.
+		return s.decryptAsymmetric(w, r, t, b, raw)
+	}
 	k, h, err := s.envelopeKey(r, t, raw, "kms:cmk:decryptData", b.KeyID)
 	if err != nil {
 		return err
@@ -530,6 +552,35 @@ func (s *Service) handleDecryptData(w http.ResponseWriter, r *http.Request, t te
 		PlainTextBase64 string `json:"plain_text_base64"`
 	}{k.ID, string(plain), base64.StdEncoding.EncodeToString(plain)})
 }
+
+func (s *Service) decryptAsymmetric(w http.ResponseWriter, r *http.Request, t tenant, b decryptDataRequest, raw []byte) error {
+	k, err := s.authorized(r, t, "kms:cmk:decryptData", b.KeyID)
+	if err != nil {
+		return err
+	}
+	if err := forAsymmetricEncryption(k); err != nil {
+		return err
+	}
+	priv, err := s.privateKey(k)
+	if err != nil {
+		return err
+	}
+	plain, err := decryptAsymmetric(priv, b.EncryptionAlgorithm, raw)
+	if err != nil {
+		return err
+	}
+	return write(w, struct {
+		KeyID           string `json:"key_id"`
+		PlainText       string `json:"plain_text"`
+		PlainTextBase64 string `json:"plain_text_base64"`
+	}{k.ID, string(plain), base64.StdEncoding.EncodeToString(plain)})
+}
+
+func encodeBase64(b []byte) string { return base64.StdEncoding.EncodeToString(b) }
+
+func decodeBase64(s string) ([]byte, error) { return base64.StdEncoding.DecodeString(s) }
+
+func hexLower(b []byte) string { return hex.EncodeToString(b) }
 
 // dataKeySpecs are the sizes, in bytes, of the data keys create-datakey
 // makes by key_spec.

@@ -221,8 +221,10 @@ func TestEncryption(t *testing.T) {
 		e.ok(t, "disable-key", ref(id))
 		e.wantErr(t, 400, "KMS.0209", "decrypt-data", `{"cipher_text":"`+ct+`","additional_authenticated_data":"aad"}`)
 	}
-	sign := e.newKey(t, `{"key_alias":"signer","key_spec":"EC_P256"}`)
-	e.wantErr(t, 400, "KMS.0335", "encrypt-data", `{"key_id":"`+sign+`","plain_text":"x"}`)
+	ec := e.newKey(t, `{"key_alias":"signer","key_spec":"EC_P256"}`)
+	e.wantErr(t, 400, "KMS.1114", "encrypt-data", `{"key_id":"`+ec+`","plain_text":"x"}`)
+	rsaSigner := e.newKey(t, `{"key_alias":"rsa-signer","key_spec":"RSA_2048"}`)
+	e.wantErr(t, 400, "KMS.0335", "encrypt-data", `{"key_id":"`+rsaSigner+`","plain_text":"x","encryption_algorithm":"RSAES_OAEP_SHA_256"}`)
 	id := e.newKey(t, `{"key_alias":"limits"}`)
 	e.wantErr(t, 400, "KMS.2101", "encrypt-data", `{"key_id":"`+id+`","plain_text":"`+strings.Repeat("x", 4097)+`"}`)
 	e.wantErr(t, 400, "KMS.2105", "encrypt-data", `{"key_id":"`+id+`","plain_text":"x","encryption_algorithm":"RSAES_OAEP_SHA_256"}`)
