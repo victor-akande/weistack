@@ -53,6 +53,12 @@ func (s *Service) Routes(r chi.Router) {
 		r.With(authz.Defer()).Post("/update-key-rotation-interval", s.handle("UpdateKeyRotationInterval", s.handleRotationInterval))
 		r.With(authz.Defer()).Post("/get-key-rotation-status", s.handle("ShowKeyRotationStatus", s.keyed("kms:cmk:getRotation", s.handleRotationStatus)))
 
+		r.With(authz.Defer()).Post("/create-grant", s.handle("CreateGrant", s.handleCreateGrant))
+		r.With(authz.Defer()).Post("/list-grants", s.handle("ListGrants", s.handleListGrants))
+		r.With(authz.Defer()).Post("/revoke-grant", s.handle("CancelGrant", s.handleRevokeGrant))
+		r.With(authz.Defer()).Post("/retire-grant", s.handle("CancelSelfGrant", s.handleRetireGrant))
+		r.With(act("kms::listRetirableGrants")).Post("/list-retirable-grants", s.handle("ListRetirableGrants", s.handleListRetirableGrants))
+
 		r.With(act("kms::listAllTags")).Get("/tags", s.handle("ListKmsTags", s.handleListAllTags))
 		r.With(act("kms:cmk:listKeysByTag")).Post("/resource_instances/action", s.handle("ListKmsByTags", s.handleListByTags))
 		r.With(act("kms:cmk:getTags", keyParam)).Get("/{key_id}/tags", s.handle("ShowKmsTags", s.handleKeyTags))
@@ -119,10 +125,17 @@ func (s *Service) keyed(action string, fn keyedHandler) handler {
 	}
 }
 
-// authorized checks the action on the key a body names and finds it.
+// authorized checks the action on the key a body names and finds it. A
+// grant of the key to the caller for the action's operation allows it
+// without an IAM permission, and finds the key in another project or
+// account.
 func (s *Service) authorized(r *http.Request, t tenant, action, keyID string) (key, error) {
 	if keyID == "" {
 		return key{}, errMissing
+	}
+	if k, ok := s.grantedKey(r.Context(), t, action, keyID); ok {
+		authz.Granted(r)
+		return k, nil
 	}
 	if err := authorize(r, action, keyID); err != nil {
 		return key{}, err

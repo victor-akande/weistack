@@ -32,6 +32,7 @@ var testAccount = identity.Account{ID: "fedcba9876543210fedcba9876543210", Name:
 type env struct {
 	svc     *Service
 	handler http.Handler
+	dir     *identity.Directory
 	now     time.Time
 }
 
@@ -65,14 +66,23 @@ func newEnv(t *testing.T) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.svc, e.handler = svc, srv.Handler()
+	e.svc, e.handler, e.dir = svc, srv.Handler(), dir
 	return e
 }
 
 // call sends a KMS operation in the test project.
 func (e *env) call(t *testing.T, method, op, body string) (int, map[string]any) {
 	t.Helper()
-	r := httptest.NewRequest(method, "/v1.0/"+testProject+"/kms/"+op, strings.NewReader(body))
+	return e.callAs(t, "", testProject, method, op, body)
+}
+
+// callAs sends a KMS operation signed (in form only) with ak, in project.
+func (e *env) callAs(t *testing.T, ak, project, method, op, body string) (int, map[string]any) {
+	t.Helper()
+	r := httptest.NewRequest(method, "/v1.0/"+project+"/kms/"+op, strings.NewReader(body))
+	if ak != "" {
+		r.Header.Set("Authorization", "SDK-HMAC-SHA256 Access="+ak+", SignedHeaders=host, Signature=abc")
+	}
 	r.Host = "kms." + testRegion + ".myhuaweicloud.com"
 	r.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()

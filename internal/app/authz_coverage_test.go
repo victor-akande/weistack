@@ -61,6 +61,7 @@ func init() {
 		"create-datakey-without-plaintext", "encrypt-datakey", "decrypt-datakey", "enable-key-rotation",
 		"disable-key-rotation", "update-key-rotation-interval", "get-key-rotation-status",
 		"sign", "verify", "get-publickey", "generate-mac", "verify-mac",
+		"create-grant", "list-grants", "revoke-grant", "retire-grant",
 	} {
 		openRoutes["kms POST /v1.0/{project_id}/kms/"+op] = "checked once the body names the key"
 	}
