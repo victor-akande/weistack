@@ -32,6 +32,10 @@ func (s *Server) newAdmin() http.Handler {
 		if s.ca != nil {
 			r.Get("/ca", s.adminOp("GetCACertificate", s.handleCA))
 		}
+		if s.accounts != nil {
+			r.Get("/accounts", s.adminOp("ListAccounts", s.handleListAccounts))
+			r.Post("/accounts", s.adminOp("NewAccount", s.handleNewAccount))
+		}
 		if s.cfg.Metrics {
 			r.Get("/metrics", s.adminOp("Metrics", s.handleMetrics))
 		}
