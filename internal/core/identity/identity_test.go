@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"errors"
 	"regexp"
 	"testing"
 	"time"
@@ -212,4 +213,74 @@ func TestDirectorySecretsAndLockout(t *testing.T) {
 	if d.Locked(admin.AccessKey) {
 		t.Fatal("the administrator's key was locked")
 	}
+}
+
+func TestDirectoryAccounts(t *testing.T) {
+	t.Parallel()
+	primary, admin := mustAccount(t, AccountName), mustCreds(t)
+	d := NewDirectory(primary, admin)
+	partner, root := mustAccount(t, "partner"), mustCreds(t)
+	if err := d.AddAccount(partner, root); err != nil {
+		t.Fatal(err)
+	}
+
+	p, ok := d.Lookup(root.AccessKey)
+	if !ok || p.AccountID != partner.ID || p.UserID != partner.RootUserID() || p.UserName != "partner" || p.Admin {
+		t.Fatalf("the root key's principal = %+v, %v", p, ok)
+	}
+	if got := d.Accounts(); len(got) != 2 || got[0] != primary || got[1] != partner {
+		t.Errorf("Accounts() = %v", got)
+	}
+	if a, ok := d.AccountByName("PARTNER"); !ok || a != partner {
+		t.Errorf("AccountByName = %v, %v", a, ok)
+	}
+	if a, ok := d.AccountByID(primary.ID); !ok || !d.Primary(a) || d.Primary(partner) {
+		t.Errorf("AccountByID(primary) = %v, %v", a, ok)
+	}
+
+	// Names, IDs and keys are unique; root keys are protected.
+	if err := d.AddAccount(mustAccount(t, "Partner"), mustCreds(t)); !errors.Is(err, ErrAccountExists) {
+		t.Errorf("a second account named partner: %v", err)
+	}
+	if err := d.AddAccount(Account{ID: partner.ID, Name: "other"}, mustCreds(t)); !errors.Is(err, ErrAccountExists) {
+		t.Errorf("a second account with partner's ID: %v", err)
+	}
+	if err := d.AddAccount(mustAccount(t, "other"), admin); !errors.Is(err, ErrKeyTaken) {
+		t.Errorf("an account with the administrator's key: %v", err)
+	}
+	if err := d.Register(root.AccessKey, Principal{AccountID: primary.ID, UserID: "u"}, "s"); !errors.Is(err, ErrKeyTaken) {
+		t.Errorf("registering over a root key: %v", err)
+	}
+	d.Forget(root.AccessKey)
+	if _, ok := d.Lookup(root.AccessKey); !ok {
+		t.Error("Forget removed a root key")
+	}
+
+	// Clear returns to the start: the primary account and the administrator.
+	d.Clear()
+	if _, ok := d.Lookup(root.AccessKey); ok {
+		t.Error("Clear kept an added account's root key")
+	}
+	if got := d.Accounts(); len(got) != 1 || got[0] != primary {
+		t.Errorf("after Clear, Accounts() = %v", got)
+	}
+}
+
+func mustAccount(t *testing.T, name string) Account {
+	t.Helper()
+	a, err := NewAccount()
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.Name = name
+	return a
+}
+
+func mustCreds(t *testing.T) Credentials {
+	t.Helper()
+	c, err := NewCredentials()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
 }
