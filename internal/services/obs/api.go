@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/victor-akande/weistack/internal/core/apierr"
+	"github.com/victor-akande/weistack/internal/core/authz"
 	"github.com/victor-akande/weistack/internal/core/reqctx"
 	"github.com/victor-akande/weistack/internal/core/sigcheck"
 )
@@ -17,8 +18,11 @@ import (
 // Routes implements server.Service. OBS does not have fixed paths: the
 // bucket and key are in the host name or the path, and the operation is
 // chosen by method and query string, so one handler takes everything.
+// Each operation's IAM action is checked once the operation is known
+// (authz.go).
 func (s *Service) Routes(r chi.Router) {
-	r.Handle("/*", http.HandlerFunc(s.serve))
+	r.Use(authz.Service(authz.ServiceOptions{Name: "obs", Global: true, NoAccount: true, Style: apierr.StyleXML, Deny: denied}))
+	r.With(authz.Defer()).Handle("/*", http.HandlerFunc(s.serve))
 }
 
 // call is one request being served.
@@ -51,6 +55,10 @@ func (s *Service) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	op, fn := s.route(c)
 	info.SetOperation(op)
+	if err := s.authorize(c, op); err != nil {
+		s.fail(c, op, err)
+		return
+	}
 	if err := fn(c); err != nil {
 		s.fail(c, op, err)
 	}

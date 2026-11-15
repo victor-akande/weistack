@@ -17,7 +17,13 @@ var sdkPassword = strings.Join([]string{"Passw0rd", "!sdk"}, "")
 
 func iamClients(t *testing.T, ak string) (*iamv3.IamClient, *iamv5.IamClient) {
 	t.Helper()
-	creds, err := global.NewCredentialsBuilder().WithAk(signingAK(ak)).WithSk(signingSK()).SafeBuild()
+	return iamClientsAs(t, signingAK(ak), signingSK())
+}
+
+// iamClientsAs builds IAM clients that sign with ak and sk.
+func iamClientsAs(t *testing.T, ak, sk string) (*iamv3.IamClient, *iamv5.IamClient) {
+	t.Helper()
+	creds, err := global.NewCredentialsBuilder().WithAk(ak).WithSk(sk).SafeBuild()
 	if err != nil {
 		t.Fatal(err)
 	}

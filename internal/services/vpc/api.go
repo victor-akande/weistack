@@ -8,59 +8,69 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/victor-akande/weistack/internal/core/apierr"
+	"github.com/victor-akande/weistack/internal/core/authz"
 	"github.com/victor-akande/weistack/internal/core/httpx"
 	"github.com/victor-akande/weistack/internal/core/pagination"
 	"github.com/victor-akande/weistack/internal/core/reqctx"
 )
 
 // Routes implements server.Service. Paths are those of the real API.
+// Each route names the IAM action it needs (usermanual-permissions
+// iam_11_0017, checked against each operation's API page); a route's
+// resource is the one its path names.
 func (s *Service) Routes(r chi.Router) {
+	act, vpc, subnet, group, rule, port := authz.Action, authz.Param("vpc", "vpc_id"), authz.Param("subnet", "subnet_id"),
+		authz.Param("securityGroup", "security_group_id"), authz.Param("securityGroupRule", "security_group_rule_id"),
+		authz.Param("port", "port_id")
 	r.Route("/v2.0/{project_id}", func(r chi.Router) {
-		r.Get("/vpcs/{id}/tags", s.v1("ShowVpcTags", s.handleShowVPCTags))
-		r.Get("/subnets/{id}/tags", s.v1("ShowSubnetTags", s.handleShowSubnetTags))
-		r.Get("/security-groups/{id}/tags", s.v1("ShowSecurityGroupTags", s.handleShowSecurityGroupTags))
+		r.Use(authz.Service(authz.ServiceOptions{Name: "vpc", Style: apierr.StyleCodeMessage}))
+		r.With(act("vpc:vpcs:listTags", authz.Param("vpc", "id"))).Get("/vpcs/{id}/tags", s.v1("ShowVpcTags", s.handleShowVPCTags))
+		r.With(act("vpc:subnets:listTags", authz.Param("subnet", "id"))).Get("/subnets/{id}/tags", s.v1("ShowSubnetTags", s.handleShowSubnetTags))
+		r.With(act("vpc:securityGroups:listTags", authz.Param("securityGroup", "id"))).Get("/security-groups/{id}/tags", s.v1("ShowSecurityGroupTags", s.handleShowSecurityGroupTags))
 	})
 	r.Route("/v1/{project_id}", func(r chi.Router) {
-		r.Post("/vpcs", s.v1("CreateVpc", s.handleCreateVPC))
-		r.Get("/vpcs", s.v1("ListVpcs", s.handleListVPCs))
-		r.Get("/vpcs/{vpc_id}", s.v1("ShowVpc", s.handleShowVPC))
-		r.Put("/vpcs/{vpc_id}", s.v1("UpdateVpc", s.handleUpdateVPC))
-		r.Delete("/vpcs/{vpc_id}", s.v1("DeleteVpc", s.handleDeleteVPC))
+		r.Use(authz.Service(authz.ServiceOptions{Name: "vpc", Style: apierr.StyleCodeMessage}))
+		r.With(act("vpc:vpcs:create")).Post("/vpcs", s.v1("CreateVpc", s.handleCreateVPC))
+		r.With(act("vpc:vpcs:list")).Get("/vpcs", s.v1("ListVpcs", s.handleListVPCs))
+		r.With(act("vpc:vpcs:get", vpc)).Get("/vpcs/{vpc_id}", s.v1("ShowVpc", s.handleShowVPC))
+		r.With(act("vpc:vpcs:update", vpc)).Put("/vpcs/{vpc_id}", s.v1("UpdateVpc", s.handleUpdateVPC))
+		r.With(act("vpc:vpcs:delete", vpc)).Delete("/vpcs/{vpc_id}", s.v1("DeleteVpc", s.handleDeleteVPC))
 
-		r.Post("/subnets", s.v1("CreateSubnet", s.handleCreateSubnet))
-		r.Get("/subnets", s.v1("ListSubnets", s.handleListSubnets))
-		r.Get("/subnets/{subnet_id}", s.v1("ShowSubnet", s.handleShowSubnet))
-		r.Put("/vpcs/{vpc_id}/subnets/{subnet_id}", s.v1("UpdateSubnet", s.handleUpdateSubnet))
-		r.Delete("/vpcs/{vpc_id}/subnets/{subnet_id}", s.v1("DeleteSubnet", s.handleDeleteSubnet))
+		r.With(act("vpc:subnets:create")).Post("/subnets", s.v1("CreateSubnet", s.handleCreateSubnet))
+		r.With(act("vpc:subnets:list")).Get("/subnets", s.v1("ListSubnets", s.handleListSubnets))
+		r.With(act("vpc:subnets:get", subnet)).Get("/subnets/{subnet_id}", s.v1("ShowSubnet", s.handleShowSubnet))
+		r.With(act("vpc:subnets:update", subnet)).Put("/vpcs/{vpc_id}/subnets/{subnet_id}", s.v1("UpdateSubnet", s.handleUpdateSubnet))
+		r.With(act("vpc:subnets:delete", subnet)).Delete("/vpcs/{vpc_id}/subnets/{subnet_id}", s.v1("DeleteSubnet", s.handleDeleteSubnet))
 
 		// Ports, the NICs of ECS servers, read only.
-		r.Get("/ports", s.v1("ListPorts", s.handleListPorts))
-		r.Get("/ports/{port_id}", s.v1("ShowPort", s.handleShowPort))
+		r.With(act("vpc:ports:list")).Get("/ports", s.v1("ListPorts", s.handleListPorts))
+		r.With(act("vpc:ports:get", port)).Get("/ports/{port_id}", s.v1("ShowPort", s.handleShowPort))
 
 		// The v1 security group API, a view of the v3 records.
-		r.Post("/security-groups", s.v1("CreateSecurityGroupV1", s.handleCreateGroupV1))
-		r.Get("/security-groups", s.v1("ListSecurityGroupsV1", s.handleListGroupsV1))
-		r.Get("/security-groups/{security_group_id}", s.v1("ShowSecurityGroupV1", s.handleShowGroupV1))
-		r.Delete("/security-groups/{security_group_id}", s.v1("DeleteSecurityGroupV1", s.handleDeleteGroupV1))
-		r.Post("/security-group-rules", s.v1("CreateSecurityGroupRuleV1", s.handleCreateRuleV1))
-		r.Get("/security-group-rules", s.v1("ListSecurityGroupRulesV1", s.handleListRulesV1))
-		r.Get("/security-group-rules/{security_group_rule_id}", s.v1("ShowSecurityGroupRuleV1", s.handleShowRuleV1))
-		r.Delete("/security-group-rules/{security_group_rule_id}", s.v1("DeleteSecurityGroupRuleV1", s.handleDeleteRuleV1))
+		r.With(act("vpc:securityGroups:create")).Post("/security-groups", s.v1("CreateSecurityGroupV1", s.handleCreateGroupV1))
+		r.With(act("vpc:securityGroups:list")).Get("/security-groups", s.v1("ListSecurityGroupsV1", s.handleListGroupsV1))
+		r.With(act("vpc:securityGroups:get", group)).Get("/security-groups/{security_group_id}", s.v1("ShowSecurityGroupV1", s.handleShowGroupV1))
+		r.With(act("vpc:securityGroups:delete", group)).Delete("/security-groups/{security_group_id}", s.v1("DeleteSecurityGroupV1", s.handleDeleteGroupV1))
+		r.With(act("vpc:securityGroupRules:create")).Post("/security-group-rules", s.v1("CreateSecurityGroupRuleV1", s.handleCreateRuleV1))
+		r.With(act("vpc:securityGroupRules:list")).Get("/security-group-rules", s.v1("ListSecurityGroupRulesV1", s.handleListRulesV1))
+		r.With(act("vpc:securityGroupRules:get", rule)).Get("/security-group-rules/{security_group_rule_id}", s.v1("ShowSecurityGroupRuleV1", s.handleShowRuleV1))
+		r.With(act("vpc:securityGroupRules:delete", rule)).Delete("/security-group-rules/{security_group_rule_id}", s.v1("DeleteSecurityGroupRuleV1", s.handleDeleteRuleV1))
 	})
 	r.Route("/v3/{project_id}/vpc", func(r chi.Router) {
-		r.Post("/security-groups", s.v3("CreateSecurityGroup", s.handleCreateSecurityGroup))
-		r.Get("/security-groups", s.v3("ListSecurityGroups", s.handleListSecurityGroups))
-		r.Get("/security-groups/{security_group_id}", s.v3("ShowSecurityGroup", s.handleShowSecurityGroup))
-		r.Put("/security-groups/{security_group_id}", s.v3("UpdateSecurityGroup", s.handleUpdateSecurityGroup))
-		r.Delete("/security-groups/{security_group_id}", s.v3("DeleteSecurityGroup", s.handleDeleteSecurityGroup))
+		r.Use(authz.Service(authz.ServiceOptions{Name: "vpc", Style: apierr.StyleFlatRequestID}))
+		r.With(act("vpc:securityGroups:create")).Post("/security-groups", s.v3("CreateSecurityGroup", s.handleCreateSecurityGroup))
+		r.With(act("vpc:securityGroups:list")).Get("/security-groups", s.v3("ListSecurityGroups", s.handleListSecurityGroups))
+		r.With(act("vpc:securityGroups:get", group)).Get("/security-groups/{security_group_id}", s.v3("ShowSecurityGroup", s.handleShowSecurityGroup))
+		r.With(act("vpc:securityGroups:update", group)).Put("/security-groups/{security_group_id}", s.v3("UpdateSecurityGroup", s.handleUpdateSecurityGroup))
+		r.With(act("vpc:securityGroups:delete", group)).Delete("/security-groups/{security_group_id}", s.v3("DeleteSecurityGroup", s.handleDeleteSecurityGroup))
 
-		r.Post("/security-group-rules", s.v3("CreateSecurityGroupRule", s.handleCreateSecurityGroupRule))
-		r.Get("/security-group-rules", s.v3("ListSecurityGroupRules", s.handleListSecurityGroupRules))
-		r.Get("/security-group-rules/{security_group_rule_id}", s.v3("ShowSecurityGroupRule", s.handleShowSecurityGroupRule))
-		r.Delete("/security-group-rules/{security_group_rule_id}", s.v3("DeleteSecurityGroupRule", s.handleDeleteSecurityGroupRule))
+		r.With(act("vpc:securityGroupRules:create")).Post("/security-group-rules", s.v3("CreateSecurityGroupRule", s.handleCreateSecurityGroupRule))
+		r.With(act("vpc:securityGroupRules:list")).Get("/security-group-rules", s.v3("ListSecurityGroupRules", s.handleListSecurityGroupRules))
+		r.With(act("vpc:securityGroupRules:get", rule)).Get("/security-group-rules/{security_group_rule_id}", s.v3("ShowSecurityGroupRule", s.handleShowSecurityGroupRule))
+		r.With(act("vpc:securityGroupRules:delete", rule)).Delete("/security-group-rules/{security_group_rule_id}", s.v3("DeleteSecurityGroupRule", s.handleDeleteSecurityGroupRule))
 
-		r.Get("/vpcs", s.v3("ListVpcsV3", s.handleListVPCsV3))
-		r.Get("/vpcs/{vpc_id}", s.v3("ShowVpcV3", s.handleShowVPCv3))
+		r.With(act("vpc:vpcs:list")).Get("/vpcs", s.v3("ListVpcsV3", s.handleListVPCsV3))
+		r.With(act("vpc:vpcs:get", vpc)).Get("/vpcs/{vpc_id}", s.v3("ShowVpcV3", s.handleShowVPCv3))
 	})
 }
 

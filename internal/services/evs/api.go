@@ -8,15 +8,19 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/victor-akande/weistack/internal/core/apierr"
+	"github.com/victor-akande/weistack/internal/core/authz"
 	"github.com/victor-akande/weistack/internal/core/httpx"
 	"github.com/victor-akande/weistack/internal/core/pagination"
 	"github.com/victor-akande/weistack/internal/core/reqctx"
 )
 
 // Routes implements server.Service. Paths are those of the real API.
+// EVS's API pages name no actions; these are the action table's
+// (usermanual-permissions iam_11_0013).
 func (s *Service) Routes(r chi.Router) {
-	r.Get("/v2/{project_id}/cloudvolumes/detail", s.handle("ListVolumes", s.handleListVolumes))
-	r.Get("/v2/{project_id}/cloudvolumes/{volume_id}", s.handle("ShowVolume", s.handleShowVolume))
+	r.Use(authz.Service(authz.ServiceOptions{Name: "evs", Style: apierr.StyleNested}))
+	r.With(authz.Action("evs:volumes:list")).Get("/v2/{project_id}/cloudvolumes/detail", s.handle("ListVolumes", s.handleListVolumes))
+	r.With(authz.Action("evs:volumes:get", authz.Param("volume", "volume_id"))).Get("/v2/{project_id}/cloudvolumes/{volume_id}", s.handle("ShowVolume", s.handleShowVolume))
 }
 
 type tenant struct {

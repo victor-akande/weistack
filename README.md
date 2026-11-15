@@ -220,7 +220,7 @@ defaults. Run `weistack -h` for the full list.
 | `-proxy-domains` | `WEISTACK_PROXY_DOMAINS` | `myhuaweicloud.com` | Domains the proxy answers for itself |
 | `-proxy-bypass` | `WEISTACK_PROXY_BYPASS` | KooCLI's downloads and API Explorer | Hosts inside the proxy domains that are passed on instead of answered: `*` is one label, `{region}` the same label everywhere. Empty turns it off |
 | `-proxy-passthrough` | `WEISTACK_PROXY_PASSTHROUGH` | `loopback` | Which proxy clients may reach other hosts: `loopback`, `all` or `none` |
-| `-iam` | `WEISTACK_IAM` | `accept` | `accept` takes any credentials; `enforce` requires a valid signature or IAM token (see [Checking credentials](docs/enforce.md)) |
+| `-iam` | `WEISTACK_IAM` | `accept` | `accept` takes any credentials; `enforce` requires a valid signature or IAM token, and permissions (see [Checking credentials](docs/enforce.md)) |
 | `-admin-access-key`, `-admin-secret-key` | `WEISTACK_ADMIN_ACCESS_KEY`, `WEISTACK_ADMIN_SECRET_KEY` | generated | Fix the administrator's keys, for example in CI. Prefer the environment variables for the secret: flags show in process lists |
 | `-tls-dir` | `WEISTACK_TLS_DIR` | see above | Where the local CA is kept |
 | `-metrics` | `WEISTACK_METRICS` | off | Serve Prometheus metrics |
@@ -263,9 +263,10 @@ other key is an owner of its own.
 Huawei Cloud does. Every request needs a valid signature by a key WeiStack
 knows (`SDK-HMAC-SHA256` from the SDKs, Terraform and KooCLI; OBS, S3 v2 or
 S3 v4 for OBS) or a valid IAM token, and failures get the errors Huawei
-documents. It checks who is calling, not what they may do. See
-[Checking credentials](docs/enforce.md) for what is checked, the errors,
-and what is not covered yet. The admin API (`/_weistack/*`) is not
+documents. It also checks what the caller may do: IAM users hold what
+their groups' permissions and their IAM 5.0 policies allow, and get each
+service's 403 for the rest. See [Checking credentials](docs/enforce.md)
+for what is checked, the errors, and what is not covered yet. The admin API (`/_weistack/*`) is not
 protected by `-iam`: keep the emulator's port to yourself.
 
 ## Development

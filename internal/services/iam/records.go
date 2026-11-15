@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"errors"
 	"regexp"
 	"slices"
@@ -90,6 +91,31 @@ func (s *Service) ensureRoot(ctx context.Context) error {
 		AccessMode: "default", CreatedAt: now, UpdatedAt: now,
 	}
 	if err := s.users().Create(ctx, root.ID, root); err != nil && !errors.Is(err, store.ErrExists) {
+		return err
+	}
+	return nil
+}
+
+// adminGroupName is the built-in group whose members hold every
+// permission, as every Huawei Cloud account has.
+const adminGroupName = "admin"
+
+// adminGroupID is the admin group's ID, derived from the account so it
+// never changes.
+func (s *Service) adminGroupID() string {
+	sum := sha256.Sum256([]byte("weistack:admin-group:" + s.account().ID))
+	return hex.EncodeToString(sum[:16])
+}
+
+// ensureAdminGroup records the admin group, if it is not yet known. A
+// group the user created with that name before it existed keeps its
+// name; the built-in group is then not created.
+func (s *Service) ensureAdminGroup(ctx context.Context) error {
+	if _, taken, err := s.groupByName(ctx, adminGroupName); err != nil || taken {
+		return err
+	}
+	g := group{ID: s.adminGroupID(), Name: adminGroupName, CreatedAt: s.now().UTC()}
+	if err := s.groups().Create(ctx, g.ID, g); err != nil && !errors.Is(err, store.ErrExists) {
 		return err
 	}
 	return nil

@@ -674,29 +674,6 @@ func (s *Service) handleListEntitiesForPolicyV5(w http.ResponseWriter, r *http.R
 	return httpx.WriteJSON(w, http.StatusOK, out)
 }
 
-// policyRoutes registers the identity policy operations.
-func (s *Service) policyRoutes(r chi.Router) {
-	r.Post("/v5/policies", s.handle("CreatePolicyV5", s.handleCreatePolicyV5))
-	r.Get("/v5/policies", s.handle("ListPoliciesV5", s.handleListPoliciesV5))
-	r.Get("/v5/policies/{policy_id}", s.handle("GetPolicyV5", s.handleGetPolicyV5))
-	r.Put("/v5/policies/{policy_id}", s.handle("UpdatePolicyV5", s.handleUpdatePolicyV5))
-	r.Delete("/v5/policies/{policy_id}", s.handle("DeletePolicyV5", s.handleDeletePolicyV5))
-
-	r.Post("/v5/policies/{policy_id}/versions", s.handle("CreatePolicyVersionV5", s.handleCreatePolicyVersionV5))
-	r.Get("/v5/policies/{policy_id}/versions", s.handle("ListPolicyVersionsV5", s.handleListPolicyVersionsV5))
-	r.Get("/v5/policies/{policy_id}/versions/{version_id}", s.handle("GetPolicyVersionV5", s.handleGetPolicyVersionV5))
-	r.Delete("/v5/policies/{policy_id}/versions/{version_id}", s.handle("DeletePolicyVersionV5", s.handleDeletePolicyVersionV5))
-	r.Post("/v5/policies/{policy_id}/versions/{version_id}/set-default", s.handle("SetDefaultPolicyVersionV5", s.handleSetDefaultPolicyVersionV5))
-
-	r.Post("/v5/policies/{policy_id}/attach-user", s.handle("AttachUserPolicyV5", s.attach(policyUser, true)))
-	r.Post("/v5/policies/{policy_id}/detach-user", s.handle("DetachUserPolicyV5", s.attach(policyUser, false)))
-	r.Post("/v5/policies/{policy_id}/attach-group", s.handle("AttachGroupPolicyV5", s.attach(policyGroup, true)))
-	r.Post("/v5/policies/{policy_id}/detach-group", s.handle("DetachGroupPolicyV5", s.attach(policyGroup, false)))
-	r.Get("/v5/policies/{policy_id}/attached-entities", s.handle("ListEntitiesForPolicyV5", s.handleListEntitiesForPolicyV5))
-	r.Get("/v5/users/{user_id}/attached-policies", s.handle("ListAttachedUserPoliciesV5", s.listAttached(policyUser)))
-	r.Get("/v5/groups/{group_id}/attached-policies", s.handle("ListAttachedGroupPoliciesV5", s.listAttached(policyGroup)))
-}
-
 // IAM 5.0's policy codes.
 var (
 	errV5Malformed        = apierr.New(http.StatusBadRequest, "PAP5.0011", "malformed policy document")

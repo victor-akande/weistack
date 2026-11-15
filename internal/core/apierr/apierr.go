@@ -48,7 +48,12 @@ type Error struct {
 	Status  int
 	Code    string
 	Message string
-	cause   error
+	// AuthorizationMessage is the encoded explanation of a permission
+	// denial, sent as the top-level encoded_authorization_message field
+	// that Huawei documents for denials (api-iam5 ErrorCode) and the SDKs
+	// parse. It is not part of the XML envelope.
+	AuthorizationMessage string
+	cause                error
 }
 
 // New builds an Error. The message is formatted like fmt.Sprintf.
@@ -78,6 +83,14 @@ func (e *Error) WithCause(cause error) *Error {
 	return &c
 }
 
+// WithAuthorizationMessage returns a copy of e that carries an encoded
+// authorization message.
+func (e *Error) WithAuthorizationMessage(m string) *Error {
+	c := *e
+	c.AuthorizationMessage = m
+	return &c
+}
+
 // Error implements the error interface.
 func (e *Error) Error() string {
 	if e.cause != nil {
@@ -100,23 +113,27 @@ func From(err error) *Error {
 }
 
 type flatBody struct {
-	Code    string `json:"error_code"`
-	Message string `json:"error_msg"`
+	Code          string `json:"error_code"`
+	Message       string `json:"error_msg"`
+	Authorization string `json:"encoded_authorization_message,omitempty"`
 }
 
 type codeMessageBody struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code          string `json:"code"`
+	Message       string `json:"message"`
+	Authorization string `json:"encoded_authorization_message,omitempty"`
 }
 
 type flatRequestIDBody struct {
-	RequestID string `json:"request_id"`
-	Code      string `json:"error_code"`
-	Message   string `json:"error_msg"`
+	RequestID     string `json:"request_id"`
+	Code          string `json:"error_code"`
+	Message       string `json:"error_msg"`
+	Authorization string `json:"encoded_authorization_message,omitempty"`
 }
 
 type nestedBody struct {
-	Error nestedDetail `json:"error"`
+	Error         nestedDetail `json:"error"`
+	Authorization string       `json:"encoded_authorization_message,omitempty"`
 }
 
 type nestedDetail struct {
@@ -147,7 +164,9 @@ func Write(w http.ResponseWriter, r *http.Request, style Style, err error) {
 	switch style {
 	case StyleNested:
 		contentType = "application/json"
-		body, encErr = json.Marshal(nestedBody{Error: nestedDetail{Code: e.Code, Message: e.Message}})
+		body, encErr = json.Marshal(nestedBody{
+			Error: nestedDetail{Code: e.Code, Message: e.Message}, Authorization: e.AuthorizationMessage,
+		})
 	case StyleXML:
 		contentType = "application/xml"
 		id := reqctx.From(r.Context()).RequestID
@@ -157,15 +176,16 @@ func Write(w http.ResponseWriter, r *http.Request, style Style, err error) {
 		body = append([]byte(xml.Header), body...)
 	case StyleCodeMessage:
 		contentType = "application/json"
-		body, encErr = json.Marshal(codeMessageBody{Code: e.Code, Message: e.Message})
+		body, encErr = json.Marshal(codeMessageBody{Code: e.Code, Message: e.Message, Authorization: e.AuthorizationMessage})
 	case StyleFlatRequestID:
 		contentType = "application/json"
 		body, encErr = json.Marshal(flatRequestIDBody{
 			RequestID: reqctx.From(r.Context()).RequestID, Code: e.Code, Message: e.Message,
+			Authorization: e.AuthorizationMessage,
 		})
 	default:
 		contentType = "application/json"
-		body, encErr = json.Marshal(flatBody{Code: e.Code, Message: e.Message})
+		body, encErr = json.Marshal(flatBody{Code: e.Code, Message: e.Message, Authorization: e.AuthorizationMessage})
 	}
 	if encErr != nil {
 		// Unreachable for these plain string structs; fail closed regardless.

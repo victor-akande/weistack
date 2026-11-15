@@ -5,18 +5,22 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 
 	"github.com/victor-akande/weistack/internal/core/apierr"
 	"github.com/victor-akande/weistack/internal/core/auth"
+	"github.com/victor-akande/weistack/internal/core/authz"
 	"github.com/victor-akande/weistack/internal/core/config"
 	"github.com/victor-akande/weistack/internal/core/sigcheck"
 )
 
 // Enforcement (-iam=enforce): every request to an emulated service must
-// carry a valid signature by a known, active key, or a valid IAM token.
-// It authenticates only; what a principal may do is not yet checked.
+// carry a valid signature by a known, active key, or a valid IAM token,
+// and its caller must be allowed the operation (internal/core/authz):
+// after authenticating, the server attaches a gate for the caller, which
+// each route consults with its action.
 //
 // Failures are answered as Huawei's API gateway documents them
 // (support.huaweicloud.com/intl/en-us/devg-apisign/api-sign-0001.html and
@@ -68,6 +72,22 @@ func (s *Server) authenticate(m *mounted, w http.ResponseWriter, r *http.Request
 		return nil
 	}
 	return r.WithContext(auth.WithIdentity(r.Context(), id))
+}
+
+// gate is the authorization gate for r's authenticated caller.
+func (s *Server) gate(r *http.Request) *authz.Gate {
+	var account string
+	if s.dir != nil {
+		account = s.dir.Account().ID
+	}
+	ip := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(ip); err == nil {
+		ip = host
+	}
+	return authz.NewGate(authz.GateOptions{
+		Principal: auth.FromContext(r.Context()).Principal, Account: account,
+		Provider: s.perms, Sealer: s.sealer, Log: s.log, Now: s.now(), SourceIP: ip,
+	})
 }
 
 // verify returns the identity r's credentials prove, or the error to

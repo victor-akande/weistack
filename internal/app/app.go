@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/victor-akande/weistack/internal/core/auth"
+	"github.com/victor-akande/weistack/internal/core/authz"
 	"github.com/victor-akande/weistack/internal/core/config"
 	"github.com/victor-akande/weistack/internal/core/hostpattern"
 	"github.com/victor-akande/weistack/internal/core/identity"
@@ -159,15 +160,17 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 	}
 
 	srv, err := server.New(server.Options{
-		Config:    cfg,
-		ProjectID: projectID,
-		Logger:    log,
-		Store:     st,
-		Engine:    engine,
-		IDs:       gen,
-		Services:  services,
-		Directory: directory,
-		Tokens:    tokenChecker(services),
+		Config:      cfg,
+		ProjectID:   projectID,
+		Logger:      log,
+		Store:       st,
+		Engine:      engine,
+		IDs:         gen,
+		Services:    services,
+		Directory:   directory,
+		Tokens:      tokenChecker(services),
+		Permissions: permissions(services),
+		Sealer:      vlt,
 		Proxy: server.ProxyOptions{
 			CA: ca, Domains: cfg.ProxyDomains, Bypass: bypass, Passthrough: cfg.ProxyPassthrough,
 		},
@@ -262,6 +265,17 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 	return nil
 }
 
+// permissions returns the service that says what principals may do:
+// IAM, if it is among services.
+func permissions(services []server.Service) authz.Provider {
+	for _, svc := range services {
+		if p, ok := svc.(authz.Provider); ok {
+			return p
+		}
+	}
+	return nil
+}
+
 // tokenChecker returns the service that validates IAM tokens: IAM, if
 // it is among services.
 func tokenChecker(services []server.Service) auth.TokenChecker {
@@ -347,7 +361,7 @@ func buildServices(
 	if err := iamSvc.Resume(ctx); err != nil {
 		return nil, err
 	}
-	stsSvc, err := sts.New(log, directory)
+	stsSvc, err := sts.New(log, directory, vlt)
 	if err != nil {
 		return nil, err
 	}

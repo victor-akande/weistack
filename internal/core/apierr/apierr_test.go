@@ -175,3 +175,35 @@ func TestCauseAndUnwrap(t *testing.T) {
 		t.Error("From should return an existing *Error unchanged")
 	}
 }
+
+func TestAuthorizationMessage(t *testing.T) {
+	t.Parallel()
+	base := New(http.StatusForbidden, "PAP5.0001", "access denied: x")
+	e := base.WithAuthorizationMessage("ENC")
+	if base.AuthorizationMessage != "" {
+		t.Fatal("WithAuthorizationMessage changed the original")
+	}
+	for style, want := range map[Style]string{
+		StyleFlat:          `{"error_code":"PAP5.0001","error_msg":"access denied: x","encoded_authorization_message":"ENC"}`,
+		StyleCodeMessage:   `{"code":"PAP5.0001","message":"access denied: x","encoded_authorization_message":"ENC"}`,
+		StyleFlatRequestID: `{"request_id":"","error_code":"PAP5.0001","error_msg":"access denied: x","encoded_authorization_message":"ENC"}`,
+		StyleNested:        `{"error":{"code":"PAP5.0001","message":"access denied: x"},"encoded_authorization_message":"ENC"}`,
+	} {
+		rec := httptest.NewRecorder()
+		Write(rec, httptest.NewRequest(http.MethodGet, "/", nil), style, e)
+		if got := rec.Body.String(); got != want {
+			t.Errorf("style %d: %s, want %s", style, got, want)
+		}
+	}
+	// The XML envelope has no such field, and other errors omit it.
+	rec := httptest.NewRecorder()
+	Write(rec, httptest.NewRequest(http.MethodGet, "/", nil), StyleXML, e)
+	if strings.Contains(rec.Body.String(), "ENC") {
+		t.Errorf("XML carries the message: %s", rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	Write(rec, httptest.NewRequest(http.MethodGet, "/", nil), StyleFlat, base)
+	if strings.Contains(rec.Body.String(), "encoded_authorization_message") {
+		t.Errorf("an error without a message has the field: %s", rec.Body.String())
+	}
+}

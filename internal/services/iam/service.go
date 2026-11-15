@@ -21,8 +21,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-
 	"github.com/victor-akande/weistack/internal/core/apierr"
 	"github.com/victor-akande/weistack/internal/core/identity"
 	"github.com/victor-akande/weistack/internal/core/ids"
@@ -64,6 +62,8 @@ type Service struct {
 	// mu serialises changes that span records or need unique names.
 	mu     sync.Mutex
 	tokens tokens
+	// perms caches what principals may do (grants.go).
+	perms permissions
 }
 
 // New returns the IAM service.
@@ -88,70 +88,6 @@ func (s *Service) Version() string {
 	return "v3, v3.0, v5 (users, groups, tokens, access keys, roles, custom policies, role assignments, identity policies)"
 }
 
-// Routes implements server.Service.
-func (s *Service) Routes(r chi.Router) {
-	r.Get("/v3/auth/domains", s.handle("KeystoneListAuthDomains", s.handleListAuthDomains))
-	r.Get("/v3/auth/projects", s.handle("KeystoneListAuthProjects", s.handleListAuthProjects))
-	r.Get("/v3/projects", s.handle("KeystoneListProjects", s.handleListProjects))
-	r.Get("/v3/projects/{project_id}", s.handle("KeystoneShowProject", s.handleShowProject))
-
-	r.Post("/v3/auth/tokens", s.handle("KeystoneCreateUserToken", s.handleCreateToken))
-	r.Get("/v3/auth/tokens", s.handle("KeystoneValidateToken", s.handleValidateToken))
-
-	r.Post("/v3.0/OS-USER/users", s.handle("CreateUser", s.handleCreateUser))
-	r.Get("/v3.0/OS-USER/users/{user_id}", s.handle("ShowUser", s.handleShowUser))
-	r.Put("/v3.0/OS-USER/users/{user_id}", s.handle("UpdateUser", s.handleUpdateUser))
-	r.Put("/v3.0/OS-USER/users/{user_id}/info", s.handle("UpdateUserInformation", s.handleUpdateUserInformation))
-	r.Get("/v3.0/OS-USER/users/{user_id}/login-protect", s.handle("ShowUserLoginProtect", s.handleShowLoginProtect))
-	r.Put("/v3.0/OS-USER/users/{user_id}/login-protect", s.handle("UpdateLoginProtect", s.handleUpdateLoginProtect))
-	r.Post("/v3/users", s.handle("KeystoneCreateUser", s.handleKeystoneCreateUser))
-	r.Get("/v3/users", s.handle("KeystoneListUsers", s.handleKeystoneListUsers))
-	r.Get("/v3/users/{user_id}", s.handle("KeystoneShowUser", s.handleKeystoneShowUser))
-	r.Patch("/v3/users/{user_id}", s.handle("KeystoneUpdateUserByAdmin", s.handleKeystoneUpdateUser))
-	r.Delete("/v3/users/{user_id}", s.handle("KeystoneDeleteUser", s.handleKeystoneDeleteUser))
-	r.Post("/v3/users/{user_id}/password", s.handle("KeystoneUpdateUserPassword", s.handleChangePassword))
-	r.Get("/v3/users/{user_id}/groups", s.handle("KeystoneListGroupsForUser", s.handleListGroupsForUser))
-	r.Get("/v3/users/{user_id}/projects", s.handle("KeystoneListProjectsForUser", s.handleListProjectsForUser))
-
-	r.Post("/v3/groups", s.handle("KeystoneCreateGroup", s.handleCreateGroup))
-	r.Get("/v3/groups", s.handle("KeystoneListGroups", s.handleListGroups))
-	r.Get("/v3/groups/{group_id}", s.handle("KeystoneShowGroup", s.handleShowGroup))
-	r.Patch("/v3/groups/{group_id}", s.handle("KeystoneUpdateGroup", s.handleUpdateGroup))
-	r.Delete("/v3/groups/{group_id}", s.handle("KeystoneDeleteGroup", s.handleDeleteGroup))
-	r.Get("/v3/groups/{group_id}/users", s.handle("KeystoneListUsersForGroupByAdmin", s.handleListUsersInGroup))
-	r.Put("/v3/groups/{group_id}/users/{user_id}", s.handle("KeystoneAddUserToGroup", s.handleAddUserToGroup))
-	r.Head("/v3/groups/{group_id}/users/{user_id}", s.handle("KeystoneCheckUserInGroup", s.handleCheckUserInGroup))
-	r.Delete("/v3/groups/{group_id}/users/{user_id}", s.handle("KeystoneRemoveUserFromGroup", s.handleRemoveUserFromGroup))
-
-	r.Post("/v3.0/OS-CREDENTIAL/credentials", s.handle("CreatePermanentAccessKey", s.handleCreateCredential))
-	r.Get("/v3.0/OS-CREDENTIAL/credentials", s.handle("ListPermanentAccessKeys", s.handleListCredentials))
-	r.Get("/v3.0/OS-CREDENTIAL/credentials/{access_key}", s.handle("ShowPermanentAccessKey", s.handleShowCredential))
-	r.Put("/v3.0/OS-CREDENTIAL/credentials/{access_key}", s.handle("UpdatePermanentAccessKey", s.handleUpdateCredential))
-	r.Delete("/v3.0/OS-CREDENTIAL/credentials/{access_key}", s.handle("DeletePermanentAccessKey", s.handleDeleteCredential))
-
-	s.roleRoutes(r)
-	s.policyRoutes(r)
-
-	r.Post("/v5/users", s.handle("CreateUserV5", s.handleCreateUserV5))
-	r.Get("/v5/users", s.handle("ListUsersV5", s.handleListUsersV5))
-	r.Get("/v5/users/{user_id}", s.handle("ShowUserV5", s.handleShowUserV5))
-	r.Put("/v5/users/{user_id}", s.handle("UpdateUserV5", s.handleUpdateUserV5))
-	r.Delete("/v5/users/{user_id}", s.handle("DeleteUserV5", s.handleDeleteUserV5))
-	r.Get("/v5/users/{user_id}/last-login", s.handle("ShowUserLastLoginV5", s.handleShowUserLastLoginV5))
-	r.Post("/v5/users/{user_id}/access-keys", s.handle("CreateAccessKeyV5", s.handleCreateAccessKeyV5))
-	r.Get("/v5/users/{user_id}/access-keys", s.handle("ListAccessKeysV5", s.handleListAccessKeysV5))
-	r.Put("/v5/users/{user_id}/access-keys/{access_key_id}", s.handle("UpdateAccessKeyV5", s.handleUpdateAccessKeyV5))
-	r.Delete("/v5/users/{user_id}/access-keys/{access_key_id}", s.handle("DeleteAccessKeyV5", s.handleDeleteAccessKeyV5))
-	r.Get("/v5/users/{user_id}/access-keys/{access_key_id}/last-used", s.handle("ShowAccessKeyLastUsedV5", s.handleShowAccessKeyLastUsedV5))
-	r.Post("/v5/groups", s.handle("CreateGroupV5", s.handleCreateGroupV5))
-	r.Get("/v5/groups", s.handle("ListGroupsV5", s.handleListGroupsV5))
-	r.Get("/v5/groups/{group_id}", s.handle("ShowGroupV5", s.handleShowGroupV5))
-	r.Put("/v5/groups/{group_id}", s.handle("UpdateGroupV5", s.handleUpdateGroupV5))
-	r.Delete("/v5/groups/{group_id}", s.handle("DeleteGroupV5", s.handleDeleteGroupV5))
-	r.Post("/v5/groups/{group_id}/add-user", s.handle("AddUserToGroupV5", s.v5Membership(true)))
-	r.Post("/v5/groups/{group_id}/remove-user", s.handle("RemoveUserFromGroupV5", s.v5Membership(false)))
-}
-
 func (s *Service) account() identity.Account { return s.dir.Account() }
 
 func (s *Service) projects() store.Collection[project] {
@@ -170,6 +106,14 @@ func (s *Service) handle(op string, fn handler) http.HandlerFunc {
 		info.SetOperation(op)
 		// The SDK quotes this header in its error messages.
 		w.Header().Set("X-IAM-Trace-Id", info.RequestID)
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			// Any change may change what someone may do. The cache is
+			// invalidated before the change and again before the response
+			// leaves, so no grants computed from the data mid-change
+			// survive to answer the client's next request.
+			s.perms.changed()
+			w = &changeWriter{ResponseWriter: w, changed: s.perms.changed}
+		}
 		err := fn(w, r)
 		if err == nil {
 			return
@@ -182,17 +126,47 @@ func (s *Service) handle(op string, fn handler) http.HandlerFunc {
 	}
 }
 
+// changeWriter calls changed once, before the first byte of the response.
+type changeWriter struct {
+	http.ResponseWriter
+	changed func()
+	done    bool
+}
+
+func (c *changeWriter) mark() {
+	if !c.done {
+		c.done = true
+		c.changed()
+	}
+}
+
+func (c *changeWriter) WriteHeader(code int) {
+	c.mark()
+	c.ResponseWriter.WriteHeader(code)
+}
+
+func (c *changeWriter) Write(b []byte) (int, error) {
+	c.mark()
+	return c.ResponseWriter.Write(b)
+}
+
+// Unwrap lets http.ResponseController reach the underlying writer.
+func (c *changeWriter) Unwrap() http.ResponseWriter { return c.ResponseWriter }
+
 // regionRE is the shape of a region name, as in a host's region label.
 var regionRE = regexp.MustCompile(`^[a-z]{2,}(-[a-z0-9]+)+$`)
 
 // Resume records the default region's project, so that it is listed
-// from the first request, and the root user, and registers the stored
-// access keys with the directory.
+// from the first request, the root user and the admin group, and
+// registers the stored access keys with the directory.
 func (s *Service) Resume(ctx context.Context) error {
 	if err := s.ensureProject(ctx, s.defaultRegion); err != nil {
 		return err
 	}
 	if err := s.ensureRoot(ctx); err != nil {
+		return err
+	}
+	if err := s.ensureAdminGroup(ctx); err != nil {
 		return err
 	}
 	return s.registerAllKeys(ctx)
@@ -202,6 +176,7 @@ func (s *Service) Resume(ctx context.Context) error {
 // users' access keys are forgotten, and the account's project and root
 // user are recorded again.
 func (s *Service) Reset(ctx context.Context) error {
+	defer s.perms.changed()
 	s.tokens.clear()
 	s.dir.Clear()
 	return s.Resume(ctx)

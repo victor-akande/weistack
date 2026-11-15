@@ -6,10 +6,11 @@ also means a client that signs wrongly, or uses the wrong keys, works
 against WeiStack and fails against Huawei Cloud.
 
 With `-iam=enforce` WeiStack checks every request to an emulated service
-the way Huawei Cloud does: the signature must be valid and made with a key
-WeiStack knows, or the request must carry a valid IAM token. A failure gets
-the error Huawei documents for it, so your client's error handling sees
-what it would see in the cloud.
+the way Huawei Cloud does. The signature must be valid and made with a key
+WeiStack knows, or the request must carry a valid IAM token; and the
+caller's permissions, the policies IAM grants it, must allow the
+operation. A failure gets the error Huawei documents for it, so your
+client's error handling sees what it would see in the cloud.
 
 ```bash
 weistack -iam=enforce
@@ -18,8 +19,7 @@ WEISTACK_IAM=enforce weistack
 ```
 
 The banner and the start log show the mode. Enforcement checks **who** is
-calling, not what they may do: any valid key or token of the account may
-use every API.
+calling and **what they may do**: see [Permissions](#permissions).
 
 ## Which credentials work
 
@@ -43,6 +43,11 @@ use every API.
 
 Temporary credentials (`X-Security-Token`) are not supported yet: a
 temporary access key is refused as unknown.
+
+The CI suites drive permissions with the SDK too: a user in a group with
+`VPC ReadOnlyAccess` lists VPCs but cannot create one, an attached IAM 5.0
+`Deny` overrides the group's `Allow`, and IAM, STS and OBS refuse with
+their own codes.
 
 ## What is checked
 
@@ -100,12 +105,93 @@ lock a key for five minutes; a right one clears the count. The
 administrator's key is never locked, so a typo in CI cannot lock you out
 of the emulator.
 
+## Permissions
+
+Once a caller is known, the operation's IAM action must be allowed. Each
+operation has the action Huawei documents for it, in each service's
+"Identity Policy-based Authorization" table and on its API page: listing
+VPCs is `vpc:vpcs:list`, creating servers `ecs:cloudServers:createServers`
+(in classic policies also its alias, `ecs:cloudServers:create`).
+
+**Who holds everything:** the administrator's keys, the account's root
+user, and the members of the built-in `admin` group. Add an IAM user to
+`admin` to make it an administrator.
+
+**Everyone else holds what IAM grants them:**
+
+- Classic permissions (system-defined, such as `VPC ReadOnlyAccess`, or
+  custom) granted to the user's groups, by scope, as on the console:
+  - granted for global services (the domain): OBS, IAM, EPS and STS;
+  - granted in a project: requests in that project;
+  - granted for all projects: requests in every project;
+  - granted in the default enterprise project (`0`): every service but IAM.
+- IAM 5.0 identity policies attached to the user or its groups, everywhere.
+
+Evaluation follows Huawei's documented rules: a request is denied unless a
+statement allows it, and a `Deny` anywhere wins. Statements may name
+resources (`vpc:*:*:vpc:<id>`, `obs:*:*:object:my-bucket/logs/*`) and use
+conditions with the global keys `g:UserId`, `g:UserName`, `g:DomainId`,
+`g:DomainName`, `g:ProjectId`, `g:ProjectName`, `g:CurrentTime`,
+`g:SourceIp` and `g:MFAPresent` (always `false`); other keys are absent,
+so an `...IfExists` condition on them holds and a plain one does not.
+
+Huawei does not publish the statements of its system-defined permissions,
+only what each allows. WeiStack's are written to match those tables (see
+[IAM: permissions](services/iam.md#permissions)), and tested against them.
+
+Some operations need no permission, as Huawei documents: signing in,
+listing one's own projects and domains, changing one's own password and
+contact details, reading oneself, managing one's own access keys, polling
+an ECS job, and asking STS who one is.
+
+**A new IAM user can do almost nothing until you grant it something.** This
+includes the SDKs' automatic discovery of the project ID
+(`GET /v3/projects`, `iam:projects:list`): give such a user's clients the
+project ID, as Huawei advises, or grant it the permission.
+
+### Denials
+
+| Service | Status | Body |
+| --- | --- | --- |
+| VPC, ECS, EVS, IMS, RDS, EPS | 403 | `WeiStack.0403`, `Policy doesn't allow <action> to be performed.`, in the service's envelope |
+| IAM (classic) | 403 | `IAM.0003`, `Policy doesn't allow <action> to be performed.` |
+| IAM 5.0 | 403 | `PAP5.0001`, `access denied: ...` |
+| STS | 403 | `STS5.1001`, `you are not authorized to perform this operation` |
+| OBS | 403 | `AccessDenied` (XML); in a batch delete, per refused key |
+
+Huawei documents no permission error for the first group of services, so
+WeiStack answers with its own code, `WeiStack.0403`, as it does
+`WeiStack.0501` for what it does not implement.
+
+Every JSON denial carries `encoded_authorization_message`, as Huawei's do.
+STS's `POST /v5/decode-authorization-message` (which needs
+`sts::decodeAuthorizationMessage`; the administrator has it) turns it into
+the reason, in the fields of Huawei's example:
+
+```json
+{"context":{"user_profile":{"user_id":"...","user_name":"dev","domain_id":"..."},
+ "action":"vpc:vpcs:create"},"failure":"implicit deny by identity-based policy"}
+```
+
+An explicit Deny says `explicit deny by identity-based policy` and names
+the policy and statement (`Sid`). The emulator's log also records every
+denial at the `info` level, with the action, resources, user and reason.
+
 ## Not covered
 
-- **Permissions.** Any valid principal may use every API; policies and
-  role assignments are recorded but not evaluated.
-- **Anonymous OBS access.** Requests without credentials are refused, even
-  to buckets whose ACL would allow them.
+- **Resource policies.** OBS bucket policies and ACLs are not evaluated,
+  and requests without credentials are refused, even to buckets whose ACL
+  would allow them.
+- **Service-specific condition keys** (such as `ecs:FlavorId` or
+  `obs:prefix`) and resource tags (`g:ResourceTag/<key>`) are absent from
+  requests.
+- **Resources named in request bodies.** An operation that creates a
+  resource, or acts on one its body names (a subnet's VPC, the user a
+  policy is attached to), is checked on no particular resource, or on all
+  of their type: a statement limited to named resources does not allow it.
+  Operations on resources named in the path are checked on them.
+- **Temporary credentials and agencies** (`X-Security-Token`, assumed
+  agencies) are not supported yet.
 - **The admin API** (`/_weistack/*`) is not protected by `-iam`: keep the
   emulator's port to yourself.
 - **Other algorithms.** The SDKs' opt-in algorithms (`V11-HMAC-SHA256`,

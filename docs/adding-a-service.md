@@ -40,6 +40,18 @@ Optional interfaces:
 
 Then construct the service in `buildServices` in `internal/app/app.go`.
 
+**Every route names its IAM action**, for `-iam=enforce`
+(`core/authz`): declare the service with
+`r.Use(authz.Service(authz.ServiceOptions{Name, Style, ...}))` and each
+route with `r.With(authz.Action("vpc:vpcs:get", authz.Param("vpc", "vpc_id")))`.
+The action must be in `core/actions`'s catalogue, copied from the
+service's "Identity Policy-based Authorization" table and checked on the
+operation's API page. A route whose action depends on its body declares
+`authz.Defer()` and calls `authz.Check` once it knows; one Huawei documents
+as needing no permission declares `authz.Public()`.
+`internal/app/authz_coverage_test.go` fails for a route that declares
+nothing.
+
 Some APIs do not put the project ID in the path (IMS, for example). Take it
 from `auth.FromContext(ctx).ProjectID`, the `X-Project-Id` header the SDKs
 send, and fall back to the emulator's default project.

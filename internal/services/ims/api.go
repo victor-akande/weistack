@@ -9,19 +9,25 @@ import (
 
 	"github.com/victor-akande/weistack/internal/core/apierr"
 	"github.com/victor-akande/weistack/internal/core/auth"
+	"github.com/victor-akande/weistack/internal/core/authz"
 	"github.com/victor-akande/weistack/internal/core/httpx"
 	"github.com/victor-akande/weistack/internal/core/pagination"
 	"github.com/victor-akande/weistack/internal/core/reqctx"
 )
 
 // Routes implements server.Service. Paths are those of the real API.
+// IMS's API pages name no actions; these are the action table's
+// (usermanual-permissions iam_11_0008). Images are created only from
+// ECS servers, which is ims:serverImages:create.
 func (s *Service) Routes(r chi.Router) {
-	r.Get("/v2/cloudimages", s.handle("ListImages", s.handleListImages))
-	r.Post("/v2/cloudimages/action", s.handle("CreateImage", s.handleCreateImage))
-	r.Patch("/v2/cloudimages/{image_id}", s.handle("UpdateImage", s.handleUpdateImage))
-	r.Get("/v2/images/{image_id}", s.handle("GlanceShowImage", s.handleShowImage))
-	r.Delete("/v2/images/{image_id}", s.handle("GlanceDeleteImage", s.handleDeleteImage))
-	r.Get("/v1/{project_id}/jobs/{job_id}", s.handle("ShowJob", s.handleShowJob))
+	act, image := authz.Action, authz.Param("image", "image_id")
+	r.Use(authz.Service(authz.ServiceOptions{Name: "ims", Style: apierr.StyleNested}))
+	r.With(act("ims:images:list")).Get("/v2/cloudimages", s.handle("ListImages", s.handleListImages))
+	r.With(act("ims:serverImages:create")).Post("/v2/cloudimages/action", s.handle("CreateImage", s.handleCreateImage))
+	r.With(act("ims:images:updateImage", image)).Patch("/v2/cloudimages/{image_id}", s.handle("UpdateImage", s.handleUpdateImage))
+	r.With(act("ims:images:get", image)).Get("/v2/images/{image_id}", s.handle("GlanceShowImage", s.handleShowImage))
+	r.With(act("ims:images:deleteImage", image)).Delete("/v2/images/{image_id}", s.handle("GlanceDeleteImage", s.handleDeleteImage))
+	r.With(act("ims:images:getJob")).Get("/v1/{project_id}/jobs/{job_id}", s.handle("ShowJob", s.handleShowJob))
 }
 
 // listLimits bounds "limit" on ListImages: 1 to 1000, 1000 when omitted.

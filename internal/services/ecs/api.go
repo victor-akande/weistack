@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/victor-akande/weistack/internal/core/apierr"
+	"github.com/victor-akande/weistack/internal/core/authz"
 	"github.com/victor-akande/weistack/internal/core/httpx"
 	"github.com/victor-akande/weistack/internal/core/pagination"
 	"github.com/victor-akande/weistack/internal/core/reqctx"
@@ -17,25 +18,44 @@ import (
 )
 
 // Routes implements server.Service. Paths are those of the real API.
+// Each route names the IAM action it needs (usermanual-permissions
+// iam_11_0007, checked against each operation's API page); start, stop,
+// reboot, delete and tag changes name theirs once the body is read.
 func (s *Service) Routes(r chi.Router) {
-	r.Get("/v1/{project_id}/cloudservers/flavors", s.handle("ListFlavors", s.handleListFlavors))
+	act, server := authz.Action, authz.Param("instance", "server_id")
+	r.Use(authz.Service(authz.ServiceOptions{Name: "ecs", Style: apierr.StyleNested}))
+	r.With(act("ecs:cloudServerFlavors:get")).Get("/v1/{project_id}/cloudservers/flavors", s.handle("ListFlavors", s.handleListFlavors))
 
 	// Pay-per-use creation exists under two versions with one body.
-	r.Post("/v1/{project_id}/cloudservers", s.handle("CreatePostPaidServers", s.handleCreateServers))
-	r.Post("/v1.1/{project_id}/cloudservers", s.handle("CreateServers", s.handleCreateServers))
-	r.Get("/v1/{project_id}/cloudservers/detail", s.handle("ListServersDetails", s.handleListServers))
-	r.Post("/v1/{project_id}/cloudservers/delete", s.handle("DeleteServers", s.handleDeleteServers))
-	r.Post("/v1/{project_id}/cloudservers/action", s.handle("BatchAction", s.handleBatchAction))
-	r.Get("/v1/{project_id}/cloudservers/tags", s.handle("ListServerTags", s.handleListProjectTags))
-	r.Get("/v1/{project_id}/cloudservers/{server_id}", s.handle("ShowServer", s.handleShowServer))
-	r.Put("/v1/{project_id}/cloudservers/{server_id}", s.handle("UpdateServer", s.handleUpdateServer))
-	r.Post("/v1/{project_id}/cloudservers/{server_id}/resize", s.handle("ResizePostPaidServer", s.handleResize))
-	r.Get("/v1/{project_id}/cloudservers/{server_id}/block_device", s.handle("ListServerBlockDevices", s.handleListBlockDevices))
-	r.Get("/v1/{project_id}/cloudservers/{server_id}/block_device/{volume_id}", s.handle("ShowServerBlockDevice", s.handleShowBlockDevice))
-	r.Get("/v1/{project_id}/cloudservers/{server_id}/tags", s.handle("ShowServerTags", s.handleShowTags))
-	r.Post("/v1/{project_id}/cloudservers/{server_id}/tags/action", s.handle("BatchServerTags", s.handleTagAction))
-	r.Get("/v1/{project_id}/jobs/{job_id}", s.handle("ShowJob", s.handleShowJob))
-	r.Get("/v2.1/{project_id}/os-availability-zone", s.handle("NovaListAvailabilityZones", s.handleListZones))
+	r.With(act("ecs:cloudServers:createServers")).Post("/v1/{project_id}/cloudservers", s.handle("CreatePostPaidServers", s.handleCreateServers))
+	r.With(act("ecs:cloudServers:createServers")).Post("/v1.1/{project_id}/cloudservers", s.handle("CreateServers", s.handleCreateServers))
+	r.With(act("ecs:cloudServers:listServersDetails")).Get("/v1/{project_id}/cloudservers/detail", s.handle("ListServersDetails", s.handleListServers))
+	r.With(authz.Defer()).Post("/v1/{project_id}/cloudservers/delete", s.handle("DeleteServers", s.handleDeleteServers))
+	r.With(authz.Defer()).Post("/v1/{project_id}/cloudservers/action", s.handle("BatchAction", s.handleBatchAction))
+	r.With(act("ecs:cloudServers:listServerTags")).Get("/v1/{project_id}/cloudservers/tags", s.handle("ListServerTags", s.handleListProjectTags))
+	r.With(act("ecs:cloudServers:showServer", server)).Get("/v1/{project_id}/cloudservers/{server_id}", s.handle("ShowServer", s.handleShowServer))
+	r.With(act("ecs:cloudServers:updateServer", server)).Put("/v1/{project_id}/cloudservers/{server_id}", s.handle("UpdateServer", s.handleUpdateServer))
+	r.With(act("ecs:cloudServers:resize", server)).Post("/v1/{project_id}/cloudservers/{server_id}/resize", s.handle("ResizePostPaidServer", s.handleResize))
+	r.With(act("ecs:cloudServers:listServerVolumeAttachments", server)).Get("/v1/{project_id}/cloudservers/{server_id}/block_device", s.handle("ListServerBlockDevices", s.handleListBlockDevices))
+	r.With(act("ecs:cloudServers:showServerBlockDevice", server)).Get("/v1/{project_id}/cloudservers/{server_id}/block_device/{volume_id}", s.handle("ShowServerBlockDevice", s.handleShowBlockDevice))
+	r.With(act("ecs:cloudServers:showServerTags", server)).Get("/v1/{project_id}/cloudservers/{server_id}/tags", s.handle("ShowServerTags", s.handleShowTags))
+	r.With(authz.Defer()).Post("/v1/{project_id}/cloudservers/{server_id}/tags/action", s.handle("BatchServerTags", s.handleTagAction))
+	// Querying a job needs no permission: its API page (ecs_02_0901)
+	// has no authorization section.
+	r.With(authz.Public()).Get("/v1/{project_id}/jobs/{job_id}", s.handle("ShowJob", s.handleShowJob))
+	// The Nova API is discarded and its page names no action; its
+	// replacement, GET /v1/{project_id}/availability-zones (ecs_02_1501),
+	// needs listServersDetails.
+	r.With(act("ecs:cloudServers:listServersDetails")).Get("/v2.1/{project_id}/os-availability-zone", s.handle("NovaListAvailabilityZones", s.handleListZones))
+}
+
+// instances are the URN resources of servers.
+func instances(ids []string) []authz.Resource {
+	out := make([]authz.Resource, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, authz.Resource{Type: "instance", Path: id})
+	}
+	return out
 }
 
 type handler func(w http.ResponseWriter, r *http.Request, t Tenant) error
@@ -218,6 +238,9 @@ func (s *Service) handleDeleteServers(w http.ResponseWriter, r *http.Request, t 
 	for _, ref := range req.Servers {
 		ids = append(ids, ref.ID)
 	}
+	if err := authz.Check(r, "ecs:cloudServers:deleteServers", instances(ids)...); err != nil {
+		return err
+	}
 	job, err := s.DeleteServers(r.Context(), t, ids)
 	if err != nil {
 		return err
@@ -256,13 +279,25 @@ func (s *Service) handleBatchAction(w http.ResponseWriter, r *http.Request, t Te
 	switch {
 	case req.Start != nil && req.Stop == nil && req.Reboot == nil:
 		info.SetOperation("BatchStartServers")
-		job, err = s.StartServers(r.Context(), t, refIDs(req.Start.Servers))
+		ids := refIDs(req.Start.Servers)
+		if err := authz.Check(r, "ecs:cloudServers:start", instances(ids)...); err != nil {
+			return err
+		}
+		job, err = s.StartServers(r.Context(), t, ids)
 	case req.Stop != nil && req.Start == nil && req.Reboot == nil:
 		info.SetOperation("BatchStopServers")
-		job, err = s.StopServers(r.Context(), t, refIDs(req.Stop.Servers), req.Stop.Type)
+		ids := refIDs(req.Stop.Servers)
+		if err := authz.Check(r, "ecs:cloudServers:stop", instances(ids)...); err != nil {
+			return err
+		}
+		job, err = s.StopServers(r.Context(), t, ids, req.Stop.Type)
 	case req.Reboot != nil && req.Start == nil && req.Stop == nil:
 		info.SetOperation("BatchRebootServers")
-		job, err = s.RebootServers(r.Context(), t, refIDs(req.Reboot.Servers), req.Reboot.Type)
+		ids := refIDs(req.Reboot.Servers)
+		if err := authz.Check(r, "ecs:cloudServers:reboot", instances(ids)...); err != nil {
+			return err
+		}
+		job, err = s.RebootServers(r.Context(), t, ids, req.Reboot.Type)
 	default:
 		return errInvalidRequest("request body is illegal: it must contain exactly one of os-start, os-stop and reboot")
 	}
@@ -320,13 +355,20 @@ func (s *Service) handleTagAction(w http.ResponseWriter, r *http.Request, t Tena
 	}
 	id := chi.URLParam(r, "server_id")
 	info := reqctx.From(r.Context())
+	server := authz.Resource{Type: "instance", Path: id}
 	var err error
 	switch req.Action {
 	case "create":
 		info.SetOperation("BatchCreateServerTags")
+		if err := authz.Check(r, "ecs:cloudServers:batchCreateServerTags", server); err != nil {
+			return err
+		}
 		err = s.AddServerTags(r.Context(), t, id, req.Tags)
 	case "delete":
 		info.SetOperation("BatchDeleteServerTags")
+		if err := authz.Check(r, "ecs:cloudServers:batchDeleteServerTags", server); err != nil {
+			return err
+		}
 		err = s.DeleteServerTags(r.Context(), t, id, req.Tags)
 	default:
 		return errInvalidRequest("action must be create or delete")

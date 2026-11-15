@@ -81,11 +81,14 @@ func (s *Service) checkGroupChange(c groupChange) error {
 type groupErrs struct {
 	taken    func(name string) error
 	notFound func(id string) error
+	// builtIn refuses to rename or delete the admin group.
+	builtIn func() error
 }
 
 var classicGroupErrs = groupErrs{
 	taken:    func(name string) error { return errConflict("group", "a group named "+name+" already exists") },
 	notFound: func(id string) error { return errNotFound("group", id) },
+	builtIn:  func() error { return errForbidden() },
 }
 
 // createGroup stores a new group. The caller has validated name and
@@ -106,6 +109,9 @@ func (s *Service) createGroup(r *http.Request, name, description string, e group
 // updateGroup renames or redescribes the group in the path.
 func (s *Service) updateGroup(r *http.Request, name, description *string, e groupErrs) (group, error) {
 	id := chi.URLParam(r, "group_id")
+	if id == s.adminGroupID() && name != nil {
+		return group{}, e.builtIn()
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if name != nil {
@@ -143,6 +149,9 @@ func (s *Service) getGroup(r *http.Request, e groupErrs) (group, error) {
 // deleteGroup removes a group and the roles granted to it.
 func (s *Service) deleteGroup(r *http.Request, e groupErrs) error {
 	id := chi.URLParam(r, "group_id")
+	if id == s.adminGroupID() {
+		return e.builtIn()
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, err := s.groups().Get(r.Context(), id); errors.Is(err, store.ErrNotFound) {

@@ -364,7 +364,8 @@ func TestV5Paging(t *testing.T) {
 		}
 		marker = next
 	}
-	if strings.Join(seen, ",") != "a,b,c" {
+	// The built-in admin group comes first: it was created first.
+	if strings.Join(seen, ",") != "admin,a,b,c" {
 		t.Fatalf("paged = %v", seen)
 	}
 	e.wantErr(t, http.StatusBadRequest, "PAP5.0010", http.MethodGet, "/v5/groups?marker=nope", "")
@@ -460,4 +461,21 @@ func (e *env) dump(t *testing.T) string {
 		}
 	}
 	return b.String()
+}
+
+func TestAdminGroup(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t)
+	out := e.want(t, http.StatusOK, http.MethodGet, "/v3/groups?name=admin", "")
+	groups := list(out["groups"])
+	if len(groups) != 1 {
+		t.Fatalf("admin groups = %v", groups)
+	}
+	id := obj(groups[0])["id"].(string)
+	e.wantErr(t, http.StatusForbidden, "IAM.0002", http.MethodDelete, "/v3/groups/"+id, "")
+	e.wantErr(t, http.StatusForbidden, "IAM.0002", http.MethodPatch, "/v3/groups/"+id, `{"group":{"name":"root"}}`)
+	e.wantErr(t, http.StatusForbidden, "PAP5.0001", http.MethodDelete, "/v5/groups/"+id, "")
+	e.wantErr(t, http.StatusForbidden, "PAP5.0001", http.MethodPut, "/v5/groups/"+id, `{"new_group_name":"root"}`)
+	// Its description can change.
+	e.want(t, http.StatusOK, http.MethodPatch, "/v3/groups/"+id, `{"group":{"description":"Administrators"}}`)
 }
