@@ -135,6 +135,10 @@ conditions with the global keys `g:UserId`, `g:UserName`, `g:DomainId`,
 `g:SourceIp` and `g:MFAPresent` (always `false`); other keys are absent,
 so an `...IfExists` condition on them holds and a plain one does not.
 
+A user's permissions are gathered once per scope and kept until a change
+is made through IAM, which takes effect on the next request. Evaluating
+them costs about a microsecond per request.
+
 Huawei does not publish the statements of its system-defined permissions,
 only what each allows. WeiStack's are written to match those tables (see
 [IAM: permissions](services/iam.md#permissions)), and tested against them.
