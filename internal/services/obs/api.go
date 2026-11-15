@@ -11,6 +11,7 @@ import (
 
 	"github.com/victor-akande/weistack/internal/core/apierr"
 	"github.com/victor-akande/weistack/internal/core/reqctx"
+	"github.com/victor-akande/weistack/internal/core/sigcheck"
 )
 
 // Routes implements server.Service. OBS does not have fixed paths: the
@@ -58,6 +59,9 @@ func (s *Service) serve(w http.ResponseWriter, r *http.Request) {
 // fail renders an error. A HEAD response has no body, so the code and
 // message are also sent as headers, where the SDKs look for them.
 func (s *Service) fail(c *call, op string, err error) {
+	if errors.Is(err, sigcheck.ErrPayloadHash) {
+		err = errContentSHA256Mismatch
+	}
 	var e *apierr.Error
 	if !errors.As(err, &e) {
 		s.log.ErrorContext(c.r.Context(), "obs operation failed", "operation", op, "error", err)

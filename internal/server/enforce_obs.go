@@ -47,6 +47,10 @@ func (s *Server) authenticateOBS(w http.ResponseWriter, r *http.Request, receive
 	if chunks != nil {
 		ctx = sigcheck.WithChunkVerifier(ctx, chunks)
 	}
+	// A body whose SHA-256 the client declared is checked as OBS reads it.
+	if payload := r.Header.Get("X-Amz-Content-Sha256"); sigcheck.SignedPayloadHash(payload) && r.Body != nil && r.Body != http.NoBody {
+		r.Body = sigcheck.CheckPayload(r.Body, payload)
+	}
 	return r.WithContext(ctx)
 }
 

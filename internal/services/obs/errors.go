@@ -16,6 +16,10 @@ var (
 	// signature does not match.
 	errSignatureMismatch = apierr.New(http.StatusForbidden, "SignatureDoesNotMatch",
 		"The signature included in the request does not match the signature calculated by the system.")
+	// errContentSHA256Mismatch answers a body whose SHA-256 is not the
+	// x-amz-content-sha256 the client signed.
+	errContentSHA256Mismatch = apierr.New(http.StatusBadRequest, "ContentSHA256Mismatch",
+		"The object's SHA-256 value calculated by the client is different from that calculated by the server.")
 	errMalformedXML = apierr.New(http.StatusBadRequest, "MalformedXML",
 		"The XML you provided was not well-formed or did not validate against our published schema")
 	errInvalidBucketName = apierr.New(http.StatusBadRequest, "InvalidBucketName", "The specified bucket is not valid.")

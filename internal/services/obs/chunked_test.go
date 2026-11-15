@@ -1,8 +1,12 @@
 package obs
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -39,5 +43,34 @@ func TestChunkSignaturesChecked(t *testing.T) {
 	// Without a verifier, signatures are ignored.
 	if _, err := io.ReadAll(newAWSChunkedReader(strings.NewReader(awsExampleBody('b')), nil)); err != nil {
 		t.Fatalf("unchecked: %v", err)
+	}
+}
+
+// TestPayloadHashMismatch serves an upload whose body the server wrapped
+// in a SHA-256 check, as it does with -iam=enforce: a body that does not
+// match is refused with ContentSHA256Mismatch, and nothing is stored.
+func TestPayloadHashMismatch(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t)
+	e.bucket(t, "hashed")
+	sum := sha256.Sum256([]byte("declared"))
+
+	for body, want := range map[string]int{"declared": http.StatusOK, "changed!": http.StatusBadRequest} {
+		r := httptest.NewRequest(http.MethodPut, "/hashed/k", nil)
+		r.Host = testHost
+		r.Header.Set("Authorization", alice)
+		r.Body = sigcheck.CheckPayload(io.NopCloser(strings.NewReader(body)), hex.EncodeToString(sum[:]))
+		r.ContentLength = int64(len(body))
+		w := httptest.NewRecorder()
+		e.handler.ServeHTTP(w, r)
+		if w.Code != want {
+			t.Fatalf("%q: %d %s", body, w.Code, w.Body)
+		}
+		if want == http.StatusBadRequest && !strings.Contains(w.Body.String(), "<Code>ContentSHA256Mismatch</Code>") {
+			t.Fatalf("%q: %s", body, w.Body)
+		}
+	}
+	if n := e.blobFiles(t); n != 1 {
+		t.Fatalf("%d bodies stored, want only the matching one", n)
 	}
 }

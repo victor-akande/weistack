@@ -263,7 +263,9 @@ OBS takes OBS and S3 v2 signatures and S3 signature version 4, in the
 `Authorization` header or a pre-signed URL, and checks each chunk's
 signature in `aws-chunked` uploads. It answers failures with OBS's
 documented codes (`InvalidAccessKeyId`, `SignatureDoesNotMatch`,
-`RequestTimeTooSkewed`, `AccessDenied`, `TooManyWrongSignature`).
+`RequestTimeTooSkewed`, `AccessDenied`, `TooManyWrongSignature`), and a
+body that does not match the `x-amz-content-sha256` it was signed with
+with `ContentSHA256Mismatch`.
 Anonymous OBS requests are refused until bucket ACLs and policies are
 evaluated.
 

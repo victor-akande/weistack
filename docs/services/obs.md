@@ -76,8 +76,10 @@ dialect with `obs.WithSignature(obs.SignatureObs)`.
   chunk of an `aws-chunked` upload. Failures get OBS's documented codes:
   `InvalidAccessKeyId`, `SignatureDoesNotMatch` (also for a chunk, which
   ends the upload), `RequestTimeTooSkewed` (a clock more than 15 minutes
-  off), `AccessDenied` (no credentials, no date, or an expired URL) and
-  `TooManyWrongSignature` (a locked key).
+  off), `AccessDenied` (no credentials, no date, or an expired URL),
+  `TooManyWrongSignature` (a locked key) and `ContentSHA256Mismatch` (a
+  body whose SHA-256 is not the `x-amz-content-sha256` the client sent;
+  nothing is stored).
 - **Ownership follows the access key.** A key WeiStack knows (the
   administrator's or an IAM user's) acts for the account, so all of them
   share the account's buckets, as on Huawei Cloud. Any other key, as
