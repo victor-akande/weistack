@@ -14,7 +14,10 @@ import (
 // callerAs asks STS who the holder of an access key is.
 func callerAs(t *testing.T, ak, sk string) *sts.GetCallerIdentityResponse {
 	t.Helper()
-	creds, err := basic.NewCredentialsBuilder().WithAk(ak).WithSk(sk).SafeBuild()
+	// The project is given: a user without permissions cannot have the
+	// SDK discover it (GET /v3/projects needs iam:projects:list), with
+	// credentials enforced as on Huawei Cloud.
+	creds, err := basic.NewCredentialsBuilder().WithAk(ak).WithSk(sk).WithProjectId(projectID).SafeBuild()
 	if err != nil {
 		t.Fatal(err)
 	}
