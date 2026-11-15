@@ -18,6 +18,19 @@ variable "project_id" {
   description = "The emulator's project ID (GET /_weistack/services)."
 }
 
+variable "access_key" {
+  type        = string
+  default     = "AKWEISTACKTERRAFORM"
+  description = "The access key. Any works by default; with -iam=enforce, run.sh passes the administrator's."
+}
+
+variable "secret_key" {
+  type        = string
+  default     = "weistack-does-not-verify-signatures"
+  sensitive   = true
+  description = "The secret key that goes with access_key."
+}
+
 variable "db_password" {
   type        = string
   sensitive   = true
@@ -26,8 +39,8 @@ variable "db_password" {
 
 provider "huaweicloud" {
   region     = "ap-southeast-1"
-  access_key = "AKWEISTACKTERRAFORM"
-  secret_key = "weistack-does-not-verify-signatures"
+  access_key = var.access_key
+  secret_key = var.secret_key
   project_id = var.project_id
   # No domain_id: the provider finds the account through IAM, as with the
   # real cloud.

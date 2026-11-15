@@ -103,6 +103,10 @@ jobs:
           export TF_PLUGIN_CACHE_DIR="$HOME/.terraform.d/plugin-cache"
           mkdir -p "$TF_PLUGIN_CACHE_DIR"
           make test-terraform
+      - name: The same with credentials enforced (-iam=enforce)
+        run: |
+          export TF_PLUGIN_CACHE_DIR="$HOME/.terraform.d/plugin-cache"
+          WEISTACK_TF_IAM=enforce make test-terraform
 
   perf:
     name: perf
