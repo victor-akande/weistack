@@ -207,7 +207,9 @@ func TestTemporaryCredentials(t *testing.T) {
 	if _, err := oc.CreateBucket(&obs.CreateBucketInput{Bucket: bucket}); err != nil {
 		t.Fatalf("CreateBucket with temporary credentials: %v", err)
 	}
-	t.Cleanup(func() { _, _ = newOBSWithKey(t, emulatorAddr, partner.AK, partner.SK, obs.SignatureObs, false).DeleteBucket(bucket) })
+	t.Cleanup(func() {
+		_, _ = newOBSWithKey(t, emulatorAddr, partner.AK, partner.SK, obs.SignatureObs, false).DeleteBucket(bucket)
+	})
 	if _, err := mine.vpc(t, partner.ProjectID).ListVpcs(&vpc.ListVpcsRequest{}); err != nil {
 		t.Fatalf("ListVpcs with an OBS-only session policy: %v", err)
 	}
