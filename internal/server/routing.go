@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/victor-akande/weistack/internal/core/apierr"
+	"github.com/victor-akande/weistack/internal/core/authz"
 	"github.com/victor-akande/weistack/internal/core/reqctx"
 )
 
@@ -81,6 +82,7 @@ func (s *Server) dispatch(m *mounted, w http.ResponseWriter, r *http.Request, re
 		if r = s.authenticate(m, w, r, received); r == nil {
 			return
 		}
+		r = r.WithContext(authz.WithGate(r.Context(), s.gate(r)))
 	}
 	m.handler.ServeHTTP(w, r)
 }

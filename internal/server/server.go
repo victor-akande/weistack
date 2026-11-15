@@ -19,6 +19,7 @@ import (
 
 	"github.com/victor-akande/weistack/internal/core/apierr"
 	"github.com/victor-akande/weistack/internal/core/auth"
+	"github.com/victor-akande/weistack/internal/core/authz"
 	"github.com/victor-akande/weistack/internal/core/config"
 	"github.com/victor-akande/weistack/internal/core/identity"
 	"github.com/victor-akande/weistack/internal/core/ids"
@@ -75,6 +76,11 @@ type Options struct {
 	Directory *identity.Directory
 	// Tokens validates IAM tokens when credentials are enforced.
 	Tokens auth.TokenChecker
+	// Permissions says what principals may do when credentials are
+	// enforced (IAM). Nil denies every principal but the administrator.
+	Permissions authz.Provider
+	// Sealer encrypts the explanations of permission denials.
+	Sealer authz.Sealer
 	// Now defaults to time.Now; enforcement checks signing times with it.
 	Now func() time.Time
 }
@@ -98,6 +104,8 @@ type Server struct {
 	ca       *tlsca.Authority
 	dir      *identity.Directory
 	tokens   auth.TokenChecker
+	perms    authz.Provider
+	sealer   authz.Sealer
 	now      func() time.Time
 }
 
@@ -155,6 +163,7 @@ func New(opts Options) (*Server, error) {
 	s.ca = opts.Proxy.CA
 	s.dir = opts.Directory
 	s.tokens = opts.Tokens
+	s.perms, s.sealer = opts.Permissions, opts.Sealer
 	s.now = opts.Now
 	if s.now == nil {
 		s.now = time.Now
