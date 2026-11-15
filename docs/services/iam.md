@@ -142,8 +142,15 @@ by name or display name, as Terraform's `huaweicloud_identity_role` does.
 - **Catalog:** `BASE` for the account-wide permissions and Server
   Administrator, as Huawei's examples show; otherwise the service's
   abbreviation, which is assumed.
-- **Statements** are not emulated yet: every system permission's policy has
-  an empty `Statement` list.
+- **Statements:** Huawei publishes what each system permission allows, not
+  its statements, so WeiStack's are written to match the documented
+  tables: a FullAccess policy allows `<service>:*:*`, a ReadOnlyAccess
+  policy `<service>:*:get*` and `<service>:*:list*` (which, through the
+  classic action aliases, cover every read), OBS's permissions the bucket
+  and object actions Huawei lists for them, and the roles what their
+  descriptions say (Tenant Administrator: every service but IAM; Tenant
+  Guest: reads of every service but IAM; Security Administrator: IAM). A
+  test checks each against Huawei's tables.
 
 **Custom policies** are checked as Huawei documents:
 
@@ -154,6 +161,11 @@ by name or display name, as Terraform's `huaweicloud_identity_role` does.
   characters, and each statement has an `Effect` of `Allow` or `Deny` and an
   `Action` (or `NotAction`) list of at most 100 actions such as
   `obs:bucket:GetBucketAcl`.
+- `Resource` entries are `*` or URNs such as `obs:*:*:bucket:*`
+  (`IAM.1045`), and `Condition` uses the documented operators (unknown
+  ones are `IAM.1059`), keys such as `g:UserName` (`IAM.1052`), lists of
+  values (`IAM.1053`) and values that suit the operator, such as ISO 8601
+  times for date operators (`IAM.1057`).
 
 A custom policy is named `custom_<account ID>_<n>`, with catalog
 `CUSTOMED`, and its times are Unix milliseconds, as on Huawei Cloud. The
@@ -202,8 +214,9 @@ IAM 5.0's custom identity policies, attached to users and groups.
 - **Documents** follow IAM 5.0's grammar: `Version` `5.0` and a non-empty
   `Statement` list. Each statement has an optional `Sid`, an `Effect` of
   `Allow` or `Deny`, exactly one of `Action` and `NotAction`, at most one
-  of `Resource` and `NotResource`, and an optional `Condition` map.
-  Anything else is `PAP5.0011`. A document is at most 6,144 bytes once
+  of `Resource` and `NotResource` (`*` or URNs), and an optional
+  `Condition` map of the documented operators. Anything else is
+  `PAP5.0011`. A document is at most 6,144 bytes once
   compacted.
 - **Names** have 1 to 128 letters, digits and `_+=.@-`, and are unique in
   the account. A path is empty or segments that each end with `/`. The URN
