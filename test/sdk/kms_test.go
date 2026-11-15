@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
+	v5 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v5/model"
 	kmsv2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/kms/v2"
 	kms "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/kms/v2/model"
 	kmsregion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/kms/v2/region"
@@ -19,7 +20,13 @@ import (
 // kmsAs builds a KMS client that signs with ak and sk in the project.
 func kmsAs(t *testing.T, ak, sk string) *kmsv2.KmsClient {
 	t.Helper()
-	creds, err := basic.NewCredentialsBuilder().WithAk(ak).WithSk(sk).WithProjectId(projectID).SafeBuild()
+	return kmsIn(t, ak, sk, projectID)
+}
+
+// kmsIn builds a KMS client that signs with ak and sk in project.
+func kmsIn(t *testing.T, ak, sk, project string) *kmsv2.KmsClient {
+	t.Helper()
+	creds, err := basic.NewCredentialsBuilder().WithAk(ak).WithSk(sk).WithProjectId(project).SafeBuild()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,4 +191,71 @@ func TestKMSSigningAndMACs(t *testing.T) {
 			t.Errorf("DeleteKey: %v", err)
 		}
 	}
+}
+
+// TestKMSGrants: an IAM user with no permissions, and another account,
+// use a key through grants alone; revoking ends it. With credentials
+// enforced, what was not granted is refused.
+func TestKMSGrants(t *testing.T) {
+	t.Parallel()
+	suffix := strings.ToLower(rand.Text()[:6])
+	admin := kmsAs(t, signingAK("AKKMSGRANTS000000000"), signingSK())
+	_, admin5 := iamClients(t, "AKKMSGRANTS000000000")
+	u, err := admin5.CreateUserV5(&v5.CreateUserV5Request{Body: &v5.CreateUserReqBody{Name: "sdk-grantee-" + suffix, Enabled: true}})
+	if err != nil {
+		t.Fatalf("CreateUserV5: %v", err)
+	}
+	uid := u.User.UserId
+	t.Cleanup(func() { _, _ = admin5.DeleteUserV5(&v5.DeleteUserV5Request{UserId: uid}) })
+	ak, err := admin5.CreateAccessKeyV5(&v5.CreateAccessKeyV5Request{UserId: uid})
+	if err != nil {
+		t.Fatalf("CreateAccessKeyV5: %v", err)
+	}
+	user := kmsAs(t, ak.AccessKey.AccessKeyId, ak.AccessKey.SecretAccessKey)
+	partner := addAccount(t, "sdk-kms-partner-"+suffix)
+	other := kmsIn(t, partner.AK, partner.SK, partner.ProjectID)
+
+	k, err := admin.CreateKey(&kms.CreateKeyRequest{Body: &kms.CreateKeyRequestBody{KeyAlias: "sdk-granted-" + suffix}})
+	if err != nil {
+		t.Fatalf("CreateKey: %v", err)
+	}
+	id := *k.KeyInfo.KeyId
+	t.Cleanup(func() {
+		_, _ = admin.DeleteKey(&kms.DeleteKeyRequest{Body: &kms.ScheduleKeyDeletionRequestBody{KeyId: id, PendingDays: "7"}})
+	})
+	typ := kms.GetCreateGrantRequestBodyGranteePrincipalTypeEnum()
+	for _, g := range []kms.CreateGrantRequestBody{
+		{KeyId: id, GranteePrincipal: uid, Operations: []string{"encrypt-data"}},
+		{KeyId: id, GranteePrincipal: partner.ID, GranteePrincipalType: &typ.DOMAIN, Operations: []string{"decrypt-data"}},
+	} {
+		if _, err := admin.CreateGrant(&kms.CreateGrantRequest{Body: &g}); err != nil {
+			t.Fatalf("CreateGrant: %v", err)
+		}
+	}
+
+	// The user encrypts; the partner, in its own project, decrypts.
+	enc, err := user.EncryptData(&kms.EncryptDataRequest{Body: &kms.EncryptDataRequestBody{KeyId: id, PlainText: "granted"}})
+	if err != nil {
+		t.Fatalf("EncryptData as the grantee: %v", err)
+	}
+	dec, err := other.DecryptData(&kms.DecryptDataRequest{Body: &kms.DecryptDataRequestBody{CipherText: *enc.CipherText}})
+	if err != nil || *dec.PlainText != "granted" {
+		t.Fatalf("DecryptData as the other account = %+v, %v", dec, err)
+	}
+	if enforcing {
+		_, err = user.ListKeyDetail(&kms.ListKeyDetailRequest{Body: &kms.OperateKeyRequestBody{KeyId: id}})
+		denialOf(t, err, "KMS.0306")
+	}
+
+	grants, err := admin.ListGrants(&kms.ListGrantsRequest{Body: &kms.ListGrantsRequestBody{KeyId: id}})
+	if err != nil || *grants.Total != 2 {
+		t.Fatalf("ListGrants = %+v, %v", grants, err)
+	}
+	for _, g := range *grants.Grants {
+		if _, err := admin.CancelGrant(&kms.CancelGrantRequest{Body: &kms.RevokeGrantRequestBody{KeyId: id, GrantId: *g.GrantId}}); err != nil {
+			t.Fatalf("CancelGrant: %v", err)
+		}
+	}
+	_, err = other.DecryptData(&kms.DecryptDataRequest{Body: &kms.DecryptDataRequestBody{CipherText: *enc.CipherText}})
+	wantError(t, err, 404, "KMS.0207")
 }
