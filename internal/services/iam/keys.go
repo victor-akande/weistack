@@ -263,6 +263,9 @@ func (s *Service) handleCreateCredential(w http.ResponseWriter, r *http.Request)
 	case b.Credential.UserID == nil || *b.Credential.UserID == "":
 		return errRequired("user_id")
 	}
+	if err := s.authorizeOwn(r, *b.Credential.UserID, "iam::createAccessKey"); err != nil {
+		return err
+	}
 	u, err := s.users().Get(r.Context(), *b.Credential.UserID)
 	if errors.Is(err, store.ErrNotFound) {
 		return errNotFound("user", *b.Credential.UserID)
@@ -298,6 +301,9 @@ func (s *Service) handleListCredentials(w http.ResponseWriter, r *http.Request) 
 	if userID == "" {
 		userID = s.caller(r)
 	}
+	if err := s.authorizeOwn(r, userID, "iam::listAccessKeys"); err != nil {
+		return err
+	}
 	if _, err := s.users().Get(r.Context(), userID); errors.Is(err, store.ErrNotFound) {
 		return errNotFound("user", userID)
 	} else if err != nil {
@@ -316,19 +322,28 @@ func (s *Service) handleListCredentials(w http.ResponseWriter, r *http.Request) 
 	return httpx.WriteJSON(w, http.StatusOK, out)
 }
 
-func (s *Service) getCredential(r *http.Request) (accessKey, error) {
+// getCredential returns the access key in the path, if the caller may
+// perform action on it: its owner always may.
+func (s *Service) getCredential(r *http.Request, action string) (accessKey, error) {
 	ak := chi.URLParam(r, "access_key")
 	k, err := s.accessKeys().Get(r.Context(), ak)
-	if errors.Is(err, store.ErrNotFound) {
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return accessKey{}, err
+	}
+	// Whether the key exists is not told to who may not ask.
+	if err := s.authorizeOwn(r, k.UserID, action); err != nil {
+		return accessKey{}, err
+	}
+	if k.ID == "" {
 		return accessKey{}, errNotFound("credential", ak)
 	}
-	return k, err
+	return k, nil
 }
 
 // GET /v3.0/OS-CREDENTIAL/credentials/{access_key}. A key never used
 // shows its creation time as its last use, as documented.
 func (s *Service) handleShowCredential(w http.ResponseWriter, r *http.Request) error {
-	k, err := s.getCredential(r)
+	k, err := s.getCredential(r, "iam::getAccessKey")
 	if err != nil {
 		return err
 	}
@@ -342,6 +357,11 @@ func (s *Service) handleShowCredential(w http.ResponseWriter, r *http.Request) e
 
 // PUT /v3.0/OS-CREDENTIAL/credentials/{access_key}.
 func (s *Service) handleUpdateCredential(w http.ResponseWriter, r *http.Request) error {
+	// Permission first, as the gateway checks it before the body.
+	k, err := s.getCredential(r, "iam::updateAccessKey")
+	if err != nil {
+		return err
+	}
 	var b struct {
 		Credential *struct {
 			Status      *string `json:"status"`
@@ -357,10 +377,6 @@ func (s *Service) handleUpdateCredential(w http.ResponseWriter, r *http.Request)
 	if !validKeyStatus(b.Credential.Status) {
 		return errInvalidField("status", *b.Credential.Status)
 	}
-	k, err := s.getCredential(r)
-	if err != nil {
-		return err
-	}
 	ak := k.ID
 	k, err = s.updateKey(r.Context(), k, b.Credential.Status, b.Credential.Description)
 	if errors.Is(err, store.ErrNotFound) {
@@ -374,7 +390,7 @@ func (s *Service) handleUpdateCredential(w http.ResponseWriter, r *http.Request)
 
 // DELETE /v3.0/OS-CREDENTIAL/credentials/{access_key}.
 func (s *Service) handleDeleteCredential(w http.ResponseWriter, r *http.Request) error {
-	k, err := s.getCredential(r)
+	k, err := s.getCredential(r, "iam::deleteAccessKey")
 	if err != nil {
 		return err
 	}
