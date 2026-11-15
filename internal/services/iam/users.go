@@ -1,6 +1,7 @@
 package iam
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"slices"
@@ -59,15 +60,17 @@ type userResponse[V any] struct {
 }
 
 func (s *Service) keystoneView(r *http.Request, u user) keystoneUserView {
+	ctx := r.Context()
 	return keystoneUserView{
-		ID: u.ID, Name: u.Name, DomainID: s.account().ID, Description: u.Description, Enabled: u.Enabled,
+		ID: u.ID, Name: u.Name, DomainID: s.account(ctx).ID, Description: u.Description, Enabled: u.Enabled,
 		PwdStatus: u.PwdStatus, AccessMode: u.AccessMode, Links: selfLinks(r, "/v3/users/"+u.ID),
 	}
 }
 
 func (s *Service) osView(r *http.Request, u user) osUserView {
+	ctx := r.Context()
 	v := osUserView{
-		ID: u.ID, Name: u.Name, DomainID: s.account().ID, Description: u.Description, Enabled: u.Enabled,
+		ID: u.ID, Name: u.Name, DomainID: s.account(ctx).ID, Description: u.Description, Enabled: u.Enabled,
 		AccessMode: u.AccessMode, Email: u.Email, AreaCode: u.AreaCode, Phone: u.Phone, PwdStatus: u.PwdStatus,
 		IsDomainOwner: u.Root, CreateTime: u.CreatedAt.UTC().Format(osUserTime),
 		UpdateTime: u.UpdatedAt.UTC().Format(osUserTime), Links: selfLinks(r, "/v3.0/OS-USER/users/"+u.ID),
@@ -96,8 +99,8 @@ type userChange struct {
 }
 
 // apply validates c and applies it to u. Name uniqueness is the caller's.
-func (s *Service) apply(c userChange, u *user, now time.Time) error {
-	if c.DomainID != nil && *c.DomainID != s.account().ID {
+func (s *Service) apply(ctx context.Context, c userChange, u *user, now time.Time) error {
+	if c.DomainID != nil && *c.DomainID != s.account(ctx).ID {
 		return errInvalidField("domain_id", *c.DomainID)
 	}
 	if c.Name != nil {
@@ -160,17 +163,17 @@ func (s *Service) apply(c userChange, u *user, now time.Time) error {
 // createUser stores a new user from c. mandatory is the error for a
 // missing name.
 func (s *Service) createUser(r *http.Request, c userChange, mandatory error) (user, error) {
+	ctx := r.Context()
 	if c.Name == nil || *c.Name == "" {
 		return user{}, mandatory
 	}
 	now := s.now().UTC()
 	u := user{ID: s.ids.Hex32(), Enabled: true, AccessMode: "default", CreatedAt: now}
-	if err := s.apply(c, &u, now); err != nil {
+	if err := s.apply(ctx, c, &u, now); err != nil {
 		return user{}, err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	ctx := r.Context()
 	if _, taken, err := s.userByName(ctx, u.Name); err != nil || taken {
 		if err == nil {
 			err = errUsernameTaken
@@ -183,7 +186,7 @@ func (s *Service) createUser(r *http.Request, c userChange, mandatory error) (us
 		}
 		return user{}, err
 	}
-	return u, s.users().Create(ctx, u.ID, u)
+	return u, s.users(ctx).Create(ctx, u.ID, u)
 }
 
 // updateUser applies c to the user named in the path.
@@ -201,7 +204,7 @@ func (s *Service) updateUser(r *http.Request, c userChange) (user, error) {
 		}
 	}
 	now := s.now().UTC()
-	u, err := s.users().Update(ctx, id, func(u *user) error { return s.apply(c, u, now) })
+	u, err := s.users(ctx).Update(ctx, id, func(u *user) error { return s.apply(ctx, c, u, now) })
 	if errors.Is(err, store.ErrNotFound) {
 		return user{}, errNotFound("user", id)
 	}
@@ -213,8 +216,9 @@ func (s *Service) updateUser(r *http.Request, c userChange) (user, error) {
 }
 
 func (s *Service) getUser(r *http.Request) (user, error) {
+	ctx := r.Context()
 	id := chi.URLParam(r, "user_id")
-	u, err := s.users().Get(r.Context(), id)
+	u, err := s.users(ctx).Get(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
 		return user{}, errNotFound("user", id)
 	}
@@ -332,15 +336,16 @@ type listUsersResponse struct {
 
 // GET /v3/users, filtered by name, enabled and domain_id.
 func (s *Service) handleKeystoneListUsers(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	q := r.URL.Query()
 	enabled := q.Get("enabled")
 	if enabled != "" && enabled != "true" && enabled != "false" {
 		return errInvalidParam("enabled")
 	}
-	if d := q.Get("domain_id"); d != "" && d != s.account().ID {
+	if d := q.Get("domain_id"); d != "" && d != s.account(ctx).ID {
 		return s.writeUsers(w, r, "/v3/users", nil)
 	}
-	all, err := s.users().List(r.Context(), func(u user) bool {
+	all, err := s.users(ctx).List(ctx, func(u user) bool {
 		return (q.Get("name") == "" || u.Name == q.Get("name")) && (enabled == "" || (enabled == "true") == u.Enabled)
 	})
 	if err != nil {
@@ -401,6 +406,7 @@ func (s *Service) handleKeystoneDeleteUser(w http.ResponseWriter, r *http.Reques
 // POST /v3/users/{user_id}/password: a user changes their own password,
 // giving the current one.
 func (s *Service) handleChangePassword(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	var b struct {
 		User *struct {
 			Password         *string `json:"password"`
@@ -420,7 +426,7 @@ func (s *Service) handleChangePassword(w http.ResponseWriter, r *http.Request) e
 	}
 	id := chi.URLParam(r, "user_id")
 	now := s.now().UTC()
-	_, err := s.users().Update(r.Context(), id, func(u *user) error {
+	_, err := s.users(ctx).Update(ctx, id, func(u *user) error {
 		if !u.Password.matches(*b.User.OriginalPassword) {
 			return errWrongPassword
 		}
@@ -462,18 +468,19 @@ func (s *Service) handleListGroupsForUser(w http.ResponseWriter, r *http.Request
 // user may use them all; others gain projects through role assignments,
 // which are not emulated yet.
 func (s *Service) handleListProjectsForUser(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	u, err := s.getUser(r)
 	if err != nil {
 		return err
 	}
 	// The root user has every project; others those their groups have
 	// roles in.
-	ids, all, err := s.projectsOf(r.Context(), u.ID)
+	ids, all, err := s.projectsOf(ctx, u.ID)
 	if err != nil {
 		return err
 	}
 	all = all || u.Root
-	projects, err := s.projects().List(r.Context(), func(p project) bool { return all || slices.Contains(ids, p.ID) })
+	projects, err := s.projects(ctx).List(ctx, func(p project) bool { return all || slices.Contains(ids, p.ID) })
 	if err != nil {
 		return err
 	}
@@ -515,6 +522,7 @@ func (s *Service) handleShowLoginProtect(w http.ResponseWriter, r *http.Request)
 // PUT /v3.0/OS-USER/users/{user_id}/login-protect. The setting is kept;
 // logins are not challenged.
 func (s *Service) handleUpdateLoginProtect(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	var b struct {
 		LoginProtect *struct {
 			Enabled            *bool   `json:"enabled"`
@@ -541,7 +549,7 @@ func (s *Service) handleUpdateLoginProtect(w http.ResponseWriter, r *http.Reques
 	}
 	id := chi.URLParam(r, "user_id")
 	now := s.now().UTC()
-	u, err := s.users().Update(r.Context(), id, func(u *user) error {
+	u, err := s.users(ctx).Update(ctx, id, func(u *user) error {
 		u.LoginProtect, u.UpdatedAt = loginProtect{Enabled: enabled, Method: method}, now
 		return nil
 	})

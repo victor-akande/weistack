@@ -272,3 +272,50 @@ func TestSelfOrAndIsCaller(t *testing.T) {
 		t.Errorf("Fixed = %+v", res)
 	}
 }
+
+func TestAnotherAccountsProject(t *testing.T) {
+	t.Parallel()
+	v := testVault(t)
+	h := router(ServiceOptions{Name: "vpc", Deny: Forbidden})
+	owners := map[string]string{"pa": "acct-a", "pb": "acct-b"}
+	owner := func(projectID, region string) (string, bool) {
+		if region != "ap-southeast-1" {
+			t.Errorf("ProjectOwner asked about region %q", region)
+		}
+		a, ok := owners[projectID]
+		return a, ok
+	}
+	for _, c := range []struct {
+		name      string
+		principal identity.Principal
+		path      string
+		want      int
+	}{
+		{"own project", identity.Principal{AccountID: "acct-a", UserID: "root"}, "/v1/pa/vpcs", http.StatusOK},
+		{"another account's", identity.Principal{AccountID: "acct-a", UserID: "root"}, "/v1/pb/vpcs", http.StatusForbidden},
+		{"the administrator, another account's", identity.Principal{AccountID: "acct-a", Admin: true}, "/v1/pb/vpcs", http.StatusForbidden},
+		{"a project no account has", identity.Principal{AccountID: "acct-a", UserID: "root"}, "/v1/pz/vpcs", http.StatusOK},
+	} {
+		g := NewGate(GateOptions{
+			Principal: c.principal, Provider: &fakeProvider{grants: Grants{All: true}}, Sealer: v, ProjectOwner: owner,
+		})
+		w := serve(h, g, http.MethodGet, c.path)
+		if w.Code != c.want {
+			t.Errorf("%s: %d %s, want %d", c.name, w.Code, w.Body, c.want)
+			continue
+		}
+		if c.want != http.StatusForbidden {
+			continue
+		}
+		var body struct {
+			Encoded string `json:"encoded_authorization_message"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		plain, ok := Decode(v, body.Encoded)
+		if !ok || !strings.Contains(plain, "the project belongs to another account") {
+			t.Errorf("%s: decoded %q, %v", c.name, plain, ok)
+		}
+	}
+}

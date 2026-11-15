@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,6 +32,7 @@ const tokenLifetime = 24 * time.Hour
 const keystoneTime = "2006-01-02T15:04:05.000000Z"
 
 type token struct {
+	AccountID string
 	UserID    string
 	Methods   []string
 	ProjectID string // the project scope, if any
@@ -116,6 +118,7 @@ type passwordUser struct {
 
 // handleCreateToken is POST /v3/auth/tokens.
 func (s *Service) handleCreateToken(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	var req authRequest
 	if err := decodeClassic(r, &req); err != nil {
 		return err
@@ -138,12 +141,20 @@ func (s *Service) handleCreateToken(w http.ResponseWriter, r *http.Request) erro
 		if id.Password == nil || id.Password.User == nil {
 			return errRequired("password")
 		}
+		acct, ok := s.loginAccount(ctx, id.Password.User)
+		if !ok {
+			return errAuthRequired
+		}
+		r = r.WithContext(withAccount(ctx, acct))
+		ctx = r.Context()
 		u, err = s.passwordLogin(r, id.Password.User, now)
 		methods = []string{"password"}
 	case slices.Contains(id.Methods, "token"):
 		if id.Token == nil || id.Token.ID == "" {
 			return errRequired("token")
 		}
+		r = s.inTokenAccount(r, id.Token.ID)
+		ctx = r.Context()
 		var from token
 		from, u, err = s.liveToken(r, id.Token.ID, now)
 		methods = from.Methods
@@ -156,7 +167,7 @@ func (s *Service) handleCreateToken(w http.ResponseWriter, r *http.Request) erro
 	if err != nil {
 		return err
 	}
-	tok := token{UserID: u.ID, Methods: methods, IssuedAt: now, ExpiresAt: now.Add(tokenLifetime)}
+	tok := token{AccountID: s.account(ctx).ID, UserID: u.ID, Methods: methods, IssuedAt: now, ExpiresAt: now.Add(tokenLifetime)}
 	if sc := req.Auth.Scope; sc != nil {
 		switch {
 		case sc.Project != nil:
@@ -166,7 +177,7 @@ func (s *Service) handleCreateToken(w http.ResponseWriter, r *http.Request) erro
 			}
 			tok.ProjectID = p.ID
 		case sc.Domain != nil:
-			if !s.isAccount(*sc.Domain) {
+			if !s.isAccount(ctx, *sc.Domain) {
 				return errAuthRequired
 			}
 			tok.Domain = true
@@ -180,13 +191,62 @@ func (s *Service) handleCreateToken(w http.ResponseWriter, r *http.Request) erro
 	return s.writeToken(w, r, http.StatusCreated, tid, tok, u)
 }
 
-func (s *Service) isAccount(d nameID) bool {
-	acct := s.account()
-	return (d.ID == "" || d.ID == acct.ID) && (d.Name == "" || d.Name == acct.Name) && (d.ID != "" || d.Name != "")
+// loginAccount finds the account of a password login: the one its user's
+// domain names, or the one holding the user ID it gives.
+func (s *Service) loginAccount(ctx context.Context, pu *passwordUser) (identity.Account, bool) {
+	if pu.Domain != nil {
+		return s.accountNamed(*pu.Domain)
+	}
+	if pu.ID != "" {
+		for _, a := range s.dir.Accounts() {
+			if _, err := s.users(withAccount(ctx, a)).Get(ctx, pu.ID); err == nil {
+				return a, true
+			}
+		}
+	}
+	return s.dir.Account(), true
+}
+
+// accountNamed finds the account a domain names, by ID, name or both.
+func (s *Service) accountNamed(d nameID) (identity.Account, bool) {
+	var (
+		a  identity.Account
+		ok bool
+	)
+	switch {
+	case d.ID != "":
+		a, ok = s.dir.AccountByID(d.ID)
+	case d.Name != "":
+		a, ok = s.dir.AccountByName(d.Name)
+	}
+	if !ok || d.Name != "" && !strings.EqualFold(d.Name, a.Name) {
+		return identity.Account{}, false
+	}
+	return a, true
+}
+
+// inTokenAccount returns r acting in the account of token id, if the
+// token is known.
+func (s *Service) inTokenAccount(r *http.Request, id string) *http.Request {
+	tok, ok := s.tokens.get(id)
+	if !ok {
+		return r
+	}
+	a, ok := s.dir.AccountByID(tok.AccountID)
+	if !ok {
+		return r
+	}
+	return r.WithContext(withAccount(r.Context(), a))
+}
+
+func (s *Service) isAccount(ctx context.Context, d nameID) bool {
+	acct := s.account(ctx)
+	return (d.ID == "" || d.ID == acct.ID) && (d.Name == "" || strings.EqualFold(d.Name, acct.Name)) && (d.ID != "" || d.Name != "")
 }
 
 // passwordLogin checks a user's password and records the login.
 func (s *Service) passwordLogin(r *http.Request, pu *passwordUser, now time.Time) (user, error) {
+	ctx := r.Context()
 	if pu.Password == nil {
 		return user{}, errRequired("password")
 	}
@@ -197,17 +257,17 @@ func (s *Service) passwordLogin(r *http.Request, pu *passwordUser, now time.Time
 	)
 	switch {
 	case pu.ID != "":
-		u, err = s.users().Get(r.Context(), pu.ID)
+		u, err = s.users(ctx).Get(ctx, pu.ID)
 		found = err == nil
 		if errors.Is(err, store.ErrNotFound) {
 			err = nil
 		}
 	case pu.Name != "":
 		// A user is named within its account (domain).
-		if pu.Domain == nil || !s.isAccount(*pu.Domain) {
+		if pu.Domain == nil || !s.isAccount(ctx, *pu.Domain) {
 			return user{}, errAuthRequired
 		}
-		u, found, err = s.userByName(r.Context(), pu.Name)
+		u, found, err = s.userByName(ctx, pu.Name)
 	default:
 		return user{}, errRequired("name")
 	}
@@ -223,7 +283,7 @@ func (s *Service) passwordLogin(r *http.Request, pu *passwordUser, now time.Time
 	case u.AccessMode == "console":
 		return user{}, errConsoleOnly
 	}
-	u, err = s.users().Update(r.Context(), u.ID, func(u *user) error {
+	u, err = s.users(ctx).Update(ctx, u.ID, func(u *user) error {
 		u.LastLoginAt = now
 		return nil
 	})
@@ -235,6 +295,7 @@ func (s *Service) passwordLogin(r *http.Request, pu *passwordUser, now time.Time
 
 // liveToken returns a token and its user if the token is still good.
 func (s *Service) liveToken(r *http.Request, id string, now time.Time) (token, user, error) {
+	ctx := r.Context()
 	tok, ok := s.tokens.get(id)
 	if !ok {
 		return token{}, user{}, errTokenInvalid
@@ -242,7 +303,7 @@ func (s *Service) liveToken(r *http.Request, id string, now time.Time) (token, u
 	if !now.Before(tok.ExpiresAt) {
 		return token{}, user{}, errTokenExpired
 	}
-	u, err := s.users().Get(r.Context(), tok.UserID)
+	u, err := s.users(ctx).Get(ctx, tok.UserID)
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		return token{}, user{}, errTokenInvalid
@@ -257,11 +318,12 @@ func (s *Service) liveToken(r *http.Request, id string, now time.Time) (token, u
 // scopeProject finds the project a token asks for, by ID or by name
 // (a region's name).
 func (s *Service) scopeProject(r *http.Request, p nameID, domain *nameID) (project, error) {
-	if domain != nil && !s.isAccount(*domain) {
+	ctx := r.Context()
+	if domain != nil && !s.isAccount(ctx, *domain) {
 		return project{}, errAuthRequired
 	}
 	if p.ID != "" {
-		got, err := s.projects().Get(r.Context(), p.ID)
+		got, err := s.projects(ctx).Get(ctx, p.ID)
 		if errors.Is(err, store.ErrNotFound) {
 			return project{}, errNotFound("project", p.ID)
 		}
@@ -271,11 +333,11 @@ func (s *Service) scopeProject(r *http.Request, p nameID, domain *nameID) (proje
 		return project{}, errRequired("project")
 	}
 	if regionRE.MatchString(p.Name) {
-		if err := s.ensureProject(r.Context(), p.Name); err != nil {
+		if err := s.ensureProject(ctx, p.Name); err != nil {
 			return project{}, err
 		}
 	}
-	found, err := s.projects().List(r.Context(), func(pr project) bool { return pr.Name == p.Name })
+	found, err := s.projects(ctx).List(ctx, func(pr project) bool { return pr.Name == p.Name })
 	if err != nil {
 		return project{}, err
 	}
@@ -291,6 +353,7 @@ func (s *Service) handleValidateToken(w http.ResponseWriter, r *http.Request) er
 	if id == "" {
 		return errSubjectToken
 	}
+	r = s.inTokenAccount(r, id)
 	tok, u, err := s.liveToken(r, id, s.now().UTC())
 	if err != nil {
 		return err
@@ -328,7 +391,8 @@ type tokenProject struct {
 type tokenTarget struct{}
 
 func (s *Service) writeToken(w http.ResponseWriter, r *http.Request, status int, id string, tok token, u user) error {
-	acct := s.account()
+	ctx := r.Context()
+	acct := s.account(ctx)
 	dom := nameID{ID: acct.ID, Name: acct.Name}
 	v := tokenView{
 		Methods: tok.Methods, ExpiresAt: tok.ExpiresAt.Format(keystoneTime), IssuedAt: tok.IssuedAt.Format(keystoneTime),
@@ -340,7 +404,7 @@ func (s *Service) writeToken(w http.ResponseWriter, r *http.Request, status int,
 	}
 	switch {
 	case tok.ProjectID != "":
-		p, err := s.projects().Get(r.Context(), tok.ProjectID)
+		p, err := s.projects(ctx).Get(ctx, tok.ProjectID)
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
@@ -349,7 +413,7 @@ func (s *Service) writeToken(w http.ResponseWriter, r *http.Request, status int,
 		v.Domain = &dom
 	}
 	if tok.ProjectID != "" || tok.Domain {
-		roles, err := s.effectiveRoles(r.Context(), u.ID, tok.ProjectID)
+		roles, err := s.effectiveRoles(ctx, u.ID, tok.ProjectID)
 		if err != nil {
 			return err
 		}
@@ -373,7 +437,12 @@ func (s *Service) CheckToken(ctx context.Context, id string) (identity.Principal
 	if !s.now().Before(tok.ExpiresAt) {
 		return identity.Principal{}, auth.ErrTokenExpired
 	}
-	u, err := s.users().Get(ctx, tok.UserID)
+	acct, ok := s.dir.AccountByID(tok.AccountID)
+	if !ok {
+		return identity.Principal{}, auth.ErrTokenUnknown // its account is gone
+	}
+	ctx = withAccount(ctx, acct)
+	u, err := s.users(ctx).Get(ctx, tok.UserID)
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		return identity.Principal{}, auth.ErrTokenUnknown
@@ -382,5 +451,5 @@ func (s *Service) CheckToken(ctx context.Context, id string) (identity.Principal
 	case !u.Enabled || u.PasswordChangedAt.After(tok.IssuedAt):
 		return identity.Principal{}, auth.ErrTokenUnknown
 	}
-	return identity.Principal{AccountID: s.account().ID, UserID: u.ID, UserName: u.Name}, nil
+	return identity.Principal{AccountID: acct.ID, UserID: u.ID, UserName: u.Name}, nil
 }

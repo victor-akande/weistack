@@ -76,21 +76,23 @@ func global(kind string) store.Scope {
 	return store.Scope{Region: store.Global, ProjectID: store.Global, Kind: kind}
 }
 
-func (s *Service) users() store.Collection[user] { return store.Of[user](s.store, global(kindUser)) }
+func (s *Service) users(ctx context.Context) store.Collection[user] {
+	return store.Of[user](s.store, s.scope(ctx, kindUser))
+}
 
-func (s *Service) groups() store.Collection[group] {
-	return store.Of[group](s.store, global(kindGroup))
+func (s *Service) groups(ctx context.Context) store.Collection[group] {
+	return store.Of[group](s.store, s.scope(ctx, kindGroup))
 }
 
 // ensureRoot records the root user, if it is not yet known.
 func (s *Service) ensureRoot(ctx context.Context) error {
-	acct := s.account()
+	acct := s.account(ctx)
 	now := s.now().UTC()
 	root := user{
 		ID: acct.RootUserID(), Name: acct.Name, Enabled: true, Root: true,
 		AccessMode: "default", CreatedAt: now, UpdatedAt: now,
 	}
-	if err := s.users().Create(ctx, root.ID, root); err != nil && !errors.Is(err, store.ErrExists) {
+	if err := s.users(ctx).Create(ctx, root.ID, root); err != nil && !errors.Is(err, store.ErrExists) {
 		return err
 	}
 	return nil
@@ -102,8 +104,8 @@ const adminGroupName = "admin"
 
 // adminGroupID is the admin group's ID, derived from the account so it
 // never changes.
-func (s *Service) adminGroupID() string {
-	sum := sha256.Sum256([]byte("weistack:admin-group:" + s.account().ID))
+func (s *Service) adminGroupID(ctx context.Context) string {
+	sum := sha256.Sum256([]byte("weistack:admin-group:" + s.account(ctx).ID))
 	return hex.EncodeToString(sum[:16])
 }
 
@@ -114,8 +116,8 @@ func (s *Service) ensureAdminGroup(ctx context.Context) error {
 	if _, taken, err := s.groupByName(ctx, adminGroupName); err != nil || taken {
 		return err
 	}
-	g := group{ID: s.adminGroupID(), Name: adminGroupName, CreatedAt: s.now().UTC()}
-	if err := s.groups().Create(ctx, g.ID, g); err != nil && !errors.Is(err, store.ErrExists) {
+	g := group{ID: s.adminGroupID(ctx), Name: adminGroupName, CreatedAt: s.now().UTC()}
+	if err := s.groups(ctx).Create(ctx, g.ID, g); err != nil && !errors.Is(err, store.ErrExists) {
 		return err
 	}
 	return nil
@@ -123,7 +125,7 @@ func (s *Service) ensureAdminGroup(ctx context.Context) error {
 
 // userByName finds a user by exact name.
 func (s *Service) userByName(ctx context.Context, name string) (user, bool, error) {
-	found, err := s.users().List(ctx, func(u user) bool { return u.Name == name })
+	found, err := s.users(ctx).List(ctx, func(u user) bool { return u.Name == name })
 	if err != nil || len(found) == 0 {
 		return user{}, false, err
 	}
@@ -131,7 +133,7 @@ func (s *Service) userByName(ctx context.Context, name string) (user, bool, erro
 }
 
 func (s *Service) groupByName(ctx context.Context, name string) (group, bool, error) {
-	found, err := s.groups().List(ctx, func(g group) bool { return g.Name == name })
+	found, err := s.groups(ctx).List(ctx, func(g group) bool { return g.Name == name })
 	if err != nil || len(found) == 0 {
 		return group{}, false, err
 	}
@@ -140,7 +142,7 @@ func (s *Service) groupByName(ctx context.Context, name string) (group, bool, er
 
 // groupsOf lists the groups userID belongs to.
 func (s *Service) groupsOf(ctx context.Context, userID string) ([]group, error) {
-	return s.groups().List(ctx, func(g group) bool { return g.has(userID) })
+	return s.groups(ctx).List(ctx, func(g group) bool { return g.has(userID) })
 }
 
 // deleteUser removes a user, its access keys, the roles granted to it
@@ -164,7 +166,7 @@ func (s *Service) deleteUser(ctx context.Context, id string) error {
 		return err
 	}
 	for _, g := range in {
-		_, err := s.groups().Update(ctx, g.ID, func(g *group) error {
+		_, err := s.groups(ctx).Update(ctx, g.ID, func(g *group) error {
 			g.Members = slices.DeleteFunc(g.Members, func(m string) bool { return m == id })
 			return nil
 		})
@@ -172,12 +174,12 @@ func (s *Service) deleteUser(ctx context.Context, id string) error {
 			return err
 		}
 	}
-	return s.users().Delete(ctx, id)
+	return s.users(ctx).Delete(ctx, id)
 }
 
 // countUsers counts IAM users, the root user not included.
 func (s *Service) countUsers(ctx context.Context) (int, error) {
-	all, err := s.users().List(ctx, func(u user) bool { return !u.Root })
+	all, err := s.users(ctx).List(ctx, func(u user) bool { return !u.Root })
 	return len(all), err
 }
 

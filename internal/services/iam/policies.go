@@ -98,16 +98,16 @@ func attachmentID(policyID, subject, subjectID string) string {
 	return hex.EncodeToString(sum[:16])
 }
 
-func (s *Service) policies() store.Collection[policy] {
-	return store.Of[policy](s.store, global(kindPolicy))
+func (s *Service) policies(ctx context.Context) store.Collection[policy] {
+	return store.Of[policy](s.store, s.scope(ctx, kindPolicy))
 }
 
-func (s *Service) policyAttachments() store.Collection[policyAttachment] {
-	return store.Of[policyAttachment](s.store, global(kindPolicyAttach))
+func (s *Service) policyAttachments(ctx context.Context) store.Collection[policyAttachment] {
+	return store.Of[policyAttachment](s.store, s.scope(ctx, kindPolicyAttach))
 }
 
 func (s *Service) attachmentsWhere(ctx context.Context, keep func(policyAttachment) bool) ([]policyAttachment, error) {
-	all, err := s.policyAttachments().List(ctx, keep)
+	all, err := s.policyAttachments(ctx).List(ctx, keep)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +122,7 @@ func (s *Service) detachAll(ctx context.Context, keep func(policyAttachment) boo
 		return err
 	}
 	for _, a := range all {
-		if err := s.policyAttachments().Delete(ctx, a.ID); err != nil && !errors.Is(err, store.ErrNotFound) {
+		if err := s.policyAttachments(ctx).Delete(ctx, a.ID); err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
 	}
@@ -185,7 +185,9 @@ type v5PolicyView struct {
 }
 
 // policyURN is iam::<account>:policy:<path><name>, as Huawei documents.
-func (s *Service) policyURN(p policy) string { return s.urn("policy", p.Path+p.Name) }
+func (s *Service) policyURN(ctx context.Context, p policy) string {
+	return s.urn(ctx, "policy", p.Path+p.Name)
+}
 
 func (s *Service) v5Policy(ctx context.Context, p policy) (v5PolicyView, error) {
 	attached, err := s.attachmentsWhere(ctx, func(a policyAttachment) bool { return a.PolicyID == p.ID })
@@ -193,7 +195,7 @@ func (s *Service) v5Policy(ctx context.Context, p policy) (v5PolicyView, error) 
 		return v5PolicyView{}, err
 	}
 	return v5PolicyView{
-		PolicyType: "custom", PolicyName: p.Name, PolicyID: p.ID, URN: s.policyURN(p), Path: p.Path,
+		PolicyType: "custom", PolicyName: p.Name, PolicyID: p.ID, URN: s.policyURN(ctx, p), Path: p.Path,
 		DefaultVersionID: p.defaultVersion().ID, AttachmentCount: len(attached), Description: p.Description,
 		CreatedAt: v5At(p.CreatedAt), UpdatedAt: v5At(p.UpdatedAt),
 	}, nil
@@ -220,7 +222,8 @@ type v5VersionResponse struct {
 }
 
 func (s *Service) getPolicy(r *http.Request) (policy, error) {
-	p, err := s.policies().Get(r.Context(), chi.URLParam(r, "policy_id"))
+	ctx := r.Context()
+	p, err := s.policies(ctx).Get(ctx, chi.URLParam(r, "policy_id"))
 	if errors.Is(err, store.ErrNotFound) {
 		return policy{}, errV5NoPolicy
 	}
@@ -231,6 +234,7 @@ func (s *Service) getPolicy(r *http.Request) (policy, error) {
 
 // POST /v5/policies.
 func (s *Service) handleCreatePolicyV5(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	var b struct {
 		PolicyName     *string `json:"policy_name"`
 		Path           *string `json:"path"`
@@ -256,7 +260,7 @@ func (s *Service) handleCreatePolicyV5(w http.ResponseWriter, r *http.Request) e
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	all, err := s.policies().List(r.Context(), nil)
+	all, err := s.policies(ctx).List(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -266,10 +270,10 @@ func (s *Service) handleCreatePolicyV5(w http.ResponseWriter, r *http.Request) e
 	if len(all) >= maxPolicies {
 		return errV5TooManyPolicies
 	}
-	if err := s.policies().Create(r.Context(), p.ID, p); err != nil {
+	if err := s.policies(ctx).Create(ctx, p.ID, p); err != nil {
 		return err
 	}
-	v, err := s.v5Policy(r.Context(), p)
+	v, err := s.v5Policy(ctx, p)
 	if err != nil {
 		return err
 	}
@@ -279,6 +283,7 @@ func (s *Service) handleCreatePolicyV5(w http.ResponseWriter, r *http.Request) e
 // GET /v5/policies. Only custom policies are emulated, so policy_type
 // system lists none.
 func (s *Service) handleListPoliciesV5(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	q := r.URL.Query()
 	typ := q.Get("policy_type")
 	if typ != "" && typ != "custom" && typ != "system" {
@@ -292,7 +297,7 @@ func (s *Service) handleListPoliciesV5(w http.ResponseWriter, r *http.Request) e
 	if !validPolicyPath(prefix) {
 		return errV5Path
 	}
-	all, err := s.policies().List(r.Context(), func(p policy) bool {
+	all, err := s.policies(ctx).List(ctx, func(p policy) bool {
 		return typ != "system" && strings.HasPrefix(p.Path, prefix)
 	})
 	if err != nil {
@@ -300,7 +305,7 @@ func (s *Service) handleListPoliciesV5(w http.ResponseWriter, r *http.Request) e
 	}
 	views := make([]v5PolicyView, 0, len(all))
 	for _, p := range all {
-		v, err := s.v5Policy(r.Context(), p)
+		v, err := s.v5Policy(ctx, p)
 		if err != nil {
 			return err
 		}
@@ -333,6 +338,7 @@ func (s *Service) handleGetPolicyV5(w http.ResponseWriter, r *http.Request) erro
 
 // PUT /v5/policies/{policy_id}: the description only. Huawei answers 204.
 func (s *Service) handleUpdatePolicyV5(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	var b struct {
 		Description *string `json:"description"`
 	}
@@ -343,7 +349,7 @@ func (s *Service) handleUpdatePolicyV5(w http.ResponseWriter, r *http.Request) e
 		return errV5Input
 	}
 	now := s.now().UTC()
-	_, err := s.policies().Update(r.Context(), chi.URLParam(r, "policy_id"), func(p *policy) error {
+	_, err := s.policies(ctx).Update(ctx, chi.URLParam(r, "policy_id"), func(p *policy) error {
 		p.Description, p.UpdatedAt = *b.Description, now
 		return nil
 	})
@@ -359,20 +365,21 @@ func (s *Service) handleUpdatePolicyV5(w http.ResponseWriter, r *http.Request) e
 
 // DELETE /v5/policies/{policy_id}: refused while it is attached.
 func (s *Service) handleDeletePolicyV5(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p, err := s.getPolicy(r)
 	if err != nil {
 		return err
 	}
-	attached, err := s.attachmentsWhere(r.Context(), func(a policyAttachment) bool { return a.PolicyID == p.ID })
+	attached, err := s.attachmentsWhere(ctx, func(a policyAttachment) bool { return a.PolicyID == p.ID })
 	if err != nil {
 		return err
 	}
 	if len(attached) > 0 {
 		return errV5DeleteConflict("the policy is attached to " + strconv.Itoa(len(attached)) + " entities")
 	}
-	if err := s.policies().Delete(r.Context(), p.ID); err != nil && !errors.Is(err, store.ErrNotFound) {
+	if err := s.policies(ctx).Delete(ctx, p.ID); err != nil && !errors.Is(err, store.ErrNotFound) {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -383,6 +390,7 @@ func (s *Service) handleDeletePolicyV5(w http.ResponseWriter, r *http.Request) e
 
 // POST /v5/policies/{policy_id}/versions.
 func (s *Service) handleCreatePolicyVersionV5(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	var b struct {
 		PolicyDocument *string `json:"policy_document"`
 		SetAsDefault   *bool   `json:"set_as_default"`
@@ -398,7 +406,7 @@ func (s *Service) handleCreatePolicyVersionV5(w http.ResponseWriter, r *http.Req
 	}
 	now := s.now().UTC()
 	var created policyVersion
-	_, err := s.policies().Update(r.Context(), chi.URLParam(r, "policy_id"), func(p *policy) error {
+	_, err := s.policies(ctx).Update(ctx, chi.URLParam(r, "policy_id"), func(p *policy) error {
 		if len(p.Versions) >= maxPolicyVersions {
 			return errV5TooManyVersions
 		}
@@ -453,8 +461,9 @@ func (s *Service) handleGetPolicyVersionV5(w http.ResponseWriter, r *http.Reques
 
 // DELETE /v5/policies/{policy_id}/versions/{version_id}: not the default.
 func (s *Service) handleDeletePolicyVersionV5(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	id := chi.URLParam(r, "version_id")
-	_, err := s.policies().Update(r.Context(), chi.URLParam(r, "policy_id"), func(p *policy) error {
+	_, err := s.policies(ctx).Update(ctx, chi.URLParam(r, "policy_id"), func(p *policy) error {
 		i := versionIndex(*p, id)
 		switch {
 		case i < 0:
@@ -477,9 +486,10 @@ func (s *Service) handleDeletePolicyVersionV5(w http.ResponseWriter, r *http.Req
 
 // POST /v5/policies/{policy_id}/versions/{version_id}/set-default.
 func (s *Service) handleSetDefaultPolicyVersionV5(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	id := chi.URLParam(r, "version_id")
 	now := s.now().UTC()
-	_, err := s.policies().Update(r.Context(), chi.URLParam(r, "policy_id"), func(p *policy) error {
+	_, err := s.policies(ctx).Update(ctx, chi.URLParam(r, "policy_id"), func(p *policy) error {
 		i := versionIndex(*p, id)
 		if i < 0 {
 			return errV5NoVersion
@@ -517,9 +527,9 @@ func (s *Service) subjectExists(ctx context.Context, sub policySubject, id strin
 	var err error
 	switch sub.kind {
 	case subjectUser:
-		_, err = s.users().Get(ctx, id)
+		_, err = s.users(ctx).Get(ctx, id)
 	case subjectGroup:
-		_, err = s.groups().Get(ctx, id)
+		_, err = s.groups(ctx).Get(ctx, id)
 	}
 	if errors.Is(err, store.ErrNotFound) {
 		return false, nil
@@ -554,7 +564,7 @@ func (s *Service) attach(sub policySubject, on bool) handler {
 		}
 		aid := attachmentID(p.ID, sub.kind, *id)
 		if !on {
-			err := s.policyAttachments().Delete(ctx, aid)
+			err := s.policyAttachments(ctx).Delete(ctx, aid)
 			if errors.Is(err, store.ErrNotFound) {
 				return errV5NoAttachment
 			}
@@ -575,7 +585,7 @@ func (s *Service) attach(sub policySubject, on bool) handler {
 			return sub.tooMany
 		}
 		a := policyAttachment{ID: aid, PolicyID: p.ID, Subject: sub.kind, SubjectID: *id, AttachedAt: s.now().UTC()}
-		if err := s.policyAttachments().Create(ctx, a.ID, a); err != nil {
+		if err := s.policyAttachments(ctx).Create(ctx, a.ID, a); err != nil {
 			return err
 		}
 		w.WriteHeader(http.StatusOK)
@@ -595,27 +605,28 @@ type attachedPolicyView struct {
 // /v5/groups/{group_id}/attached-policies.
 func (s *Service) listAttached(sub policySubject) handler {
 	return func(w http.ResponseWriter, r *http.Request) error {
+		ctx := r.Context()
 		id := chi.URLParam(r, sub.bodyKey)
-		if ok, err := s.subjectExists(r.Context(), sub, id); err != nil || !ok {
+		if ok, err := s.subjectExists(ctx, sub, id); err != nil || !ok {
 			if err == nil {
 				err = sub.notFound
 			}
 			return err
 		}
-		held, err := s.attachmentsWhere(r.Context(), func(a policyAttachment) bool { return a.Subject == sub.kind && a.SubjectID == id })
+		held, err := s.attachmentsWhere(ctx, func(a policyAttachment) bool { return a.Subject == sub.kind && a.SubjectID == id })
 		if err != nil {
 			return err
 		}
 		views := make([]attachedPolicyView, 0, len(held))
 		for _, a := range held {
-			p, err := s.policies().Get(r.Context(), a.PolicyID)
+			p, err := s.policies(ctx).Get(ctx, a.PolicyID)
 			if errors.Is(err, store.ErrNotFound) {
 				continue
 			}
 			if err != nil {
 				return err
 			}
-			views = append(views, attachedPolicyView{PolicyName: p.Name, PolicyID: p.ID, URN: s.policyURN(p), AttachedAt: v5At(a.AttachedAt)})
+			views = append(views, attachedPolicyView{PolicyName: p.Name, PolicyID: p.ID, URN: s.policyURN(ctx, p), AttachedAt: v5At(a.AttachedAt)})
 		}
 		got, info, err := page(r, views, func(v attachedPolicyView) string { return v.PolicyID })
 		if err != nil {

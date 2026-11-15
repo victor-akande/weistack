@@ -44,8 +44,9 @@ type permissions struct {
 }
 
 type grantsKey struct {
-	userID string
-	scope  authz.Scope
+	accountID string
+	userID    string
+	scope     authz.Scope
 }
 
 // maxCachedGrants bounds the cache; it is cleared when full.
@@ -92,10 +93,15 @@ func (p *permissions) parse(key string, doc []byte) (*policydoc.Policy, error) {
 
 // Grants implements authz.Provider.
 func (s *Service) Grants(ctx context.Context, pr identity.Principal, sc authz.Scope) (authz.Grants, error) {
-	if pr.Admin || pr.UserID == s.account().RootUserID() {
+	acct, ok := s.dir.AccountByID(pr.AccountID)
+	if !ok {
+		return authz.Grants{}, nil // an account removed since the key was checked
+	}
+	if pr.Admin || pr.UserID == acct.RootUserID() {
 		return authz.Grants{All: true}, nil
 	}
-	k := grantsKey{userID: pr.UserID, scope: sc}
+	ctx = withAccount(ctx, acct)
+	k := grantsKey{accountID: acct.ID, userID: pr.UserID, scope: sc}
 	g, gen, ok := s.perms.get(k)
 	if ok {
 		return g, nil
@@ -109,8 +115,8 @@ func (s *Service) Grants(ctx context.Context, pr identity.Principal, sc authz.Sc
 }
 
 func (s *Service) computeGrants(ctx context.Context, userID string, sc authz.Scope) (authz.Grants, error) {
-	acct := s.account()
-	u, err := s.users().Get(ctx, userID)
+	acct := s.account(ctx)
+	u, err := s.users(ctx).Get(ctx, userID)
 	if errors.Is(err, store.ErrNotFound) {
 		return authz.Grants{}, nil // a user deleted since its key was checked
 	}
@@ -123,7 +129,7 @@ func (s *Service) computeGrants(ctx context.Context, userID string, sc authz.Sco
 	}
 	groupIDs := make([]string, 0, len(gs))
 	for _, g := range gs {
-		if g.ID == s.adminGroupID() {
+		if g.ID == s.adminGroupID(ctx) {
 			return authz.Grants{All: true}, nil
 		}
 		groupIDs = append(groupIDs, g.ID)
@@ -140,10 +146,10 @@ func (s *Service) computeGrants(ctx context.Context, userID string, sc authz.Sco
 			if region == "" {
 				region = s.defaultRegion
 			}
-			projectID = acct.ProjectID(region, s.defaultRegion, s.defaultProj)
+			projectID = s.projectID(acct, region)
 		}
 		keys["g:projectid"] = []string{projectID}
-		if p, err := s.projects().Get(ctx, projectID); err == nil {
+		if p, err := s.projects(ctx).Get(ctx, projectID); err == nil {
 			keys["g:projectname"] = []string{p.Name}
 		}
 	}
@@ -220,7 +226,7 @@ func (s *Service) v5Sources(ctx context.Context, out *authz.Grants, userID strin
 			continue
 		}
 		seen[a.PolicyID] = true
-		p, err := s.policies().Get(ctx, a.PolicyID)
+		p, err := s.policies(ctx).Get(ctx, a.PolicyID)
 		if errors.Is(err, store.ErrNotFound) {
 			continue
 		}

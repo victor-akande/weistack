@@ -242,8 +242,8 @@ func (c customRole) role() role {
 	}
 }
 
-func (s *Service) customRoles() store.Collection[customRole] {
-	return store.Of[customRole](s.store, global(kindRole))
+func (s *Service) customRoles(ctx context.Context) store.Collection[customRole] {
+	return store.Of[customRole](s.store, s.scope(ctx, kindRole))
 }
 
 // findRole returns a system or custom role by ID.
@@ -251,7 +251,7 @@ func (s *Service) findRole(ctx context.Context, id string) (role, bool, error) {
 	if ro, ok := catalogueByID[id]; ok {
 		return ro, true, nil
 	}
-	c, err := s.customRoles().Get(ctx, id)
+	c, err := s.customRoles(ctx).Get(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
 		return role{}, false, nil
 	}
@@ -282,6 +282,7 @@ type roleView struct {
 func unixMillis(t time.Time) string { return strconv.FormatInt(t.UnixMilli(), 10) }
 
 func (s *Service) roleView(r *http.Request, ro role) roleView {
+	ctx := r.Context()
 	v := roleView{
 		Catalog: ro.Catalog, Name: ro.Name, Description: ro.Description, ID: ro.ID,
 		DisplayName: ro.DisplayName, Type: ro.Type, Policy: ro.Policy,
@@ -294,7 +295,7 @@ func (s *Service) roleView(r *http.Request, ro role) roleView {
 		v.DescriptionCN = &ro.DescriptionCN
 	}
 	if ro.Custom {
-		acct := s.account().ID
+		acct := s.account(ctx).ID
 		v.DomainID = &acct
 		v.CreatedTime, v.UpdatedTime = unixMillis(ro.Created), unixMillis(ro.Updated)
 	}
@@ -334,6 +335,7 @@ func readPaging(r *http.Request, maxPerPage int) (int, int, error) {
 // GET /v3/roles: the system-defined permissions, or with domain_id the
 // account's custom policies.
 func (s *Service) handleListRoles(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	q := r.URL.Query()
 	page, perPage, err := readPaging(r, 500)
 	if err != nil {
@@ -356,8 +358,8 @@ func (s *Service) handleListRoles(w http.ResponseWriter, r *http.Request) error 
 
 	var all []role
 	if d := q.Get("domain_id"); d != "" {
-		if d == s.account().ID {
-			all, err = s.listCustomRoles(r.Context())
+		if d == s.account(ctx).ID {
+			all, err = s.listCustomRoles(ctx)
 			if err != nil {
 				return err
 			}
@@ -391,7 +393,7 @@ func (s *Service) writeRoles(w http.ResponseWriter, r *http.Request, path string
 }
 
 func (s *Service) listCustomRoles(ctx context.Context) ([]role, error) {
-	cs, err := s.customRoles().List(ctx, nil)
+	cs, err := s.customRoles(ctx).List(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -628,8 +630,8 @@ func checkStatement(st map[string]json.RawMessage) error {
 // nextCustomName returns the next custom policy name, as Huawei names
 // them: custom_<account ID>_<n>. The caller holds s.mu.
 func (s *Service) nextCustomName(ctx context.Context) (string, error) {
-	prefix := "custom_" + s.account().ID + "_"
-	all, err := s.customRoles().List(ctx, nil)
+	prefix := "custom_" + s.account(ctx).ID + "_"
+	all, err := s.customRoles(ctx).List(ctx, nil)
 	if err != nil {
 		return "", err
 	}
@@ -644,6 +646,7 @@ func (s *Service) nextCustomName(ctx context.Context) (string, error) {
 
 // POST /v3.0/OS-ROLE/roles.
 func (s *Service) handleCreateCustomRole(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	var b customRoleBody
 	if err := decodeClassic(r, &b); err != nil {
 		return err
@@ -655,12 +658,12 @@ func (s *Service) handleCreateCustomRole(w http.ResponseWriter, r *http.Request)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	name, err := s.nextCustomName(r.Context())
+	name, err := s.nextCustomName(ctx)
 	if err != nil {
 		return err
 	}
 	c.Name = name
-	if err := s.customRoles().Create(r.Context(), c.ID, c); err != nil {
+	if err := s.customRoles(ctx).Create(ctx, c.ID, c); err != nil {
 		return err
 	}
 	return httpx.WriteJSON(w, http.StatusCreated, roleResponse{s.roleView(r, c.role())})
@@ -680,8 +683,9 @@ func (s *Service) handleListCustomRoles(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Service) getCustomRole(r *http.Request) (customRole, error) {
+	ctx := r.Context()
 	id := chi.URLParam(r, "role_id")
-	c, err := s.customRoles().Get(r.Context(), id)
+	c, err := s.customRoles(ctx).Get(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
 		return customRole{}, errNotFound("role", id)
 	}
@@ -706,13 +710,14 @@ func (s *Service) handleShowCustomRole(w http.ResponseWriter, r *http.Request) e
 
 // PATCH /v3.0/OS-ROLE/roles/{role_id}.
 func (s *Service) handleUpdateCustomRole(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	var b customRoleBody
 	if err := decodeClassic(r, &b); err != nil {
 		return err
 	}
 	id := chi.URLParam(r, "role_id")
 	now := s.now().UTC()
-	c, err := s.customRoles().Update(r.Context(), id, func(c *customRole) error {
+	c, err := s.customRoles(ctx).Update(ctx, id, func(c *customRole) error {
 		if err := applyCustomRole(b, c, false); err != nil {
 			return err
 		}
@@ -731,16 +736,17 @@ func (s *Service) handleUpdateCustomRole(w http.ResponseWriter, r *http.Request)
 // DELETE /v3.0/OS-ROLE/roles/{role_id}: the policy and its assignments.
 // Huawei answers 200 with a message.
 func (s *Service) handleDeleteCustomRole(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	c, err := s.getCustomRole(r)
 	if err != nil {
 		return err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := s.deleteAssignments(r.Context(), func(a assignment) bool { return a.RoleID == c.ID }); err != nil {
+	if err := s.deleteAssignments(ctx, func(a assignment) bool { return a.RoleID == c.ID }); err != nil {
 		return err
 	}
-	if err := s.customRoles().Delete(r.Context(), c.ID); err != nil && !errors.Is(err, store.ErrNotFound) {
+	if err := s.customRoles(ctx).Delete(ctx, c.ID); err != nil && !errors.Is(err, store.ErrNotFound) {
 		return err
 	}
 	return httpx.WriteJSON(w, http.StatusOK, struct {

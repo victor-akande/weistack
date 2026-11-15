@@ -1,28 +1,31 @@
-// Package identity holds who exists in an emulator: its one account
-// (Huawei Cloud's "domain"), the account's project in each region, and
+// Package identity holds who exists in an emulator: its accounts
+// (Huawei Cloud's "domains"), each account's project in each region, and
 // the access keys WeiStack knows.
 //
-// In this release the only known key is the bootstrap administrator's.
-// Every other key is accepted as in v0.1 and stands for an account of its
-// own. Later releases register IAM users' keys here, and enforcement
-// checks signatures and policies against them.
+// The primary account is the emulator's own: the bootstrap
+// administrator's keys act for it. Further accounts can be added, each
+// with its root user's keys, to emulate delegation between accounts.
+// Keys WeiStack does not know are accepted in accept mode as in v0.1.
 package identity
 
 import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/big"
 	"regexp"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 )
 
-// AccountName is the name of the emulator's account.
+// AccountName is the name of the emulator's primary account.
 const AccountName = "weistack"
 
-// Account is the emulator's account, the "domain" of Huawei Cloud's IAM.
+// Account is an account, the "domain" of Huawei Cloud's IAM.
 type Account struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -40,6 +43,13 @@ func (a Account) ProjectID(region, defaultRegion, defaultProjectID string) strin
 	if region == defaultRegion {
 		return defaultProjectID
 	}
+	return a.DerivedProjectID(region)
+}
+
+// DerivedProjectID returns the project ID derived from the account and
+// region, the same on every start: every project's but the primary
+// account's in the default region.
+func (a Account) DerivedProjectID(region string) string {
 	sum := sha256.Sum256([]byte("weistack:project:" + a.ID + ":" + region))
 	return hex.EncodeToString(sum[:16])
 }
@@ -141,7 +151,14 @@ type entry struct {
 	principal Principal
 	// secret is the secret key, kept in memory to check signatures.
 	secret string
+	// root marks an added account's root key: like the administrator's,
+	// it is never replaced or forgotten while its account exists.
+	root bool
 }
+
+// protected reports whether e is the administrator's key or an account's
+// root key, which only the account's removal forgets.
+func (e entry) protected() bool { return e.principal.Admin || e.root }
 
 type lockout struct {
 	failures int
@@ -155,6 +172,9 @@ type Directory struct {
 	account Account
 	now     func() time.Time
 
+	// accounts are those added besides the primary one, by ID.
+	accounts map[string]Account
+
 	mu       sync.RWMutex
 	keys     map[string]entry
 	lastUsed map[string]time.Time
@@ -165,7 +185,7 @@ type Directory struct {
 // the administrator's.
 func NewDirectory(account Account, admin Credentials) *Directory {
 	d := &Directory{
-		account: account, now: time.Now,
+		account: account, now: time.Now, accounts: map[string]Account{},
 		keys: map[string]entry{}, lastUsed: map[string]time.Time{}, locks: map[string]*lockout{},
 	}
 	d.keys[admin.AccessKey] = entry{
@@ -175,8 +195,86 @@ func NewDirectory(account Account, admin Credentials) *Directory {
 	return d
 }
 
-// Account returns the emulator's account.
+// Account returns the emulator's primary account.
 func (d *Directory) Account() Account { return d.account }
+
+// AddAccount adds an account whose root user holds root's keys. Account
+// IDs, names and keys must all be unused.
+func (d *Directory) AddAccount(a Account, root Credentials) error {
+	if !a.Valid() {
+		return fmt.Errorf("identity: account %q (%s) is not valid", a.Name, a.ID)
+	}
+	if !root.Valid() {
+		return errors.New("identity: the root user's keys are not valid")
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, other := range d.accountsLocked() {
+		switch {
+		case other.ID == a.ID:
+			return fmt.Errorf("%w: an account has the ID %s", ErrAccountExists, a.ID)
+		case strings.EqualFold(other.Name, a.Name):
+			return fmt.Errorf("%w: an account is named %s", ErrAccountExists, a.Name)
+		}
+	}
+	if _, ok := d.keys[root.AccessKey]; ok {
+		return fmt.Errorf("%w: %s", ErrKeyTaken, root.AccessKey)
+	}
+	d.accounts[a.ID] = a
+	d.keys[root.AccessKey] = entry{
+		principal: Principal{AccountID: a.ID, UserID: a.RootUserID(), UserName: a.Name},
+		secret:    root.SecretKey, root: true,
+	}
+	return nil
+}
+
+// Errors of AddAccount.
+var (
+	ErrAccountExists = errors.New("identity: the account exists")
+	ErrKeyTaken      = errors.New("identity: the access key is taken")
+)
+
+// Accounts returns every account: the primary one first, then the added
+// ones by name.
+func (d *Directory) Accounts() []Account {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.accountsLocked()
+}
+
+func (d *Directory) accountsLocked() []Account {
+	out := make([]Account, 0, 1+len(d.accounts))
+	for _, a := range d.accounts {
+		out = append(out, a)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return append([]Account{d.account}, out...)
+}
+
+// AccountByID returns the account with that ID.
+func (d *Directory) AccountByID(id string) (Account, bool) {
+	if id == d.account.ID {
+		return d.account, true
+	}
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	a, ok := d.accounts[id]
+	return a, ok
+}
+
+// AccountByName returns the account with that name, ignoring case as
+// Huawei Cloud's account names do.
+func (d *Directory) AccountByName(name string) (Account, bool) {
+	for _, a := range d.Accounts() {
+		if strings.EqualFold(a.Name, name) {
+			return a, true
+		}
+	}
+	return Account{}, false
+}
+
+// Primary reports whether a is the emulator's primary account.
+func (d *Directory) Primary(a Account) bool { return a.ID == d.account.ID }
 
 // Lookup returns the principal an access key belongs to, if WeiStack
 // knows the key.
@@ -202,36 +300,39 @@ func (d *Directory) Secret(accessKey string) (string, bool) {
 }
 
 // Register makes accessKey known as p, with its secret key, replacing
-// any earlier entry. It refuses to take over the administrator's key.
+// any earlier entry. It refuses to take over the administrator's key or
+// an account's root key.
 func (d *Directory) Register(accessKey string, p Principal, secret string) error {
 	if !ValidKey(accessKey) {
 		return fmt.Errorf("identity: %q is not a valid access key", accessKey)
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if old, ok := d.keys[accessKey]; ok && old.principal.Admin {
-		return fmt.Errorf("identity: %s is the administrator's key", accessKey)
+	if old, ok := d.keys[accessKey]; ok && old.protected() {
+		return fmt.Errorf("%w: %s is the administrator's or an account's root key", ErrKeyTaken, accessKey)
 	}
 	d.keys[accessKey] = entry{principal: p, secret: secret}
 	return nil
 }
 
 // Forget removes a key, when it was last used and its failures, except
-// the administrator's.
+// the administrator's and the accounts' root keys.
 func (d *Directory) Forget(accessKey string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if e, ok := d.keys[accessKey]; ok && !e.principal.Admin {
+	if e, ok := d.keys[accessKey]; ok && !e.protected() {
 		delete(d.keys, accessKey)
 		delete(d.lastUsed, accessKey)
 		delete(d.locks, accessKey)
 	}
 }
 
-// Clear forgets every key but the administrator's.
+// Clear forgets every added account and every key but the
+// administrator's, as at start.
 func (d *Directory) Clear() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	clear(d.accounts)
 	for k, e := range d.keys {
 		if !e.principal.Admin {
 			delete(d.keys, k)
@@ -281,7 +382,7 @@ func (d *Directory) SignatureFailed(accessKey string) {
 	defer d.mu.Unlock()
 	e, ok := d.keys[accessKey]
 	if !ok || e.principal.Admin {
-		return
+		return // the operator's key is never locked
 	}
 	l := d.locks[accessKey]
 	if l == nil {

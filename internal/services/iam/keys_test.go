@@ -39,7 +39,7 @@ func TestClassicAccessKeys(t *testing.T) {
 	}
 
 	// The secret is sealed in the store, and opens with the AK.
-	rec, err := e.svc.accessKeys().Get(t.Context(), ak)
+	rec, err := e.svc.accessKeys(t.Context()).Get(t.Context(), ak)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +211,7 @@ func TestAccessKeysFollowTheirUser(t *testing.T) {
 	if _, ok := e.svc.dir.Lookup(ak); ok {
 		t.Fatal("the deleted user's key is still registered")
 	}
-	if _, err := e.svc.accessKeys().Get(t.Context(), ak); err == nil {
+	if _, err := e.svc.accessKeys(t.Context()).Get(t.Context(), ak); err == nil {
 		t.Fatal("the deleted user's key is still stored")
 	}
 }

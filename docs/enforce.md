@@ -115,7 +115,9 @@ VPCs is `vpc:vpcs:list`, creating servers `ecs:cloudServers:createServers`
 
 **Who holds everything:** the administrator's keys, the account's root
 user, and the members of the built-in `admin` group. Add an IAM user to
-`admin` to make it an administrator.
+`admin` to make it an administrator. Everything is within the caller's own
+account: a request on another account's project is refused to everyone,
+the administrator included (see [IAM: accounts](services/iam.md#accounts)).
 
 **Everyone else holds what IAM grants them:**
 

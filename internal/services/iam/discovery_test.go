@@ -57,7 +57,7 @@ func newEnv(t *testing.T) *env {
 	}
 	srv, err := server.New(server.Options{
 		Config: cfg, ProjectID: testProject, Logger: log, Store: st, Engine: lifecycle.New(lifecycle.Options{}),
-		IDs: ids.New(), Services: []server.Service{svc}, Directory: dir,
+		IDs: ids.New(), Services: []server.Service{svc}, Directory: dir, Accounts: svc,
 	})
 	if err != nil {
 		t.Fatal(err)

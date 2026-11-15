@@ -170,6 +170,7 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		Directory:   directory,
 		Tokens:      tokenChecker(services),
 		Permissions: permissions(services),
+		Accounts:    accounts(services),
 		Sealer:      vlt,
 		Proxy: server.ProxyOptions{
 			CA: ca, Domains: cfg.ProxyDomains, Bypass: bypass, Passthrough: cfg.ProxyPassthrough,
@@ -271,6 +272,17 @@ func permissions(services []server.Service) authz.Provider {
 	for _, svc := range services {
 		if p, ok := svc.(authz.Provider); ok {
 			return p
+		}
+	}
+	return nil
+}
+
+// accounts returns the service that manages added accounts: IAM, if it
+// is among services.
+func accounts(services []server.Service) server.Accounts {
+	for _, svc := range services {
+		if a, ok := svc.(server.Accounts); ok {
+			return a
 		}
 	}
 	return nil

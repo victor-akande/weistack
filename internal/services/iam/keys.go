@@ -48,12 +48,12 @@ type accessKey struct {
 	LastUsedAt time.Time `json:"last_used_at,omitzero"`
 }
 
-func (s *Service) accessKeys() store.Collection[accessKey] {
-	return store.Of[accessKey](s.store, global(kindAccessKey))
+func (s *Service) accessKeys(ctx context.Context) store.Collection[accessKey] {
+	return store.Of[accessKey](s.store, s.scope(ctx, kindAccessKey))
 }
 
 func (s *Service) keysOf(ctx context.Context, userID string) ([]accessKey, error) {
-	return s.accessKeys().List(ctx, func(k accessKey) bool { return k.UserID == userID })
+	return s.accessKeys(ctx).List(ctx, func(k accessKey) bool { return k.UserID == userID })
 }
 
 // lastUsed is when k was last used, if ever.
@@ -68,7 +68,7 @@ func (s *Service) lastUsed(k accessKey) (time.Time, bool) {
 // register makes an active key known as its user's, with its secret so
 // that signatures can be checked, and forgets an inactive one. A disabled
 // user's keys stay known, marked disabled.
-func (s *Service) register(k accessKey, u user) error {
+func (s *Service) register(ctx context.Context, k accessKey, u user) error {
 	if k.Status != keyActive {
 		s.dir.Forget(k.ID)
 		return nil
@@ -77,7 +77,7 @@ func (s *Service) register(k accessKey, u user) error {
 	if err != nil {
 		return fmt.Errorf("iam: opening the secret of %s: %w", k.ID, err)
 	}
-	p := identity.Principal{AccountID: s.account().ID, UserID: u.ID, UserName: u.Name, Disabled: !u.Enabled}
+	p := identity.Principal{AccountID: s.account(ctx).ID, UserID: u.ID, UserName: u.Name, Disabled: !u.Enabled}
 	return s.dir.Register(k.ID, p, secret)
 }
 
@@ -88,7 +88,7 @@ func (s *Service) registerKeysOf(ctx context.Context, u user) error {
 		return err
 	}
 	for _, k := range keys {
-		if err := s.register(k, u); err != nil {
+		if err := s.register(ctx, k, u); err != nil {
 			return err
 		}
 	}
@@ -97,7 +97,7 @@ func (s *Service) registerKeysOf(ctx context.Context, u user) error {
 
 // registerAllKeys registers every stored key, at start.
 func (s *Service) registerAllKeys(ctx context.Context) error {
-	users, err := s.users().List(ctx, nil)
+	users, err := s.users(ctx).List(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -117,7 +117,7 @@ func (s *Service) deleteKeysOf(ctx context.Context, userID string) error {
 	}
 	for _, k := range keys {
 		s.dir.Forget(k.ID)
-		if err := s.accessKeys().Delete(ctx, k.ID); err != nil && !errors.Is(err, store.ErrNotFound) {
+		if err := s.accessKeys(ctx).Delete(ctx, k.ID); err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
 	}
@@ -154,14 +154,14 @@ func (s *Service) createKey(ctx context.Context, u user, description string) (ac
 			ID: creds.AccessKey, UserID: u.ID, Secret: sealed, Status: keyActive,
 			Description: description, CreatedAt: s.now().UTC(),
 		}
-		err = s.accessKeys().Create(ctx, k.ID, k)
+		err = s.accessKeys(ctx).Create(ctx, k.ID, k)
 		if errors.Is(err, store.ErrExists) {
 			continue
 		}
 		if err != nil {
 			return accessKey{}, "", err
 		}
-		return k, creds.SecretKey, s.register(k, u)
+		return k, creds.SecretKey, s.register(ctx, k, u)
 	}
 }
 
@@ -169,11 +169,11 @@ func (s *Service) createKey(ctx context.Context, u user, description string) (ac
 func (s *Service) updateKey(ctx context.Context, k accessKey, status, description *string) (accessKey, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	u, err := s.users().Get(ctx, k.UserID)
+	u, err := s.users(ctx).Get(ctx, k.UserID)
 	if err != nil {
 		return accessKey{}, err
 	}
-	k, err = s.accessKeys().Update(ctx, k.ID, func(k *accessKey) error {
+	k, err = s.accessKeys(ctx).Update(ctx, k.ID, func(k *accessKey) error {
 		if status != nil && *status != k.Status {
 			if *status == keyInactive {
 				if t, ok := s.lastUsed(*k); ok {
@@ -190,14 +190,14 @@ func (s *Service) updateKey(ctx context.Context, k accessKey, status, descriptio
 	if err != nil {
 		return accessKey{}, err
 	}
-	return k, s.register(k, u)
+	return k, s.register(ctx, k, u)
 }
 
 func (s *Service) deleteKey(ctx context.Context, ak string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.dir.Forget(ak)
-	return s.accessKeys().Delete(ctx, ak)
+	return s.accessKeys(ctx).Delete(ctx, ak)
 }
 
 func validKeyStatus(s *string) bool { return s == nil || *s == keyActive || *s == keyInactive }
@@ -248,6 +248,7 @@ func writeKeyQuota(w http.ResponseWriter) error {
 
 // POST /v3.0/OS-CREDENTIAL/credentials.
 func (s *Service) handleCreateCredential(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	var b struct {
 		Credential *struct {
 			UserID      *string `json:"user_id"`
@@ -266,14 +267,14 @@ func (s *Service) handleCreateCredential(w http.ResponseWriter, r *http.Request)
 	if err := s.authorizeOwn(r, *b.Credential.UserID, "iam::createAccessKey"); err != nil {
 		return err
 	}
-	u, err := s.users().Get(r.Context(), *b.Credential.UserID)
+	u, err := s.users(ctx).Get(ctx, *b.Credential.UserID)
 	if errors.Is(err, store.ErrNotFound) {
 		return errNotFound("user", *b.Credential.UserID)
 	}
 	if err != nil {
 		return err
 	}
-	k, secret, err := s.createKey(r.Context(), u, deref(b.Credential.Description))
+	k, secret, err := s.createKey(ctx, u, deref(b.Credential.Description))
 	if errors.Is(err, errQuota) {
 		return writeKeyQuota(w)
 	}
@@ -288,15 +289,17 @@ func (s *Service) handleCreateCredential(w http.ResponseWriter, r *http.Request)
 // caller returns the ID of the user a request acts as: the user whose key
 // signed it, or, for any other key, the root user.
 func (s *Service) caller(r *http.Request) string {
-	if id := auth.FromContext(r.Context()); id.Known && id.Principal.UserID != "" {
+	ctx := r.Context()
+	if id := auth.FromContext(ctx); id.Known && id.Principal.UserID != "" {
 		return id.Principal.UserID
 	}
-	return s.account().RootUserID()
+	return s.account(ctx).RootUserID()
 }
 
 // GET /v3.0/OS-CREDENTIAL/credentials: a user's keys, the caller's by
 // default.
 func (s *Service) handleListCredentials(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	userID := r.URL.Query().Get("user_id")
 	if userID == "" {
 		userID = s.caller(r)
@@ -304,12 +307,12 @@ func (s *Service) handleListCredentials(w http.ResponseWriter, r *http.Request) 
 	if err := s.authorizeOwn(r, userID, "iam::listAccessKeys"); err != nil {
 		return err
 	}
-	if _, err := s.users().Get(r.Context(), userID); errors.Is(err, store.ErrNotFound) {
+	if _, err := s.users(ctx).Get(ctx, userID); errors.Is(err, store.ErrNotFound) {
 		return errNotFound("user", userID)
 	} else if err != nil {
 		return err
 	}
-	keys, err := s.keysOf(r.Context(), userID)
+	keys, err := s.keysOf(ctx, userID)
 	if err != nil {
 		return err
 	}
@@ -325,8 +328,9 @@ func (s *Service) handleListCredentials(w http.ResponseWriter, r *http.Request) 
 // getCredential returns the access key in the path, if the caller may
 // perform action on it: its owner always may.
 func (s *Service) getCredential(r *http.Request, action string) (accessKey, error) {
+	ctx := r.Context()
 	ak := chi.URLParam(r, "access_key")
-	k, err := s.accessKeys().Get(r.Context(), ak)
+	k, err := s.accessKeys(ctx).Get(ctx, ak)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return accessKey{}, err
 	}
@@ -426,12 +430,13 @@ func errV5NoKey(ak string) *apierr.Error { return errNotFound("access key", ak) 
 
 // v5Key returns the key in the path, which must be the user's.
 func (s *Service) v5Key(r *http.Request) (accessKey, error) {
+	ctx := r.Context()
 	u, err := s.getUserV5(r)
 	if err != nil {
 		return accessKey{}, err
 	}
 	ak := chi.URLParam(r, "access_key_id")
-	k, err := s.accessKeys().Get(r.Context(), ak)
+	k, err := s.accessKeys(ctx).Get(ctx, ak)
 	if errors.Is(err, store.ErrNotFound) || (err == nil && k.UserID != u.ID) {
 		return accessKey{}, errV5NoKey(ak)
 	}

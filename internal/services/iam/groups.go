@@ -1,6 +1,7 @@
 package iam
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"slices"
@@ -29,8 +30,9 @@ type groupResponse struct {
 }
 
 func (s *Service) groupView(r *http.Request, g group) groupView {
+	ctx := r.Context()
 	return groupView{
-		ID: g.ID, Name: g.Name, Description: g.Description, DomainID: s.account().ID,
+		ID: g.ID, Name: g.Name, Description: g.Description, DomainID: s.account(ctx).ID,
 		CreateTime: g.CreatedAt.UnixMilli(), Links: selfLinks(r, "/v3/groups/"+g.ID),
 	}
 }
@@ -63,8 +65,8 @@ func readGroupBody(r *http.Request) (groupChange, error) {
 }
 
 // checkGroupChange validates the fields given, classic style.
-func (s *Service) checkGroupChange(c groupChange) error {
-	if c.DomainID != nil && *c.DomainID != s.account().ID {
+func (s *Service) checkGroupChange(ctx context.Context, c groupChange) error {
+	if c.DomainID != nil && *c.DomainID != s.account(ctx).ID {
 		return errInvalidField("domain_id", *c.DomainID)
 	}
 	if c.Name != nil && !validGroupName(*c.Name) {
@@ -94,35 +96,37 @@ var classicGroupErrs = groupErrs{
 // createGroup stores a new group. The caller has validated name and
 // description.
 func (s *Service) createGroup(r *http.Request, name, description string, e groupErrs) (group, error) {
+	ctx := r.Context()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, taken, err := s.groupByName(r.Context(), name); err != nil || taken {
+	if _, taken, err := s.groupByName(ctx, name); err != nil || taken {
 		if err == nil {
 			err = e.taken(name)
 		}
 		return group{}, err
 	}
 	g := group{ID: s.ids.Hex32(), Name: name, Description: description, CreatedAt: s.now().UTC()}
-	return g, s.groups().Create(r.Context(), g.ID, g)
+	return g, s.groups(ctx).Create(ctx, g.ID, g)
 }
 
 // updateGroup renames or redescribes the group in the path.
 func (s *Service) updateGroup(r *http.Request, name, description *string, e groupErrs) (group, error) {
+	ctx := r.Context()
 	id := chi.URLParam(r, "group_id")
-	if id == s.adminGroupID() && name != nil {
+	if id == s.adminGroupID(ctx) && name != nil {
 		return group{}, e.builtIn()
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if name != nil {
-		if other, taken, err := s.groupByName(r.Context(), *name); err != nil || (taken && other.ID != id) {
+		if other, taken, err := s.groupByName(ctx, *name); err != nil || (taken && other.ID != id) {
 			if err == nil {
 				err = e.taken(*name)
 			}
 			return group{}, err
 		}
 	}
-	g, err := s.groups().Update(r.Context(), id, func(g *group) error {
+	g, err := s.groups(ctx).Update(ctx, id, func(g *group) error {
 		if name != nil {
 			g.Name = *name
 		}
@@ -138,8 +142,9 @@ func (s *Service) updateGroup(r *http.Request, name, description *string, e grou
 }
 
 func (s *Service) getGroup(r *http.Request, e groupErrs) (group, error) {
+	ctx := r.Context()
 	id := chi.URLParam(r, "group_id")
-	g, err := s.groups().Get(r.Context(), id)
+	g, err := s.groups(ctx).Get(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
 		return group{}, e.notFound(id)
 	}
@@ -148,28 +153,29 @@ func (s *Service) getGroup(r *http.Request, e groupErrs) (group, error) {
 
 // deleteGroup removes a group and the roles granted to it.
 func (s *Service) deleteGroup(r *http.Request, e groupErrs) error {
+	ctx := r.Context()
 	id := chi.URLParam(r, "group_id")
-	if id == s.adminGroupID() {
+	if id == s.adminGroupID(ctx) {
 		return e.builtIn()
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, err := s.groups().Get(r.Context(), id); errors.Is(err, store.ErrNotFound) {
+	if _, err := s.groups(ctx).Get(ctx, id); errors.Is(err, store.ErrNotFound) {
 		return e.notFound(id)
 	} else if err != nil {
 		return err
 	}
-	if err := s.deleteAssignments(r.Context(), func(a assignment) bool {
+	if err := s.deleteAssignments(ctx, func(a assignment) bool {
 		return a.Subject == subjectGroup && a.SubjectID == id
 	}); err != nil {
 		return err
 	}
-	if err := s.detachAll(r.Context(), func(a policyAttachment) bool {
+	if err := s.detachAll(ctx, func(a policyAttachment) bool {
 		return a.Subject == subjectGroup && a.SubjectID == id
 	}); err != nil {
 		return err
 	}
-	err := s.groups().Delete(r.Context(), id)
+	err := s.groups(ctx).Delete(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
 		return e.notFound(id)
 	}
@@ -180,15 +186,16 @@ func (s *Service) deleteGroup(r *http.Request, e groupErrs) error {
 // It fails if the group or user does not exist, or if the membership is
 // already as asked (errSame).
 func (s *Service) setMember(r *http.Request, userID string, member bool, noGroup, noUser func() error, errSame error) error {
+	ctx := r.Context()
 	groupID := chi.URLParam(r, "group_id")
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, err := s.users().Get(r.Context(), userID); errors.Is(err, store.ErrNotFound) {
+	if _, err := s.users(ctx).Get(ctx, userID); errors.Is(err, store.ErrNotFound) {
 		return noUser()
 	} else if err != nil {
 		return err
 	}
-	_, err := s.groups().Update(r.Context(), groupID, func(g *group) error {
+	_, err := s.groups(ctx).Update(ctx, groupID, func(g *group) error {
 		if g.has(userID) == member {
 			return errSame
 		}
@@ -207,6 +214,7 @@ func (s *Service) setMember(r *http.Request, userID string, member bool, noGroup
 
 // POST /v3/groups.
 func (s *Service) handleCreateGroup(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	c, err := readGroupBody(r)
 	if err != nil {
 		return err
@@ -214,7 +222,7 @@ func (s *Service) handleCreateGroup(w http.ResponseWriter, r *http.Request) erro
 	if c.Name == nil {
 		return errRequired("name")
 	}
-	if err := s.checkGroupChange(c); err != nil {
+	if err := s.checkGroupChange(ctx, c); err != nil {
 		return err
 	}
 	g, err := s.createGroup(r, *c.Name, deref(c.Description), classicGroupErrs)
@@ -226,11 +234,12 @@ func (s *Service) handleCreateGroup(w http.ResponseWriter, r *http.Request) erro
 
 // GET /v3/groups, filtered by name and domain_id.
 func (s *Service) handleListGroups(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	q := r.URL.Query()
-	if d := q.Get("domain_id"); d != "" && d != s.account().ID {
+	if d := q.Get("domain_id"); d != "" && d != s.account(ctx).ID {
 		return s.writeGroups(w, r, "/v3/groups", nil)
 	}
-	all, err := s.groups().List(r.Context(), func(g group) bool { return q.Get("name") == "" || g.Name == q.Get("name") })
+	all, err := s.groups(ctx).List(ctx, func(g group) bool { return q.Get("name") == "" || g.Name == q.Get("name") })
 	if err != nil {
 		return err
 	}
@@ -247,11 +256,12 @@ func (s *Service) handleShowGroup(w http.ResponseWriter, r *http.Request) error 
 
 // PATCH /v3/groups/{group_id}.
 func (s *Service) handleUpdateGroup(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	c, err := readGroupBody(r)
 	if err != nil {
 		return err
 	}
-	if err := s.checkGroupChange(c); err != nil {
+	if err := s.checkGroupChange(ctx, c); err != nil {
 		return err
 	}
 	g, err := s.updateGroup(r, c.Name, c.Description, classicGroupErrs)
@@ -272,11 +282,12 @@ func (s *Service) handleDeleteGroup(w http.ResponseWriter, r *http.Request) erro
 
 // GET /v3/groups/{group_id}/users.
 func (s *Service) handleListUsersInGroup(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	g, err := s.getGroup(r, classicGroupErrs)
 	if err != nil {
 		return err
 	}
-	members, err := s.users().List(r.Context(), func(u user) bool { return g.has(u.ID) })
+	members, err := s.users(ctx).List(ctx, func(u user) bool { return g.has(u.ID) })
 	if err != nil {
 		return err
 	}

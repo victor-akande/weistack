@@ -142,17 +142,20 @@ func (s *Service) roleRoutes(r chi.Router) {
 // naming nothing that exists is checked on no particular resource, and
 // the handler then answers that it does not exist.
 func (s *Service) userResource(r *http.Request) (authz.Resource, bool) {
-	u, err := s.users().Get(r.Context(), chi.URLParam(r, "user_id"))
+	ctx := r.Context()
+	u, err := s.users(ctx).Get(ctx, chi.URLParam(r, "user_id"))
 	return authz.Resource{Type: "user", Path: u.Name}, err == nil
 }
 
 func (s *Service) groupResource(r *http.Request) (authz.Resource, bool) {
-	g, err := s.groups().Get(r.Context(), chi.URLParam(r, "group_id"))
+	ctx := r.Context()
+	g, err := s.groups(ctx).Get(ctx, chi.URLParam(r, "group_id"))
 	return authz.Resource{Type: "group", Path: g.Name}, err == nil
 }
 
 func (s *Service) policyResource(r *http.Request) (authz.Resource, bool) {
-	p, err := s.policies().Get(r.Context(), chi.URLParam(r, "policy_id"))
+	ctx := r.Context()
+	p, err := s.policies(ctx).Get(ctx, chi.URLParam(r, "policy_id"))
 	return authz.Resource{Type: "policy", Path: p.Path + p.Name}, err == nil
 }
 

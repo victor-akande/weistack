@@ -81,6 +81,9 @@ type Options struct {
 	Permissions authz.Provider
 	// Sealer encrypts the explanations of permission denials.
 	Sealer authz.Sealer
+	// Accounts manages the accounts besides the primary one (IAM). Nil
+	// leaves the admin API without /_weistack/accounts.
+	Accounts Accounts
 	// Now defaults to time.Now; enforcement checks signing times with it.
 	Now func() time.Time
 }
@@ -106,6 +109,7 @@ type Server struct {
 	tokens   auth.TokenChecker
 	perms    authz.Provider
 	sealer   authz.Sealer
+	accounts Accounts
 	now      func() time.Time
 }
 
@@ -164,6 +168,7 @@ func New(opts Options) (*Server, error) {
 	s.dir = opts.Directory
 	s.tokens = opts.Tokens
 	s.perms, s.sealer = opts.Permissions, opts.Sealer
+	s.accounts = opts.Accounts
 	s.now = opts.Now
 	if s.now == nil {
 		s.now = time.Now
