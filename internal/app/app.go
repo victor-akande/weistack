@@ -361,7 +361,7 @@ func buildServices(
 	if err := iamSvc.Resume(ctx); err != nil {
 		return nil, err
 	}
-	stsSvc, err := sts.New(log, directory)
+	stsSvc, err := sts.New(log, directory, vlt)
 	if err != nil {
 		return nil, err
 	}
