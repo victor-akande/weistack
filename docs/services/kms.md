@@ -115,6 +115,34 @@ what it encrypted. `number_of_rotations` counts them.
 A key has at most 20 tags. Keys are 1 to 36 characters, values up to 43,
 without control characters or `*<>\=`.
 
+## Grants
+
+| Operation | Method and path | Status | Notes |
+| --- | --- | --- | --- |
+| CreateGrant | `POST .../create-grant` | Yes | `grantee_principal_type` `user` (default) or `domain` |
+| ListGrants | `POST .../list-grants` | Yes | `limit` (up to 100) and `marker` |
+| CancelGrant (revoke) | `POST .../revoke-grant` | Yes | |
+| CancelSelfGrant (retire) | `POST .../retire-grant` | Yes | By the retiring principal, or a grantee allowed `retire-grant` |
+| ListRetirableGrants | `POST .../list-retirable-grants` | Yes | The grants the caller may retire |
+
+A grant lets a user, or every caller of another account (`domain`), use
+a key for its `operations`: `create-datakey`,
+`create-datakey-without-plaintext`, `encrypt-datakey`, `decrypt-datakey`,
+`describe-key`, `create-grant`, `retire-grant`, `encrypt-data` and
+`decrypt-data` (not `create-grant` alone, `KMS.2401`).
+
+- **A grant is a permission.** Its grantee may perform those operations
+  on the key with no IAM policy, also under `-iam=enforce`, as Huawei
+  documents grants. Anything else on the key still needs IAM.
+- **Another account** names the key by its ID in requests to its own
+  project, and decrypts what the key's owner encrypted (and the reverse).
+  Without a grant, another account's key is not found (`KMS.0207`).
+- Grantees and retiring principals are 1 to 64 letters and digits
+  (`KMS.2402`); a key has at most 100 grants (`KMS.2404`). Default keys
+  cannot be granted (`KMS.0211`). `issuing_principal` is the user that
+  made the grant, or the account for the root user and the administrator.
+- Revoking or retiring a grant ends the grantee's access at once.
+
 ## Errors
 
 Only codes from Huawei's published DEW error table are used, in KMS's
