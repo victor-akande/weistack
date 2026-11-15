@@ -236,11 +236,16 @@ defaults. Run `weistack -h` for the full list.
 | `GET /_weistack/state` | Dump of every stored resource as JSON |
 | `POST /_weistack/reset` | Wipe all state and pending transitions |
 | `GET /_weistack/ca` | The proxy's CA certificate, as PEM |
+| `GET /_weistack/accounts` | Every account: the primary one and those added |
+| `POST /_weistack/accounts` | Add an account, `{"name": "partner"}`; returns its root user's keys |
 | `GET /_weistack/metrics` | Prometheus metrics (only with `-metrics`) |
 
 ## Authentication
 
-WeiStack has one account (Huawei Cloud's "domain") and an administrator.
+WeiStack has a primary account (Huawei Cloud's "domain") and an
+administrator. More accounts can be added through the admin API, to try
+what one account may do in another (see
+[IAM: accounts](docs/services/iam.md#accounts)).
 The administrator's keys are generated on first start and kept beside the
 CA (`~/.config/weistack/tls/admin-credentials.json`, readable only by you),
 so they stay the same across restarts. The banner shows them, and

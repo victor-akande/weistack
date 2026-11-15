@@ -4,10 +4,11 @@ Endpoint: `iam.myhuaweicloud.com` (the region-less host the SDKs and
 Terraform use by default), `iam.{region}.myhuaweicloud.com`, or the `/iam`
 path prefix. STS: `sts.{region}.myhuaweicloud.com` or `/sts`.
 
-IAM belongs to the account, not to a project. WeiStack has one account
-(Huawei Cloud's "domain"), named `weistack`; `/_weistack/services` shows its
-ID. By default **credentials are not checked**: every caller acts for that
-account. With `-iam=enforce` every request needs a valid signature or IAM
+IAM belongs to the account, not to a project. WeiStack's primary account
+(Huawei Cloud's "domain") is named `weistack`; `/_weistack/services` shows
+its ID. More can be added (see [Accounts](#accounts)). By default
+**credentials are not checked**: a key WeiStack knows acts for its account,
+and every other caller for the primary one. With `-iam=enforce` every request needs a valid signature or IAM
 token; see [Checking credentials](../enforce.md).
 
 Legend: **Yes** implemented, **No** returns `501 WeiStack.0501`.
@@ -257,22 +258,59 @@ every API, as on Huawei Cloud.
 
 ## Projects
 
-The account has a project in every region:
+Each account has a project in every region:
 
-- The emulator's region (`-region`) keeps the configured project ID, so
-  nothing changes for existing set-ups.
-- Any other region's project has an ID derived from the account. It is
-  the same on every start, and is listed once a client has asked for it
-  by name, as the SDKs do.
+- The primary account's project in the emulator's region (`-region`) keeps
+  the configured project ID, so nothing changes for existing set-ups.
+- Every other project has an ID derived from its account and region. It
+  is the same on every start, and is listed once a client has asked for
+  it by name, as the SDKs do.
 
 Each project's `parent_id` and `domain_id` are the account's ID.
 
+## Accounts
+
+Delegation on Huawei Cloud is between accounts, so WeiStack can emulate
+more than one. Add an account through the emulator's admin API:
+
+```bash
+curl -s -X POST http://localhost:8780/_weistack/accounts -d '{"name": "partner"}'
+```
+
+```json
+{
+  "account": {"id": "…", "name": "partner", "primary": false, "project_id": "…"},
+  "credentials": {"access_key": "…", "secret_key": "…"}
+}
+```
+
+- The keys are the new account's root user's, and hold every permission
+  in it. They are shown only in this answer. Give `access_key` and
+  `secret_key` in the request to choose them, for clients configured in
+  advance.
+- The new account starts as the primary one does: its root user (named
+  after the account), the built-in `admin` group, and a project in every
+  region. `project_id` is its project in the emulator's region.
+- Its users, groups, policies, permissions and tokens are its own. A
+  password login finds the account by the domain it names, as on Huawei
+  Cloud.
+- Its resources are its own: VPCs, servers and the rest live in its
+  projects, and its buckets belong to it. With `-iam=enforce`, a request
+  on another account's project is refused (`WeiStack.0403`, or the
+  service's own denial), whatever the caller may do in its own account.
+- `GET /_weistack/accounts` lists every account, without keys. Names are
+  unique, ignoring case.
+- Added accounts are kept with the data under `-persist`.
+  `POST /_weistack/reset` removes them, returning to the primary account
+  alone.
+
 ## Caller identity
 
-STS reports the account's ID. A key that belongs to a user names that
-user. Any other key, including the administrator's (`weistack
-credentials`), stands for the account's root user,
-`iam::<account-id>:user:weistack`. Asking needs no permission.
+STS reports the caller's account's ID. A key that belongs to a user names
+that user. An added account's root key names its root user,
+`iam::<account-id>:user:<account-name>`. Any other key, including the
+administrator's (`weistack credentials`), stands for the primary account's
+root user, `iam::<account-id>:user:weistack`. Asking needs no permission.
 
 ## Authorization messages
 

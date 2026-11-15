@@ -166,8 +166,8 @@ own owner, as in v0.1; with `-iam=enforce` it is refused.
 
 ## The admin API
 
-`/_weistack/services`, `state`, `reset`, `ca`, `health` and `metrics` serve
-the emulator itself. They are not Huawei APIs and are not protected by
+`/_weistack/services`, `state`, `reset`, `ca`, `health`, `metrics` and
+`accounts` serve the emulator itself. They are not Huawei APIs and are not protected by
 `-iam`.
 
 ## Testing
