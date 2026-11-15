@@ -52,33 +52,57 @@ type Authority struct {
 	leaves map[string]*tls.Certificate
 }
 
+// createWait is how long Load waits for another process that is creating
+// the CA in the same directory.
+const createWait = 5 * time.Second
+
+// errClaimed means another process created the CA key first.
+var errClaimed = errors.New("tlsca: another process is creating the CA")
+
 // Load reads the CA from dir, creating it (and dir) on first use. An
 // empty dir gives an in-memory CA that lasts as long as the process.
+//
+// Several processes may start on the same new directory at once: the one
+// that creates the key file creates the CA, and the others wait for its
+// certificate, which is written last (see create).
 func Load(dir string) (*Authority, error) {
 	if dir == "" {
 		return generate()
 	}
+	return load(dir, createWait)
+}
+
+func load(dir string, wait time.Duration) (*Authority, error) {
 	certPath, keyPath := filepath.Join(dir, CertFile), filepath.Join(dir, keyFile)
-	certPEM, certErr := os.ReadFile(certPath) //nolint:gosec // operator-chosen directory
-	keyPEM, keyErr := os.ReadFile(keyPath)    //nolint:gosec // operator-chosen directory
-	switch {
-	case certErr == nil && keyErr == nil:
-		return parse(certPEM, keyPEM)
-	case errors.Is(certErr, os.ErrNotExist) && errors.Is(keyErr, os.ErrNotExist):
-		a, err := generate()
-		if err != nil {
-			return nil, err
+	half := fmt.Errorf("tlsca: %s holds only half of a CA (%s or %s is missing); delete the directory to create a new one", dir, CertFile, keyFile)
+	deadline := time.Now().Add(wait)
+	for {
+		// The certificate first: once it exists, the key is complete.
+		certPEM, certErr := os.ReadFile(certPath) //nolint:gosec // operator-chosen directory
+		keyPEM, keyErr := os.ReadFile(keyPath)    //nolint:gosec // operator-chosen directory
+		certMissing, keyMissing := errors.Is(certErr, os.ErrNotExist), errors.Is(keyErr, os.ErrNotExist)
+		switch {
+		case certErr == nil && keyErr == nil:
+			return parse(certPEM, keyPEM)
+		case certErr != nil && !certMissing:
+			return nil, fmt.Errorf("tlsca: reading %s: %w", certPath, certErr)
+		case keyErr != nil && !keyMissing:
+			return nil, fmt.Errorf("tlsca: reading %s: %w", keyPath, keyErr)
+		case !certMissing: // a certificate without its key
+			return nil, half
+		case keyMissing:
+			a, err := create(dir)
+			if !errors.Is(err, errClaimed) {
+				return a, err
+			}
 		}
-		if err := a.save(dir); err != nil {
-			return nil, err
+		// A key without its certificate: another process is creating the
+		// CA, or one died while doing so.
+		if time.Now().After(deadline) {
+			return nil, half
 		}
-		return a, nil
-	case certErr != nil && !errors.Is(certErr, os.ErrNotExist):
-		return nil, fmt.Errorf("tlsca: reading %s: %w", certPath, certErr)
-	case keyErr != nil && !errors.Is(keyErr, os.ErrNotExist):
-		return nil, fmt.Errorf("tlsca: reading %s: %w", keyPath, keyErr)
+		time.Sleep(20 * time.Millisecond)
 	}
-	return nil, fmt.Errorf("tlsca: %s holds only half of a CA (%s or %s is missing); delete the directory to create a new one", dir, CertFile, keyFile)
 }
 
 func newAuthority(cert *x509.Certificate, certPEM []byte, key crypto.Signer) (*Authority, error) {
@@ -148,21 +172,54 @@ func parse(certPEM, keyPEM []byte) (*Authority, error) {
 	return newAuthority(cert, certPEM, key)
 }
 
-func (a *Authority) save(dir string) error {
+// create makes a new CA in dir. The key file is created exclusively, so
+// of several processes starting at once only one creates the CA; the
+// others get errClaimed. The certificate is renamed into place last, so a
+// reader that finds it also finds the whole key.
+func create(dir string) (*Authority, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("tlsca: creating %s: %w", dir, err)
+		return nil, fmt.Errorf("tlsca: creating %s: %w", dir, err)
+	}
+	a, err := generate()
+	if err != nil {
+		return nil, err
 	}
 	der, err := x509.MarshalPKCS8PrivateKey(a.key)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if err := os.WriteFile(filepath.Join(dir, keyFile), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), 0o600); err != nil {
-		return fmt.Errorf("tlsca: saving key: %w", err)
+	f, err := os.OpenFile(filepath.Join(dir, keyFile), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // operator-chosen directory
+	if errors.Is(err, os.ErrExist) {
+		return nil, errClaimed
 	}
-	if err := os.WriteFile(filepath.Join(dir, CertFile), a.certPEM, 0o644); err != nil { //nolint:gosec // a public certificate
-		return fmt.Errorf("tlsca: saving certificate: %w", err)
+	if err != nil {
+		return nil, fmt.Errorf("tlsca: saving key: %w", err)
 	}
-	return nil
+	if err := writeAndClose(f, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})); err != nil {
+		return nil, fmt.Errorf("tlsca: saving key: %w", err)
+	}
+
+	tmp, err := os.CreateTemp(dir, ".ca-*.pem")
+	if err != nil {
+		return nil, fmt.Errorf("tlsca: saving certificate: %w", err)
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }() // fails harmlessly once renamed
+	if err := writeAndClose(tmp, a.certPEM); err != nil {
+		return nil, fmt.Errorf("tlsca: saving certificate: %w", err)
+	}
+	if err := os.Chmod(tmp.Name(), 0o644); err != nil { //nolint:gosec // a public certificate
+		return nil, fmt.Errorf("tlsca: saving certificate: %w", err)
+	}
+	if err := os.Rename(tmp.Name(), filepath.Join(dir, CertFile)); err != nil {
+		return nil, fmt.Errorf("tlsca: saving certificate: %w", err)
+	}
+	return a, nil
+}
+
+func writeAndClose(f *os.File, data []byte) error {
+	_, werr := f.Write(data)
+	serr := f.Sync()
+	return errors.Join(werr, serr, f.Close())
 }
 
 // CertPEM returns the CA certificate, for clients to trust.
