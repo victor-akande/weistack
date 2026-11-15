@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/victor-akande/weistack/internal/core/apierr"
+	"github.com/victor-akande/weistack/internal/core/authz"
 	"github.com/victor-akande/weistack/internal/core/httpx"
 	"github.com/victor-akande/weistack/internal/core/reqctx"
 	"github.com/victor-akande/weistack/internal/core/store"
@@ -20,19 +21,26 @@ import (
 )
 
 // Routes implements server.Service. Paths are those of the real API.
+// Each route names the IAM action its API page documents (api-rds:
+// rds_06_0001, rds_06_0002, rds_01_0002, rds_01_0004, rds_01_0003,
+// rds_04_0010, rds_09_0004, rds_09_0005, rds_09_0007, rds_08_0001);
+// instance actions name theirs once the body is read (rds_06_0003,
+// rds_01_0101, rds_01_0102).
 func (s *Service) Routes(r chi.Router) {
+	act, instance := authz.Action, authz.Param("instance", "instance_id")
 	r.Route("/v3/{project_id}", func(r chi.Router) {
-		r.Get("/datastores/{database_name}", s.handle("ListDatastores", s.handleListDatastores))
-		r.Get("/flavors/{database_name}", s.handle("ListFlavors", s.handleListFlavors))
-		r.Post("/instances", s.handle("CreateInstance", s.handleCreate))
-		r.Get("/instances", s.handle("ListInstances", s.handleList))
-		r.Delete("/instances/{instance_id}", s.handle("DeleteInstance", s.handleDelete))
-		r.Post("/instances/{instance_id}/action", s.handle("InstanceAction", s.handleAction))
-		r.Get("/instances/{instance_id}/storage-used-space", s.handle("ShowStorageUsedSpace", s.handleStorageUsedSpace))
-		r.Post("/backups", s.handle("CreateManualBackup", s.handleCreateBackup))
-		r.Get("/backups", s.handle("ListBackups", s.handleListBackups))
-		r.Delete("/backups/{backup_id}", s.handle("DeleteManualBackup", s.handleDeleteBackup))
-		r.Get("/jobs", s.handle("ListJobInfo", s.handleShowJob))
+		r.Use(authz.Service(authz.ServiceOptions{Name: "rds", Style: apierr.StyleFlat}))
+		r.With(act("rds:instance:listDatabaseVersion")).Get("/datastores/{database_name}", s.handle("ListDatastores", s.handleListDatastores))
+		r.With(act("rds:instance:listFlavors")).Get("/flavors/{database_name}", s.handle("ListFlavors", s.handleListFlavors))
+		r.With(act("rds:instance:create")).Post("/instances", s.handle("CreateInstance", s.handleCreate))
+		r.With(act("rds:instance:listAll")).Get("/instances", s.handle("ListInstances", s.handleList))
+		r.With(act("rds:instance:deleteInstance", instance)).Delete("/instances/{instance_id}", s.handle("DeleteInstance", s.handleDelete))
+		r.With(authz.Defer()).Post("/instances/{instance_id}/action", s.handle("InstanceAction", s.handleAction))
+		r.With(act("rds:instance:listAll")).Get("/instances/{instance_id}/storage-used-space", s.handle("ShowStorageUsedSpace", s.handleStorageUsedSpace))
+		r.With(act("rds:backup:create")).Post("/backups", s.handle("CreateManualBackup", s.handleCreateBackup))
+		r.With(act("rds:backup:list")).Get("/backups", s.handle("ListBackups", s.handleListBackups))
+		r.With(act("rds:backup:delete")).Delete("/backups/{backup_id}", s.handle("DeleteManualBackup", s.handleDeleteBackup))
+		r.With(act("rds:task:listAll")).Get("/jobs", s.handle("ListJobInfo", s.handleShowJob))
 	})
 }
 
@@ -204,6 +212,7 @@ func (s *Service) handleAction(w http.ResponseWriter, r *http.Request, t Tenant)
 		return errInvalid("The request body is invalid: %s", err)
 	}
 	id := chi.URLParam(r, "instance_id")
+	instance := authz.Resource{Type: "instance", Path: id}
 	info := reqctx.From(r.Context())
 	var (
 		job Job
@@ -212,12 +221,22 @@ func (s *Service) handleAction(w http.ResponseWriter, r *http.Request, t Tenant)
 	switch {
 	case req.Restart != nil && req.ResizeFlavor == nil && req.EnlargeVolume == nil:
 		info.SetOperation("StartInstanceRestartAction")
+		if err := authz.Check(r, "rds:instance:restart", instance); err != nil {
+			return err
+		}
 		job, err = s.RestartInstance(r.Context(), t, id)
 	case req.ResizeFlavor != nil && req.Restart == nil && req.EnlargeVolume == nil:
 		info.SetOperation("StartResizeFlavorAction")
+		// modifySpec documents no resource type: it is checked on none.
+		if err := authz.Check(r, "rds:instance:modifySpec"); err != nil {
+			return err
+		}
 		job, err = s.ResizeInstance(r.Context(), t, id, *req.ResizeFlavor)
 	case req.EnlargeVolume != nil && req.Restart == nil && req.ResizeFlavor == nil:
 		info.SetOperation("StartInstanceEnlargeVolumeAction")
+		if err := authz.Check(r, "rds:instance:extendSpace", instance); err != nil {
+			return err
+		}
 		job, err = s.EnlargeVolume(r.Context(), t, id, *req.EnlargeVolume)
 	default:
 		return errInvalid("The request body must contain exactly one of restart, resize_flavor and enlarge_volume.")

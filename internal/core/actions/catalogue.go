@@ -60,8 +60,6 @@ var all = []Action{
 	{"ims:images:updateImage", []string{"ims:images:update"}, Write, "image"},
 	{"ims:images:deleteImage", []string{"ims:images:delete"}, Write, "image"},
 	{"ims:serverImages:create", nil, Write, ""},
-	{"ims:wholeImages:create", nil, Write, ""},
-	{"ims:dataImages:create", nil, Write, ""},
 	{"ims:images:getJob", []string{"ims:images:list"}, Read, ""},
 
 	// RDS: support.huaweicloud.com/intl/en-us/usermanual-permissions/iam_11_0033.html
@@ -69,8 +67,8 @@ var all = []Action{
 	{"rds:instance:create", nil, Write, ""},
 	{"rds:instance:deleteInstance", []string{"rds:instance:delete"}, Write, "instance"},
 	{"rds:instance:restart", nil, Write, "instance"},
-	{"rds:instance:start", []string{"rds:instance:operateServer"}, Write, "instance"},
-	{"rds:instance:stop", []string{"rds:instance:operateServer"}, Write, "instance"},
+	{"rds:instance:modifySpec", nil, Write, ""},
+	{"rds:instance:extendSpace", nil, PermissionManagement, "instance"},
 	{"rds:instance:listFlavors", nil, Read, ""},
 	{"rds:instance:listDatabaseVersion", nil, Read, ""},
 	{"rds:backup:create", nil, Write, ""},
@@ -124,6 +122,7 @@ var all = []Action{
 	{"iam:users:delete", []string{"iam:users:deleteUser"}, Write, ""},
 	{"iam:users:listGroups", []string{"iam:groups:listGroupsForUser"}, List, ""},
 	{"iam:projects:list", []string{"iam:projects:listProjects"}, List, ""},
+	{"iam:projects:listForUser", []string{"iam:projects:listProjectsForUser"}, List, ""},
 	{"iam:groups:list", []string{"iam:groups:listGroups"}, List, ""},
 	{"iam:groups:create", []string{"iam:groups:createGroup"}, Write, ""},
 	{"iam:groups:get", []string{"iam:groups:getGroup"}, Read, ""},

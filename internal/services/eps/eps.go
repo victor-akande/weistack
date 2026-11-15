@@ -18,6 +18,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/victor-akande/weistack/internal/core/apierr"
+	"github.com/victor-akande/weistack/internal/core/authz"
 	"github.com/victor-akande/weistack/internal/core/httpx"
 	"github.com/victor-akande/weistack/internal/core/reqctx"
 )
@@ -46,9 +47,11 @@ func (s *Service) Name() string { return "eps" }
 // Version implements server.Service.
 func (s *Service) Version() string { return "v1.0 (the default enterprise project)" }
 
-// Routes implements server.Service.
+// Routes implements server.Service. The action is the action table's
+// (usermanual-permissions iam_11_0091): the list page names none.
 func (s *Service) Routes(r chi.Router) {
-	r.Get("/v1.0/enterprise-projects", s.handleList)
+	r.Use(authz.Service(authz.ServiceOptions{Name: "eps", Global: true, Style: apierr.StyleFlat}))
+	r.With(authz.Action("eps:enterpriseProjects:list")).Get("/v1.0/enterprise-projects", s.handleList)
 }
 
 // epView mirrors the SDK model eps/v1 EpDetail.
