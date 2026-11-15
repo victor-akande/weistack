@@ -258,6 +258,7 @@ func (s *Service) handleShowUserLastLoginV5(w http.ResponseWriter, r *http.Reque
 var v5GroupErrs = groupErrs{
 	taken:    func(string) error { return errV5GroupExists },
 	notFound: func(string) error { return errV5NoGroup },
+	builtIn:  func() error { return errV5Denied("the admin group cannot be renamed or deleted") },
 }
 
 type v5GroupResponse struct {

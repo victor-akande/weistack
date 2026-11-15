@@ -64,6 +64,8 @@ type Service struct {
 	// mu serialises changes that span records or need unique names.
 	mu     sync.Mutex
 	tokens tokens
+	// perms caches what principals may do (grants.go).
+	perms permissions
 }
 
 // New returns the IAM service.
@@ -170,6 +172,14 @@ func (s *Service) handle(op string, fn handler) http.HandlerFunc {
 		info.SetOperation(op)
 		// The SDK quotes this header in its error messages.
 		w.Header().Set("X-IAM-Trace-Id", info.RequestID)
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			// Any change may change what someone may do. The cache is
+			// invalidated before the change and again before the response
+			// leaves, so no grants computed from the data mid-change
+			// survive to answer the client's next request.
+			s.perms.changed()
+			w = &changeWriter{ResponseWriter: w, changed: s.perms.changed}
+		}
 		err := fn(w, r)
 		if err == nil {
 			return
@@ -182,17 +192,47 @@ func (s *Service) handle(op string, fn handler) http.HandlerFunc {
 	}
 }
 
+// changeWriter calls changed once, before the first byte of the response.
+type changeWriter struct {
+	http.ResponseWriter
+	changed func()
+	done    bool
+}
+
+func (c *changeWriter) mark() {
+	if !c.done {
+		c.done = true
+		c.changed()
+	}
+}
+
+func (c *changeWriter) WriteHeader(code int) {
+	c.mark()
+	c.ResponseWriter.WriteHeader(code)
+}
+
+func (c *changeWriter) Write(b []byte) (int, error) {
+	c.mark()
+	return c.ResponseWriter.Write(b)
+}
+
+// Unwrap lets http.ResponseController reach the underlying writer.
+func (c *changeWriter) Unwrap() http.ResponseWriter { return c.ResponseWriter }
+
 // regionRE is the shape of a region name, as in a host's region label.
 var regionRE = regexp.MustCompile(`^[a-z]{2,}(-[a-z0-9]+)+$`)
 
 // Resume records the default region's project, so that it is listed
-// from the first request, and the root user, and registers the stored
-// access keys with the directory.
+// from the first request, the root user and the admin group, and
+// registers the stored access keys with the directory.
 func (s *Service) Resume(ctx context.Context) error {
 	if err := s.ensureProject(ctx, s.defaultRegion); err != nil {
 		return err
 	}
 	if err := s.ensureRoot(ctx); err != nil {
+		return err
+	}
+	if err := s.ensureAdminGroup(ctx); err != nil {
 		return err
 	}
 	return s.registerAllKeys(ctx)
@@ -202,6 +242,7 @@ func (s *Service) Resume(ctx context.Context) error {
 // users' access keys are forgotten, and the account's project and root
 // user are recorded again.
 func (s *Service) Reset(ctx context.Context) error {
+	defer s.perms.changed()
 	s.tokens.clear()
 	s.dir.Clear()
 	return s.Resume(ctx)
