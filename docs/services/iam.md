@@ -58,6 +58,12 @@ exists from the start, holds the administrator's keys, and cannot be
 renamed, disabled or deleted. It has no password until one is set with
 `UpdateUser`.
 
+Every account also has the **`admin` group**, whose members hold every
+permission (with `-iam=enforce`, see [Checking credentials:
+permissions](../enforce.md#permissions)). It exists from the start, is
+listed like any group, and cannot be renamed or deleted (`IAM.0002`, or
+`PAP5.0001` through IAM 5.0); its description can change.
+
 Names follow Huawei's rules: a username has at most 64 letters, digits,
 spaces, `-`, `_` and `.`, and does not start with a digit or a space; a
 group name has at most 128 letters, digits, spaces, `-` and `_`.
@@ -178,8 +184,8 @@ Deleting a user group, a user or a custom policy removes its grants.
 project, those granted for that project and for all projects; in the
 domain, those granted for global services.
 
-Permissions are not enforced yet: even with `-iam=enforce`, which checks
-who is calling, any valid principal may use every API.
+With `-iam=enforce`, these permissions decide what each user may do:
+see [Checking credentials: permissions](../enforce.md#permissions).
 
 ### Enterprise projects
 
@@ -264,9 +270,19 @@ Each project's `parent_id` and `domain_id` are the account's ID.
 ## Caller identity
 
 STS reports the account's ID. A key that belongs to a user names that
-user. Since credentials are not checked, any other key, including the
-administrator's (`weistack credentials`), stands for the account's root
-user, `iam::<account-id>:user:weistack`.
+user. Any other key, including the administrator's (`weistack
+credentials`), stands for the account's root user,
+`iam::<account-id>:user:weistack`. Asking needs no permission.
+
+## Authorization messages
+
+`POST /v5/decode-authorization-message` (STS, DecodeAuthorizationMessage)
+decodes the `encoded_authorization_message` of a permission denial into
+its reason: `{"decoded_message": "<JSON>"}`. It needs
+`sts::decodeAuthorizationMessage`; without it the answer is `STS5.1001`
+(403). A message WeiStack did not issue, an empty one or one over 10,240
+characters is `STS5.1301` (400). See [Checking credentials:
+denials](../enforce.md#denials).
 
 ## Error codes
 
@@ -292,7 +308,8 @@ Classic IAM:
 | `1120` | 400 | An `access_mode` other than `default`, `console` or `programmatic` |
 | `akSkNumExceed` | 400 | A third access key for a user. This one is documented in Keystone's envelope, `{"error": {"message": "akSkNumExceed", "code": 400, "title": "Bad Request", ...}}`, and WeiStack answers it that way |
 | `IAM.0001` | 401 | A token request for an unknown user or another domain |
-| `IAM.0002` | 403 | Renaming or disabling the root user |
+| `IAM.0002` | 403 | Renaming or disabling the root user; renaming or deleting the `admin` group |
+| `IAM.0003` | 403 | `Policy doesn't allow <action> to be performed.`: a permission denial, with `-iam=enforce` |
 | `IAM.0004` | 404 | `Could not find <project, user, group, credential, role, role assignment, domain or enterprise project>: <id>.`, also removing or checking a non-member, and from IAM 5.0 for an access key the user does not have (IAM 5.0 documents no code for it) |
 | `IAM.0005` | 409 | The group name is taken |
 | `IAM.0007` | 400 | `Request parameter <key> is invalid.`: `page`, `per_page`, `enabled`, `is_domain`, `type`, `permission_type`, `subject`, `scope`, `is_inherited` or `include_group` |
@@ -312,7 +329,7 @@ IAM 5.0:
 
 | Code | Status | When |
 | --- | --- | --- |
-| `PAP5.0001` | 403 | Renaming or disabling the root user |
+| `PAP5.0001` | 403 | Renaming or disabling the root user; renaming or deleting the `admin` group; a permission denial, with `-iam=enforce` |
 | `PAP5.0004`, `PAP5.0005` | 409 | A group or a user already has 10 policies attached |
 | `PAP5.0007` | 409 | Deleting the root user, an attached policy, or a policy's default version |
 | `PAP5.0010` | 400 | An unknown `marker` |
