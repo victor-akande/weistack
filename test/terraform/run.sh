@@ -65,10 +65,18 @@ curl -fsS "$admin/health" >/dev/null
 # The module is copied so that .terraform and the state stay out of the
 # repository. The lock file pins the provider's checksums.
 cp "$here"/*.tf "$here/.terraform.lock.hcl" "$work/"
+mkdir "$work/assume"
+cp "$here"/assume/*.tf "$here/.terraform.lock.hcl" "$work/assume/"
 cd "$work"
 export TF_IN_AUTOMATION=1 TF_INPUT=0 TF_VAR_project_id="$project"
 TF_VAR_account_id="$(curl -fsS "$admin/services" | python3 -c 'import json, sys; print(json.load(sys.stdin)["account_id"])')"
 export TF_VAR_account_id
+# A second account, which the scenario's agencies delegate to.
+partner="$(curl -fsS -X POST -H 'Content-Type: application/json' -d '{"name":"tf-partner"}' "$admin/accounts")"
+partner_field() { python3 -c 'import json, sys; d = json.load(sys.stdin); print(d[sys.argv[1]][sys.argv[2]])' "$1" "$2" <<<"$partner"; }
+TF_VAR_partner_id="$(partner_field account id)" TF_VAR_partner_name="$(partner_field account name)"
+export TF_VAR_partner_id TF_VAR_partner_name
+partner_ak="$(partner_field credentials access_key)" partner_sk="$(partner_field credentials secret_key)"
 # Fresh passwords per run, for the RDS root user and the IAM user. Each
 # has the four character kinds RDS requires: an upper-case letter, a
 # symbol, a digit, and lower-case hex.
@@ -85,6 +93,7 @@ fi
 step "terraform init"
 # Without the proxy: the provider comes from the public registry.
 terraform init -no-color >/dev/null
+terraform -chdir=assume init -no-color >/dev/null
 
 # From here on every request goes through WeiStack.
 export HTTPS_PROXY="http://127.0.0.1:$port" HTTP_PROXY="http://127.0.0.1:$port"
@@ -109,6 +118,22 @@ if bad:
     sys.exit(f"unexpected outputs: {bad}")
 PY
 
+step "Assuming the agencies from the partner account"
+# Classic IAM's securitytokens and STS's AssumeAgency, with the
+# provider's assume_role; the credentials' security token then goes with
+# every request.
+TF_VAR_partner_access_key="$partner_ak" TF_VAR_partner_secret_key="$partner_sk" \
+	terraform -chdir=assume apply -auto-approve -no-color >"$work/assume.txt" 2>&1 || {
+	cat "$work/assume.txt"
+	exit 1
+}
+terraform -chdir=assume output -json vpcs | python3 -c '
+import json, sys
+vpcs = json.load(sys.stdin)
+if vpcs != {"classic": 1, "sts": 1}:
+    sys.exit(f"the assumed agencies see these VPCs: {vpcs}")
+print("Both agencies read the VPC.")'
+
 step "terraform plan (must show no changes)"
 set +e
 terraform plan -detailed-exitcode -no-color >"$work/plan.txt" 2>&1
@@ -131,12 +156,12 @@ import json, sys
 state = json.load(sys.stdin)["resources"]
 def records(kind):
     return [r["data"] for scope, recs in state.items() if scope.endswith("/" + kind) for r in recs]
-# Job history, the seeded public images, the projects of the account, its
-# root user, its built-in admin group and the project default security
-# group with its rules outlive the scenario, as in the real cloud. Every
-# other IAM record (groups, keys, roles, grants, policies, attachments)
-# must be gone.
-kept = ("job", "ims.image", "iam.project", "iam.user", "iam.group", "vpc.secgroup", "vpc.secgroup-rule")
+# Job history, the seeded public images, the partner account, the
+# projects, root users and built-in admin groups of both accounts, and
+# the project default security group with its rules outlive the
+# scenario, as in the real cloud. Every other IAM record (groups, keys,
+# roles, grants, policies, attachments) must be gone.
+kept = ("job", "ims.image", "iam.account", "iam.project", "iam.user", "iam.group", "vpc.secgroup", "vpc.secgroup-rule")
 left = {scope: len(recs) for scope, recs in state.items()
         if recs and not scope.endswith(kept)}
 users = [u["name"] for u in records("iam.user") if not u.get("root")]

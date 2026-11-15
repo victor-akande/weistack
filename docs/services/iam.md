@@ -88,7 +88,7 @@ Permanent access keys, through both APIs over one set of keys.
 | CreateAccessKeyV5, ListAccessKeysV5 | `POST`, `GET /v5/users/{user_id}/access-keys` | Yes | `limit` and `marker` |
 | UpdateAccessKeyV5, DeleteAccessKeyV5 | `PUT`, `DELETE /v5/users/{user_id}/access-keys/{access_key_id}` | Yes | `status` |
 | ShowAccessKeyLastUsedV5 | `GET /v5/users/{user_id}/access-keys/{access_key_id}/last-used` | Yes | |
-| Temporary keys | `POST /v3.0/OS-CREDENTIAL/securitytokens` | No | |
+| CreateTemporaryAccessKeyByToken, CreateTemporaryAccessKeyByAgency | `POST /v3.0/OS-CREDENTIAL/securitytokens` | Yes | See [Temporary credentials](#temporary-credentials) |
 
 A key is 20 characters, its secret 40, as on Huawei Cloud. The secret is
 returned only when the key is created. A user has at most 2 keys.
@@ -243,8 +243,8 @@ agencies.
 An agency is an identity an account creates for another account or a
 cloud service, holding the permissions granted to it. Classic IAM and
 IAM 5.0 share one store: IAM 5.0 lists every agency, classic IAM its
-own. Agencies can be created and given permissions; assuming one comes
-with temporary credentials.
+own. Another account assumes an agency for
+[temporary credentials](#temporary-credentials) that act as it.
 
 | Operation | Method and path | Status | Notes |
 | --- | --- | --- | --- |
@@ -278,6 +278,62 @@ with temporary credentials.
   under the path `service-linked-agency/service.<service>/`, and trust that
   service. Nothing in WeiStack assumes them.
 - Deleting an agency removes its grants and detaches its policies.
+
+## Temporary credentials
+
+Temporary credentials are an access key, a secret key and a security
+token, which the client sends with every request: the SDKs in
+`X-Security-Token`, OBS clients in `x-obs-security-token` or
+`x-amz-security-token`, in a header or a pre-signed URL. They act as
+their user, or as an assumed agency, until they expire.
+
+| Operation | Method and path | Status | Notes |
+| --- | --- | --- | --- |
+| CreateTemporaryAccessKeyByToken | `POST /v3.0/OS-CREDENTIAL/securitytokens` | Yes | `methods: ["token"]`: they act as the caller (its token, or its key's user) |
+| CreateTemporaryAccessKeyByAgency | `POST /v3.0/OS-CREDENTIAL/securitytokens` | Yes | `methods: ["assume_role"]`: they act as `agency_name` of the account `domain_id` or `domain_name` names |
+| AssumeAgency (STS) | `POST /v5/agencies/assume` | Yes | They act as the agency `agency_urn` names |
+| AssumeAgencyWithSAML, AssumeAgencyWithOIDC (STS) | `POST /v5/agencies/assume-with-{saml,oidc}` | No | Federation |
+
+- **Classic.** `duration_seconds` is 900 to 86,400, 900 by default
+  (`IAM.0073` otherwise); the answer (201) is
+  `{"credential": {"access", "secret", "securitytoken", "expires_at"}}`.
+  Getting one's own needs no permission. Assuming an agency needs
+  `iam:tokens:assume`, which classic policies grant on agencies by URI:
+  `"Resource": {"uri": ["/iam/agencies/<agency ID>"]}`. The session is
+  named after `session_user.name`, or the caller. An agency that does not
+  exist is `IAM.0002` (403).
+- **STS.** `agency_urn` is `iam::<account-id>:agency:<path><name>`,
+  `agency_session_name` 2 to 128 characters. `duration_seconds` is at
+  least 900, 3,600 by default, and at most the agency's
+  `max_session_duration`, or 3,600 for credentials that are themselves
+  temporary; more is `STS5.1102`. It needs `sts:agencies:assume` on the
+  agency (and `sts::tagSession` with `tags`, `sts::setSourceIdentity`
+  with `source_identity`). The answer is
+  `{"assumed_agency": {"urn", "id"}, "credentials": {"access_key_id",
+  "secret_access_key", "security_token", "expiration"}}`, the URN
+  `sts::<account-id>:assumed-agency:<agency>/<session>` and the ID
+  `<agency ID>:<session>`. An agency that does not exist, or (with
+  `-iam=enforce`) does not trust the caller, is `STS5.1001` (403) with an
+  encoded message; more than 20 `policy_ids` is `STS5.1905`. Other invalid
+  input is `WeiStack.0400`: STS documents no code for it.
+- **Trust** is checked under `-iam=enforce`: a classic agency trusts the
+  account it names, a trust agency's policy must allow
+  `sts:agencies:assume` to the caller's account or URN. Under
+  `-iam=accept` any caller may assume an agency that exists. Agencies for
+  cloud services, and service-linked ones, are never assumed.
+- **What they may do.** An assumed agency holds the classic roles granted
+  to it and the identity policies attached to it, in its own account.
+  Session policies narrow that: STS's `policy` (an IAM 5.0 document) and
+  `policy_ids` apply to every service; classic IAM's `policy` (a classic
+  custom policy), as Huawei documents, to OBS only.
+- **Nothing is stored.** The security token is the credentials' claims,
+  sealed by the emulator's vault, so they survive a restart with
+  `-persist` and nothing needs cleaning up. A security token that does not
+  open, is another key's or has expired makes the key unknown (`APIGW.0301`;
+  OBS `InvalidAccessKeyId`). Deleting the agency, or deleting or disabling
+  the user, ends the credentials early.
+- STS's caller identity for an assumed agency is its session's URN and
+  ID.
 
 ## Tokens
 
@@ -348,7 +404,9 @@ curl -s -X POST http://localhost:8780/_weistack/accounts -d '{"name": "partner"}
 ## Caller identity
 
 STS reports the caller's account's ID. A key that belongs to a user names
-that user. An added account's root key names its root user,
+that user, and an assumed agency's temporary credentials name its
+session (`sts::<account-id>:assumed-agency:<agency>/<session>`, ID
+`<agency ID>:<session>`). An added account's root key names its root user,
 `iam::<account-id>:user:<account-name>`. Any other key, including the
 administrator's (`weistack credentials`), stands for the primary account's
 root user, `iam::<account-id>:user:weistack`. Asking needs no permission.
