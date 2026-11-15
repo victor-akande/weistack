@@ -541,7 +541,9 @@ func (s *Service) ListServers(ctx context.Context, t Tenant, f ListServersFilter
 func (f ListServersFilter) matches(srv Server) bool {
 	eq := func(want, got string) bool { return want == "" || want == got }
 	if !eq(f.Status, srv.Status) || !eq(f.Flavor, srv.Flavor) || !eq(f.ServerID, srv.ID) ||
-		!eq(f.ReservationID, srv.ReservationID) || !eq(f.EnterpriseProjectID, srv.EnterpriseProjectID) {
+		!eq(f.ReservationID, srv.ReservationID) ||
+		// all_granted_eps: every enterprise project the caller may use.
+		f.EnterpriseProjectID != "all_granted_eps" && !eq(f.EnterpriseProjectID, srv.EnterpriseProjectID) {
 		return false
 	}
 	if f.Name != "" && !strings.Contains(srv.Name, f.Name) {

@@ -558,6 +558,7 @@ func TestListServersFiltersAndPaging(t *testing.T) {
 		{"?tags=env%3Dprod,tier%3Ddb", "", 0},
 		{"?not-tags=env", "db-1", 1},
 		{"?enterprise_project_id=0", "web-1,web-2,db-1", 3},
+		{"?enterprise_project_id=all_granted_eps", "web-1,web-2,db-1", 3},
 		{"?reservation_id=r-nope", "", 0},
 		// offset is a page number starting at 1; count is always the total.
 		{"?limit=2", "web-1,web-2", 3},

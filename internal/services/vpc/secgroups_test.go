@@ -324,6 +324,7 @@ func TestListSecurityGroupFiltersAndPaging(t *testing.T) {
 		{"?id=" + db.ID + "&id=" + web.ID, "web,db"},
 		{"?description=Default+security+group", "default"},
 		{"?enterprise_project_id=0", "default,web,db,web"},
+		{"?enterprise_project_id=all_granted_eps", "default,web,db,web"},
 		{"?enterprise_project_id=0aad99bc-f5f6-4f78-8404-c598d76b0ed2", ""},
 		{"?limit=2", "default,web next"},
 		{"?limit=2&marker=" + web.ID, "db,web"},
