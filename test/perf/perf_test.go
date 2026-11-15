@@ -7,7 +7,9 @@
 //   - idle resident memory: under 50 MB, and within 20% of the baseline
 //   - p99 latency of get and list with 1,000 resources stored: under
 //     10 ms, in memory, with -persist, and with -iam=enforce, where every
-//     request is signed and checked. A round of samples over budget
+//     request is signed and checked: once with the administrator's keys,
+//     which hold every permission, and once with an IAM user's, whose
+//     permissions are evaluated on every request. A round of samples over budget
 //     is measured again, up to three rounds, and fails only if every
 //     round is over: a regression is slow every time, a pause on a
 //     shared CI machine is not.
@@ -194,7 +196,8 @@ func (p *proc) rssMB(t *testing.T) float64 {
 	return 0
 }
 
-func (p *proc) do(t *testing.T, method, path, body string, hdr map[string]string) []byte {
+// send makes a signed request and returns its status and body.
+func (p *proc) send(t *testing.T, method, path, body string, hdr map[string]string) (int, []byte) {
 	t.Helper()
 	req, err := http.NewRequestWithContext(context.Background(), method, p.base+path, strings.NewReader(body))
 	if err != nil {
@@ -214,8 +217,15 @@ func (p *proc) do(t *testing.T, method, path, body string, hdr map[string]string
 	}
 	defer res.Body.Close()
 	out, _ := io.ReadAll(res.Body)
-	if res.StatusCode >= 300 {
-		t.Fatalf("%s %s: %d %s", method, path, res.StatusCode, out)
+	return res.StatusCode, out
+}
+
+// do makes a signed request that must succeed and returns its body.
+func (p *proc) do(t *testing.T, method, path, body string, hdr map[string]string) []byte {
+	t.Helper()
+	code, out := p.send(t, method, path, body, hdr)
+	if code >= 300 {
+		t.Fatalf("%s %s: %d %s", method, path, code, out)
 	}
 	return out
 }
@@ -301,20 +311,97 @@ func baseline(t *testing.T) map[string]float64 {
 	return b
 }
 
+// limitedUser creates, with the administrator's keys, an IAM user whose
+// permissions are what a team would grant, and returns its keys: VPC
+// FullAccess in the project through a group, and an IAM 5.0 policy that
+// allows OBS and denies what the checks never do, so every statement is
+// evaluated.
+func limitedUser(t *testing.T, p *proc) *identity.Credentials {
+	t.Helper()
+	var user struct {
+		User struct {
+			UserID string `json:"user_id"`
+		} `json:"user"`
+	}
+	decode(t, p.do(t, http.MethodPost, "/iam/v5/users", `{"name": "perf-user", "enabled": true}`, nil), &user)
+	uid := user.User.UserID
+
+	var group struct {
+		Group struct {
+			ID string `json:"id"`
+		} `json:"group"`
+	}
+	decode(t, p.do(t, http.MethodPost, "/iam/v3/groups", `{"group": {"name": "perf-vpc"}}`, nil), &group)
+	gid := group.Group.ID
+	p.do(t, http.MethodPut, "/iam/v3/groups/"+gid+"/users/"+uid, "", nil)
+	var roles struct {
+		Roles []struct {
+			ID string `json:"id"`
+		} `json:"roles"`
+	}
+	decode(t, p.do(t, http.MethodGet, "/iam/v3/roles?display_name=VPC%20FullAccess", "", nil), &roles)
+	if len(roles.Roles) != 1 {
+		t.Fatalf("VPC FullAccess: %+v", roles)
+	}
+	p.do(t, http.MethodPut, "/iam/v3/projects/"+project+"/groups/"+gid+"/roles/"+roles.Roles[0].ID, "", nil)
+
+	doc := `{"Version":"5.0","Statement":[` +
+		`{"Effect":"Allow","Action":["obs:*:*"]},` +
+		`{"Effect":"Deny","Action":["vpc:vpcs:delete","obs:bucket:deleteBucket"]}]}`
+	body, _ := json.Marshal(map[string]string{"policy_name": "perf-obs", "policy_document": doc})
+	var pol struct {
+		Policy struct {
+			PolicyID string `json:"policy_id"`
+		} `json:"policy"`
+	}
+	decode(t, p.do(t, http.MethodPost, "/iam/v5/policies", string(body), nil), &pol)
+	p.do(t, http.MethodPost, "/iam/v5/policies/"+pol.Policy.PolicyID+"/attach-user", `{"user_id": "`+uid+`"}`, nil)
+
+	var key struct {
+		Credential struct {
+			Access string `json:"access"`
+			Secret string `json:"secret"`
+		} `json:"credential"`
+	}
+	decode(t, p.do(t, http.MethodPost, "/iam/v3.0/OS-CREDENTIAL/credentials", `{"credential": {"user_id": "`+uid+`"}}`, nil), &key)
+	creds := &identity.Credentials{AccessKey: key.Credential.Access, SecretKey: key.Credential.Secret}
+
+	// The user's permissions are evaluated, not bypassed: the Deny holds.
+	admin := p.keys
+	p.keys = creds
+	defer func() { p.keys = admin }()
+	if code, out := p.send(t, http.MethodDelete, "/vpc/v1/"+project+"/vpcs/"+uid, "", nil); code != http.StatusForbidden {
+		t.Fatalf("deleting a VPC as the limited user = %d %s, want 403", code, out)
+	}
+	return creds
+}
+
+func decode(t *testing.T, raw []byte, v any) {
+	t.Helper()
+	if err := json.Unmarshal(raw, v); err != nil {
+		t.Fatalf("decoding %s: %v", raw, err)
+	}
+}
+
 func TestLatencyAtScale(t *testing.T) {
 	enforceEnv, adminKeys := enforced(t)
 	for _, mode := range []struct {
-		name string
-		env  []string
-		keys *identity.Credentials
+		name    string
+		env     []string
+		keys    *identity.Credentials
+		limited bool
 	}{
-		{"memory", nil, nil},
-		{"persist", []string{"WEISTACK_PERSIST=1", "WEISTACK_DATA_DIR=" + t.TempDir()}, nil},
-		{"enforce", enforceEnv, adminKeys},
+		{"memory", nil, nil, false},
+		{"persist", []string{"WEISTACK_PERSIST=1", "WEISTACK_DATA_DIR=" + t.TempDir()}, nil, false},
+		{"enforce", enforceEnv, adminKeys, false},
+		{"permissions", enforceEnv, adminKeys, true},
 	} {
 		t.Run(mode.name, func(t *testing.T) {
 			p, _ := start(t, mode.env...)
 			p.keys = mode.keys
+			if mode.limited {
+				p.keys = limitedUser(t, p)
+			}
 			vpcs := "/vpc/v1/" + project + "/vpcs"
 			obsHost := map[string]string{"Host": "obs.ap-southeast-1.myhuaweicloud.com", "Authorization": "OBS AKPERF:c2ln"}
 
