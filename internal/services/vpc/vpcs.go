@@ -126,11 +126,19 @@ func (s *Service) GetVPC(ctx context.Context, t Tenant, id string) (VPC, error) 
 	return v, err
 }
 
+// allGrantedEPs is the enterprise_project_id filter that VPC's list
+// operations document as "every enterprise project the caller may use",
+// which Terraform's data sources send.
+const allGrantedEPs = "all_granted_eps"
+
+// inEP reports whether a resource in enterprise project ep passes the
+// filter want.
+func inEP(want, ep string) bool { return want == "" || want == allGrantedEPs || want == ep }
+
 // ListVPCs returns the project's VPCs in creation order.
 func (s *Service) ListVPCs(ctx context.Context, t Tenant, f ListVPCsFilter) ([]VPC, error) {
 	return s.vpcs(t).List(ctx, func(v VPC) bool {
-		return (f.ID == "" || v.ID == f.ID) &&
-			(f.EnterpriseProjectID == "" || v.EnterpriseProjectID == f.EnterpriseProjectID)
+		return (f.ID == "" || v.ID == f.ID) && inEP(f.EnterpriseProjectID, v.EnterpriseProjectID)
 	})
 }
 

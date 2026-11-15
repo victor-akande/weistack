@@ -156,13 +156,17 @@ cancels its pending tasks.
 
 ## Identity
 
-The emulator has one account with an ID and a name, and one project per
-region (the default region keeps the configured project ID). A bootstrap
+The emulator has a primary account with an ID and a name, and one
+project per region (the default region keeps the configured project ID).
+More accounts can be added through the admin API; IAM keeps their records
+apart and requests act in the caller's account. A bootstrap
 administrator key pair is generated on first start and kept beside the CA;
 `weistack credentials` prints it. IAM users' access keys are registered in
 the key `Directory` when they are created, and their secrets are sealed by
-the vault. In the default mode an unknown key still works and acts as its
-own owner, as in v0.1; with `-iam=enforce` it is refused.
+the vault. Temporary credentials are not registered: their security
+token is their claims sealed by the vault, which IAM opens on each request
+(`auth.TemporaryResolver`). In the default mode an unknown key still works
+and acts as its own owner, as in v0.1; with `-iam=enforce` it is refused.
 
 ## The admin API
 

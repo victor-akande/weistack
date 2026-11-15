@@ -76,7 +76,9 @@ const (
 )
 
 var (
-	agencyNameRE    = regexp.MustCompile(`^[A-Za-z0-9_+=,.@-]{1,64}$`)
+	// Lengths are checked apart: a counted repetition compiles to a large
+	// program, which every start would pay for.
+	agencyNameRE    = regexp.MustCompile(`^[A-Za-z0-9_+=,.@-]+$`)
 	serviceDomainRE = regexp.MustCompile(`^op_svc_[A-Za-z]+$`)
 	servicePrinRE   = regexp.MustCompile(`^service\.[A-Za-z][A-Za-z0-9]*$`)
 )
@@ -93,6 +95,11 @@ var (
 	errV5AgencyExists    = apierr.New(http.StatusConflict, "PAP5.0031", "agency already exists")
 	errClassicAgencyName = errConflict("agency", "the name is in use")
 )
+
+// validAgencyName: 1 to 64 letters, digits and _+=,.@-.
+func validAgencyName(n string) bool {
+	return len(n) >= 1 && len(n) <= 64 && agencyNameRE.MatchString(n)
+}
 
 // agencyNamed reports whether an agency has that name, ignoring case.
 // The caller holds s.mu when the answer must stay true.
@@ -268,7 +275,7 @@ func (s *Service) handleCreateAgency(w http.ResponseWriter, r *http.Request) err
 	switch {
 	case c.Name == nil || *c.Name == "":
 		return errRequired("name")
-	case !agencyNameRE.MatchString(*c.Name):
+	case !validAgencyName(*c.Name):
 		return errInvalidField("name", *c.Name)
 	case c.DomainID == nil || *c.DomainID == "":
 		return errRequired("domain_id")
@@ -534,7 +541,7 @@ func (s *Service) handleCreateAgencyV5(w http.ResponseWriter, r *http.Request) e
 		return err
 	}
 	switch {
-	case !agencyNameRE.MatchString(b.Name):
+	case !validAgencyName(b.Name):
 		return errV5AgencyName
 	case !validPolicyPath(b.Path):
 		return errV5Path

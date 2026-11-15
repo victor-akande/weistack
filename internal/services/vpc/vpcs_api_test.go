@@ -191,6 +191,7 @@ func TestListVPCsFiltersAndPaging(t *testing.T) {
 		{"?id=" + ids[2], "c"},
 		{"?id=" + testUnknownID, ""},
 		{"?enterprise_project_id=0", "a,b,c,d"},
+		{"?enterprise_project_id=all_granted_eps", "a,b,c,d"},
 		{"?enterprise_project_id=0aad99bc-f5f6-4f78-8404-c598d76b0ed2", ""},
 	}
 	for _, tt := range tests {

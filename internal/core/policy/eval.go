@@ -19,6 +19,11 @@ type Request struct {
 	// Keys are the request's condition keys, lower case, with their
 	// values. An absent key is one the request does not supply.
 	Keys map[string][]string
+	// URIs name the agency a request for iam:tokens:assume is for
+	// (/iam/agencies/<id>, and its name in the same form), which classic
+	// statements with a {"uri": [...]} Resource match: any one of them
+	// matching is enough.
+	URIs []string
 	// Caller is who makes the request, for trust policies, whose
 	// statements apply only to the principals they name.
 	Caller *Caller
@@ -63,6 +68,10 @@ func Evaluate(req Request, sources []Source) Decision {
 	for i, a := range req.Aliases {
 		aliases[i] = strings.ToLower(a)
 	}
+	uris := make([]string, len(req.URIs))
+	for i, u := range req.URIs {
+		uris[i] = strings.ToLower(u)
+	}
 	resources := make([]*urn, 0, max(1, len(req.Resources)))
 	for _, r := range req.Resources {
 		if u, ok := splitURN(r); ok {
@@ -86,7 +95,7 @@ func Evaluate(req Request, sources []Source) Decision {
 				continue
 			}
 			for j, r := range resources {
-				if !st.matchesResource(r, req.Keys) {
+				if !st.matchesResource(r, uris, req.Keys) {
 					continue
 				}
 				if st.deny {
@@ -130,9 +139,19 @@ func (st *statement) matchesAction(action string, aliases []string, classic bool
 	return m != st.notAct
 }
 
-func (st *statement) matchesResource(r *urn, keys map[string][]string) bool {
+func (st *statement) matchesResource(r *urn, uris []string, keys map[string][]string) bool {
 	if st.anyRes {
 		return true
+	}
+	if st.uris != nil {
+		for _, p := range st.uris {
+			for _, u := range uris {
+				if glob(p, u) {
+					return true
+				}
+			}
+		}
+		return false
 	}
 	m := false
 	for _, p := range st.res {

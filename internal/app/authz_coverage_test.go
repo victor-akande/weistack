@@ -43,11 +43,13 @@ var openRoutes = map[string]string{
 	"iam PUT /v3.0/OS-USER/users/{user_id}/info":                     "documented: no permission needed",
 	"iam POST /v3/users/{user_id}/password":                          "documented: no permission needed",
 	"iam POST /v3.0/OS-CREDENTIAL/credentials":                       "checked once the body names the user",
+	"iam POST /v3.0/OS-CREDENTIAL/securitytokens":                    "documented: none for oneself; checked once the body names an agency",
 	"ecs GET /v1/{project_id}/jobs/{job_id}":                         "documented: no permission needed",
 	"ecs POST /v1/{project_id}/cloudservers/action":                  "checked once the body names the action",
 	"ecs POST /v1/{project_id}/cloudservers/{server_id}/tags/action": "checked once the body names the action",
 	"rds POST /v3/{project_id}/instances/{instance_id}/action":       "checked once the body names the action",
 	"sts GET /v5/caller-identity":                                    "documented: no permission needed",
+	"sts POST /v5/agencies/assume":                                   "checked once the body names the agency",
 }
 
 var paramRE = regexp.MustCompile(`\{[^}]+\}`)

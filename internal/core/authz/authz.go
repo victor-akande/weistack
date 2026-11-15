@@ -55,6 +55,10 @@ type Grants struct {
 	// Keys are the principal's condition keys (g:UserId, g:UserName,
 	// g:DomainId, g:DomainName, g:ProjectId, g:ProjectName), lower case.
 	Keys map[string][]string
+	// Session are the policies temporary credentials were issued with,
+	// in the scope: a request must be allowed by them as well, even for
+	// a principal that holds All.
+	Session []policy.Source
 }
 
 // Provider answers what a principal holds. IAM implements it.
@@ -218,6 +222,12 @@ type Resource struct {
 	// Path is the resource's name in its URN: usually its ID; for OBS
 	// objects, bucket/key.
 	Path string
+	// URN, when set, is the resource's whole URN, for a resource of
+	// another service or account (STS assumes IAM's agencies).
+	URN string
+	// URIs, when set, name the resource as classic policies' {"uri":
+	// [...]} Resources do (/iam/agencies/<id>), instead of by URN.
+	URIs []string
 }
 
 // ResourceFunc finds a resource of a request.
@@ -341,28 +351,69 @@ func check(r *http.Request, a actions.Action, res []Resource) error {
 	if g.foreignProject(scope) {
 		return g.deny(ctx, o, a, nil, policy.Decision{}, "the project belongs to another account")
 	}
-	if g.principal.Admin {
+	if g.principal.Admin && g.principal.Session == nil {
 		return nil
 	}
 	grants, err := g.grantsFor(ctx, scope)
 	if err != nil {
 		return err
 	}
-	if grants.All {
+	if grants.All && len(grants.Session) == 0 {
 		return nil
 	}
 
 	urns := make([]string, 0, len(res))
+	var uris []string
 	for _, x := range res {
+		if len(x.URIs) > 0 {
+			uris = append(uris, x.URIs...)
+			continue
+		}
 		urns = append(urns, g.urn(o, scope, x))
 	}
-	req := policy.Request{Action: a.Name, Aliases: a.Aliases, Resources: urns, Keys: g.keys(grants.Keys)}
-	d := policy.Evaluate(req, grants.Sources)
-	if d.Allowed {
+	req := policy.Request{Action: a.Name, Aliases: a.Aliases, Resources: urns, URIs: uris, Keys: g.keys(grants.Keys)}
+	if !grants.All {
+		if d := policy.Evaluate(req, grants.Sources); !d.Allowed {
+			return g.deny(ctx, o, a, urns, d, d.Failure())
+		}
+	}
+	if len(grants.Session) > 0 {
+		// Temporary credentials do what both their principal and the
+		// policies they were issued with allow.
+		if d := policy.Evaluate(req, grants.Session); !d.Allowed {
+			return g.deny(ctx, o, a, urns, d, "the session policy does not allow it: "+d.Failure())
+		}
+	}
+	return nil
+}
+
+// Refuse returns the service's denial of the named action on the
+// resources, for a reason the gate cannot see, such as an agency's
+// trust policy not trusting the caller. Without a gate (nothing
+// enforced) it returns nil.
+func Refuse(r *http.Request, name, reason string, resources ...Resource) error {
+	ctx := r.Context()
+	g := GateFrom(ctx)
+	if g == nil {
 		return nil
 	}
-	return g.deny(ctx, o, a, urns, d, d.Failure())
+	g.markConsulted()
+	o := serviceFrom(ctx)
+	a := actions.MustLookup(name)
+	if o == nil {
+		return apierr.Internal(fmt.Errorf("authz: action %s refused outside a service", a.Name))
+	}
+	scope := Scope{Service: o.Name, Region: reqctx.From(ctx).Region, Global: o.Global}
+	urns := make([]string, 0, len(resources))
+	for _, x := range resources {
+		urns = append(urns, g.urn(o, scope, x))
+	}
+	return g.deny(ctx, o, a, urns, policy.Decision{}, reason)
 }
+
+// Enforced reports whether r's caller is authorized at all, which is
+// so under -iam=enforce.
+func Enforced(r *http.Request) bool { return GateFrom(r.Context()) != nil }
 
 // foreignProject reports whether scope is a project of an account other
 // than the caller's.
@@ -382,7 +433,7 @@ func (g *Gate) deny(ctx context.Context, o *ServiceOptions, a actions.Action, ur
 	}
 	denial.Encoded = g.encode(denial)
 	g.log.InfoContext(ctx, "permission denied",
-		"action", a.Name, "resources", urns, "user", g.principal.UserName, "reason", reason,
+		"action", a.Name, "resources", urns, "user", g.principal.UserName, "agency", g.principal.AgencyName, "reason", reason,
 		"policy", d.Policy)
 	return o.Deny(denial)
 }
@@ -413,6 +464,9 @@ func (g *Gate) grantsFor(ctx context.Context, s Scope) (Grants, error) {
 // urn is a resource's name: service:region:account:type:path, with the
 // region left out for global services and the account for OBS.
 func (g *Gate) urn(o *ServiceOptions, s Scope, x Resource) string {
+	if x.URN != "" {
+		return x.URN
+	}
 	region, account := s.Region, g.account
 	if o.Global {
 		region = ""
@@ -446,6 +500,8 @@ type explanation struct {
 			UserID    string `json:"user_id,omitempty"`
 			UserName  string `json:"user_name,omitempty"`
 			AccountID string `json:"domain_id,omitempty"`
+			// AssumedAgency is an assumed agency's session URN.
+			AssumedAgency string `json:"assumed_agency,omitempty"`
 		} `json:"user_profile"`
 		Action    string   `json:"action"`
 		Resources []string `json:"resources,omitempty"`
@@ -465,6 +521,9 @@ func (g *Gate) encode(d *Denial) string {
 	e.Context.UserProfile.UserID = g.principal.UserID
 	e.Context.UserProfile.UserName = g.principal.UserName
 	e.Context.UserProfile.AccountID = g.principal.AccountID
+	if g.principal.Agency() {
+		e.Context.UserProfile.AssumedAgency = g.principal.URN(identity.Account{ID: g.principal.AccountID})
+	}
 	e.Context.Action, e.Context.Resources = d.Action, d.Resources
 	e.Failure, e.Policy, e.Statement = d.Decision.Failure(), d.Decision.Policy, d.Decision.Sid
 	if d.Reason != "" {

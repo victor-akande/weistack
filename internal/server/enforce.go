@@ -13,6 +13,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/auth"
 	"github.com/victor-akande/weistack/internal/core/authz"
 	"github.com/victor-akande/weistack/internal/core/config"
+	"github.com/victor-akande/weistack/internal/core/identity"
 	"github.com/victor-akande/weistack/internal/core/sigcheck"
 )
 
@@ -134,25 +135,66 @@ func (s *Server) verifySignature(m *mounted, r *http.Request, id auth.Identity, 
 	if err != nil {
 		return id, errBadSignature
 	}
-	p, known := s.dir.Lookup(a.AccessKey)
-	secret, hasSecret := s.dir.Secret(a.AccessKey)
-	if !known || !hasSecret || p.Disabled {
+	key, ok := s.credentials(r, a.AccessKey)
+	if !ok {
 		return id, errUnknownKey(a.AccessKey)
 	}
-	if s.dir.Locked(a.AccessKey) {
+	if key.locked() {
 		return id, errLocked
 	}
 	body, err := signedBody(m, r)
 	if err != nil {
 		return id, err
 	}
-	if err := sigcheck.VerifySDKHMAC(r, a, secret, body, paths, s.now()); err != nil {
-		s.dir.SignatureFailed(a.AccessKey)
+	if err := sigcheck.VerifySDKHMAC(r, a, key.secret, body, paths, s.now()); err != nil {
+		key.failed()
 		return id, errBadSignature
 	}
-	s.dir.SignatureSucceeded(a.AccessKey)
-	id.Known, id.Principal = true, p
+	key.succeeded()
+	id.Known, id.Principal, id.Temporary = true, key.principal, key.temporary
 	return id, nil
+}
+
+// credential is what an access key a request is signed with stands for.
+type credential struct {
+	s         *Server
+	ak        string
+	principal identity.Principal
+	secret    string
+	temporary bool
+}
+
+// credentials finds the access key a request is signed with: a
+// permanent one, or temporary credentials with the security token r
+// carries. ok is false for an unknown key, a disabled user's, and a
+// security token that is invalid, expired or not ak's.
+func (s *Server) credentials(r *http.Request, ak string) (credential, bool) {
+	if p, known := s.dir.Lookup(ak); known {
+		secret, has := s.dir.Secret(ak)
+		return credential{s: s, ak: ak, principal: p, secret: secret}, has && !p.Disabled
+	}
+	token := auth.SecurityToken(r)
+	if token == "" || s.temporary == nil {
+		return credential{}, false
+	}
+	p, secret, ok := s.temporary.Temporary(r.Context(), ak, token)
+	return credential{s: s, ak: ak, principal: p, secret: secret, temporary: true}, ok
+}
+
+// Temporary keys are not locked out: each is short-lived, and the
+// lockout is the permanent key's.
+func (c credential) locked() bool { return !c.temporary && c.s.dir.Locked(c.ak) }
+
+func (c credential) failed() {
+	if !c.temporary {
+		c.s.dir.SignatureFailed(c.ak)
+	}
+}
+
+func (c credential) succeeded() {
+	if !c.temporary {
+		c.s.dir.SignatureSucceeded(c.ak)
+	}
 }
 
 // signedBody reads the body the signature covers, and puts it back for

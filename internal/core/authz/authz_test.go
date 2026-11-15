@@ -268,7 +268,7 @@ func TestSelfOrAndIsCaller(t *testing.T) {
 	if !IsCaller(req, "me") || IsCaller(req, "") || IsCaller(req, "other") {
 		t.Error("IsCaller")
 	}
-	if res, ok := Fixed("user", "*")(req); !ok || res != (Resource{Type: "user", Path: "*"}) {
+	if res, ok := Fixed("user", "*")(req); !ok || res.Type != "user" || res.Path != "*" {
 		t.Errorf("Fixed = %+v", res)
 	}
 }
@@ -317,5 +317,68 @@ func TestAnotherAccountsProject(t *testing.T) {
 		if !ok || !strings.Contains(plain, "the project belongs to another account") {
 			t.Errorf("%s: decoded %q, %v", c.name, plain, ok)
 		}
+	}
+}
+
+// TestSessionPolicies: temporary credentials do what both their
+// principal and their session policies allow, even an all-powerful
+// principal's.
+func TestSessionPolicies(t *testing.T) {
+	t.Parallel()
+	h := router(ServiceOptions{Name: "vpc"})
+	listOnly := mustPolicy(t, `{"Version":"5.0","Statement":[{"Effect":"Allow","Action":["vpc:vpcs:list"]}]}`)
+	for _, c := range []struct {
+		name   string
+		grants Grants
+		admin  bool
+		list   int
+		get    int
+	}{
+		{"all-powerful", Grants{All: true, Session: listOnly}, false, http.StatusOK, http.StatusForbidden},
+		{"administrator", Grants{All: true, Session: listOnly}, true, http.StatusOK, http.StatusForbidden},
+		{"limited", Grants{Sources: mustPolicy(t, `{"Version":"5.0","Statement":[{"Effect":"Allow","Action":["vpc:vpcs:get"]}]}`), Session: listOnly}, false, http.StatusForbidden, http.StatusForbidden},
+	} {
+		p := identity.Principal{UserID: "u", Admin: c.admin, Temporary: true, Session: &identity.Session{Policy: "x"}}
+		g := func() *Gate {
+			return NewGate(GateOptions{Principal: p, Provider: &fakeProvider{grants: c.grants}, Sealer: testVault(t)})
+		}
+		if w := serve(h, g(), http.MethodGet, "/v1/p/vpcs"); w.Code != c.list {
+			t.Errorf("%s: list = %d, want %d", c.name, w.Code, c.list)
+		}
+		if w := serve(h, g(), http.MethodGet, "/v1/p/vpcs/x"); w.Code != c.get {
+			t.Errorf("%s: get = %d, want %d", c.name, w.Code, c.get)
+		}
+	}
+}
+
+// TestURIResourcesAndRefuse: classic {"uri": [...]} resources, and
+// denials for reasons only the handler knows.
+func TestURIResourcesAndRefuse(t *testing.T) {
+	t.Parallel()
+	r := chi.NewRouter()
+	r.Use(Service(ServiceOptions{Name: "iam", Global: true}))
+	r.With(Defer()).Post("/assume/{agency}", func(w http.ResponseWriter, r *http.Request) {
+		res := Resource{URIs: []string{"/iam/agencies/" + chi.URLParam(r, "agency")}}
+		err := Check(r, "iam:tokens:assume", res)
+		if err == nil && chi.URLParam(r, "agency") == "untrusted" {
+			err = Refuse(r, "iam:tokens:assume", "not trusted", res)
+		}
+		if err != nil {
+			apierr.Write(w, r, apierr.StyleFlat, err)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	prov := &fakeProvider{grants: Grants{Sources: mustPolicy(t, `{"Version":"1.1","Statement":[{"Effect":"Allow","Action":["iam:tokens:assume"],"Resource":{"uri":["/iam/agencies/ops","/iam/agencies/untrusted"]}}]}`)}}
+	g := func() *Gate {
+		return NewGate(GateOptions{Principal: identity.Principal{UserID: "u"}, Provider: prov, Sealer: testVault(t)})
+	}
+	for agency, want := range map[string]int{"ops": http.StatusOK, "other": http.StatusForbidden, "untrusted": http.StatusForbidden} {
+		if w := serve(r, g(), http.MethodPost, "/assume/"+agency); w.Code != want {
+			t.Errorf("assume %s = %d, want %d", agency, w.Code, want)
+		}
+	}
+	if w := serve(r, nil, http.MethodPost, "/assume/untrusted"); w.Code != http.StatusOK {
+		t.Errorf("Refuse without a gate = %d", w.Code)
 	}
 }

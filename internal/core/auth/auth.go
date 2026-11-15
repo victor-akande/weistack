@@ -80,6 +80,57 @@ type UsageRecorder interface {
 	KeyUsed(accessKey string)
 }
 
+// TemporaryResolver is implemented by a Resolver that also knows
+// temporary credentials: an access key with the security token it came
+// with. It returns who they act as and their secret key, if the token is
+// one it issued for that key and has not expired.
+type TemporaryResolver interface {
+	Temporary(ctx context.Context, accessKey, securityToken string) (p identity.Principal, secret string, ok bool)
+}
+
+// securityTokenNames are where clients send a security token: the SDKs
+// in X-Security-Token, OBS clients in x-obs-security-token or
+// x-amz-security-token, as a header or in a pre-signed URL's query.
+var securityTokenNames = []string{"X-Security-Token", "X-Obs-Security-Token", "X-Amz-Security-Token"}
+
+// SecurityToken returns the security token r carries, if any.
+func SecurityToken(r *http.Request) string {
+	for _, name := range securityTokenNames {
+		if v := r.Header.Get(name); v != "" {
+			return v
+		}
+	}
+	for k, v := range r.URL.Query() {
+		for _, name := range securityTokenNames {
+			if strings.EqualFold(k, name) && len(v) > 0 && v[0] != "" {
+				return v[0]
+			}
+		}
+	}
+	return ""
+}
+
+// ResolveRequest completes id, the identity of r or of a key r carries
+// elsewhere (a pre-signed URL's), with what resolver knows: a permanent
+// key, or temporary credentials with r's security token. Signatures are
+// not checked.
+func ResolveRequest(r *http.Request, id Identity, resolver Resolver) Identity {
+	id = Resolve(id, resolver)
+	if id.Known || id.AccessKey == "" {
+		return id
+	}
+	tr, ok := resolver.(TemporaryResolver)
+	if !ok {
+		return id
+	}
+	if token := SecurityToken(r); token != "" {
+		if p, _, ok := tr.Temporary(r.Context(), id.AccessKey, token); ok {
+			id.Known, id.Principal, id.Temporary = true, p, true
+		}
+	}
+	return id
+}
+
 // Resolve completes id with what resolver knows about its access key. A
 // known key is reported as used, if the resolver records usage.
 func Resolve(id Identity, resolver Resolver) Identity {
@@ -171,7 +222,7 @@ func FromContext(ctx context.Context) Identity {
 func Middleware(log *slog.Logger, resolver Resolver) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			id := Resolve(Parse(r.Header), resolver)
+			id := ResolveRequest(r, Parse(r.Header), resolver)
 			log.DebugContext(r.Context(), "auth accepted",
 				"scheme", id.Scheme,
 				"access_key", id.AccessKey,

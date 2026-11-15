@@ -37,7 +37,7 @@ func TestDecodeAuthorizationMessage(t *testing.T) {
 	acct := identity.Account{ID: "fedcba9876543210fedcba9876543210", Name: identity.AccountName}
 	dir := identity.NewDirectory(acct, identity.Credentials{AccessKey: "ADMINKEY000000000000", SecretKey: "s"})
 	v := testVault(t)
-	svc, err := New(slog.New(slog.DiscardHandler), dir, v)
+	svc, err := New(slog.New(slog.DiscardHandler), dir, v, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestCallerIdentity(t *testing.T) {
 	if err := dir.Register("USERKEY0000000000000", identity.Principal{AccountID: acct.ID, UserID: "u-1", UserName: "dev"}, "secret"); err != nil {
 		t.Fatal(err)
 	}
-	svc, err := New(slog.New(slog.NewTextHandler(io.Discard, nil)), dir, testVault(t))
+	svc, err := New(slog.New(slog.NewTextHandler(io.Discard, nil)), dir, testVault(t), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestCallerIdentity(t *testing.T) {
 	if got := call("USERKEY0000000000000"); got.PrincipalID != "u-1" || got.PrincipalURN != "iam::"+acct.ID+":user:dev" {
 		t.Fatalf("a user's key = %+v", got)
 	}
-	if _, err := New(nil, nil, nil); err == nil {
+	if _, err := New(nil, nil, nil, nil); err == nil {
 		t.Fatal("New accepted nil dependencies")
 	}
 	if svc.Name() != "sts" || svc.Version() == "" {

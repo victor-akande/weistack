@@ -168,7 +168,7 @@ func (s *Service) ListSecurityGroups(ctx context.Context, t Tenant, f ListSecuri
 	}
 	return s.secGroups(t).List(ctx, func(g SecurityGroup) bool {
 		return matchAny(f.IDs, g.ID) && matchAny(f.Names, g.Name) && matchAny(f.Descriptions, g.Description) &&
-			(f.EnterpriseProjectID == "" || g.EnterpriseProjectID == f.EnterpriseProjectID)
+			inEP(f.EnterpriseProjectID, g.EnterpriseProjectID)
 	})
 }
 

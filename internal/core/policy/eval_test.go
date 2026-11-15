@@ -117,6 +117,18 @@ func TestEvaluateResources(t *testing.T) {
 	if Evaluate(Request{Action: "vpc:vpcs:list"}, agency).Allowed {
 		t.Error("an agency resource allowed a service request")
 	}
+	// ...but match a request to assume that agency, by ID or name.
+	assume := Request{Action: "iam:tokens:assume", URIs: []string{"/iam/agencies/0123", "/iam/agencies/X"}}
+	if !Evaluate(assume, agency).Allowed {
+		t.Error("an agency resource did not allow assuming it")
+	}
+	if Evaluate(Request{Action: "iam:tokens:assume", URIs: []string{"/iam/agencies/y"}}, agency).Allowed {
+		t.Error("an agency resource allowed assuming another agency")
+	}
+	wild := sources(t, `{"Version":"1.1","Statement":[{"Effect":"Allow","Action":["iam:tokens:assume"],"Resource":{"uri":["/iam/agencies/*"]}}]}`)
+	if !Evaluate(assume, wild).Allowed {
+		t.Error("a wildcard agency resource did not allow assuming")
+	}
 }
 
 func TestEvaluateRoles(t *testing.T) {

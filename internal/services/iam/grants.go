@@ -46,6 +46,7 @@ type permissions struct {
 type grantsKey struct {
 	accountID string
 	userID    string
+	agencyID  string
 	scope     authz.Scope
 }
 
@@ -97,21 +98,66 @@ func (s *Service) Grants(ctx context.Context, pr identity.Principal, sc authz.Sc
 	if !ok {
 		return authz.Grants{}, nil // an account removed since the key was checked
 	}
-	if pr.Admin || pr.UserID == acct.RootUserID() {
+	ctx = withAccount(ctx, acct)
+	g, err := s.identityGrants(ctx, acct, pr, sc)
+	if err != nil {
+		return authz.Grants{}, err
+	}
+	if pr.Session != nil {
+		// Not cached: the session's policies come with each request.
+		ses, err := s.sessionSources(ctx, pr.Session, sc.Service)
+		if err != nil {
+			return authz.Grants{}, err
+		}
+		g.Session = ses
+	}
+	return g, nil
+}
+
+// identityGrants are what the principal's user or agency holds.
+func (s *Service) identityGrants(ctx context.Context, acct identity.Account, pr identity.Principal, sc authz.Scope) (authz.Grants, error) {
+	if !pr.Agency() && (pr.Admin || pr.UserID == acct.RootUserID()) {
 		return authz.Grants{All: true}, nil
 	}
-	ctx = withAccount(ctx, acct)
-	k := grantsKey{accountID: acct.ID, userID: pr.UserID, scope: sc}
+	k := grantsKey{accountID: acct.ID, userID: pr.UserID, agencyID: pr.AgencyID, scope: sc}
 	g, gen, ok := s.perms.get(k)
 	if ok {
 		return g, nil
 	}
-	g, err := s.computeGrants(ctx, pr.UserID, sc)
+	var err error
+	if pr.Agency() {
+		g, err = s.agencyGrants(ctx, pr, sc)
+	} else {
+		g, err = s.computeGrants(ctx, pr.UserID, sc)
+	}
 	if err != nil {
 		return authz.Grants{}, err
 	}
 	s.perms.put(k, g, gen)
 	return g, nil
+}
+
+// agencyGrants are what an assumed agency holds: the classic roles
+// granted to it and the identity policies attached to it.
+func (s *Service) agencyGrants(ctx context.Context, pr identity.Principal, sc authz.Scope) (authz.Grants, error) {
+	acct := s.account(ctx)
+	if _, ok := s.liveAgency(ctx, pr.AgencyID); !ok {
+		return authz.Grants{}, nil // deleted since the credentials were checked
+	}
+	keys := map[string][]string{"g:domainid": {acct.ID}, "g:domainname": {acct.Name}}
+	projectID := s.scopeProjectID(ctx, acct, sc, keys)
+	out := authz.Grants{Keys: keys}
+	if err := s.subjectSources(ctx, &out, func(a assignment) bool {
+		return a.Subject == subjectAgency && a.SubjectID == pr.AgencyID && applies(a, sc, projectID)
+	}); err != nil {
+		return authz.Grants{}, err
+	}
+	if err := s.attachedSources(ctx, &out, func(a policyAttachment) bool {
+		return a.Subject == subjectAgency && a.SubjectID == pr.AgencyID
+	}); err != nil {
+		return authz.Grants{}, err
+	}
+	return out, nil
 }
 
 func (s *Service) computeGrants(ctx context.Context, userID string, sc authz.Scope) (authz.Grants, error) {
@@ -138,30 +184,43 @@ func (s *Service) computeGrants(ctx context.Context, userID string, sc authz.Sco
 	keys := map[string][]string{
 		"g:userid": {u.ID}, "g:username": {u.Name}, "g:domainid": {acct.ID}, "g:domainname": {acct.Name},
 	}
-	projectID := ""
-	if !sc.Global {
-		projectID = sc.ProjectID
-		if projectID == "" {
-			region := sc.Region
-			if region == "" {
-				region = s.defaultRegion
-			}
-			projectID = s.projectID(acct, region)
-		}
-		keys["g:projectid"] = []string{projectID}
-		if p, err := s.projects(ctx).Get(ctx, projectID); err == nil {
-			keys["g:projectname"] = []string{p.Name}
-		}
-	}
-
+	projectID := s.scopeProjectID(ctx, acct, sc, keys)
 	out := authz.Grants{Keys: keys}
-	if err := s.classicSources(ctx, &out, userID, groupIDs, sc, projectID); err != nil {
+	if err := s.subjectSources(ctx, &out, func(a assignment) bool {
+		mine := a.Subject == subjectGroup && slices.Contains(groupIDs, a.SubjectID) ||
+			a.Subject == subjectUser && a.SubjectID == userID
+		return mine && applies(a, sc, projectID)
+	}); err != nil {
 		return authz.Grants{}, err
 	}
-	if err := s.v5Sources(ctx, &out, userID, groupIDs); err != nil {
+	if err := s.attachedSources(ctx, &out, func(a policyAttachment) bool {
+		return a.Subject == subjectUser && a.SubjectID == userID ||
+			a.Subject == subjectGroup && slices.Contains(groupIDs, a.SubjectID)
+	}); err != nil {
 		return authz.Grants{}, err
 	}
 	return out, nil
+}
+
+// scopeProjectID is the project a request in sc is in, if any, whose ID
+// and name it adds to keys.
+func (s *Service) scopeProjectID(ctx context.Context, acct identity.Account, sc authz.Scope, keys map[string][]string) string {
+	if sc.Global {
+		return ""
+	}
+	projectID := sc.ProjectID
+	if projectID == "" {
+		region := sc.Region
+		if region == "" {
+			region = s.defaultRegion
+		}
+		projectID = s.projectID(acct, region)
+	}
+	keys["g:projectid"] = []string{projectID}
+	if p, err := s.projects(ctx).Get(ctx, projectID); err == nil {
+		keys["g:projectname"] = []string{p.Name}
+	}
+	return projectID
 }
 
 // applies reports whether a classic grant covers a request in sc.
@@ -179,12 +238,9 @@ func applies(a assignment, sc authz.Scope, projectID string) bool {
 	return false
 }
 
-func (s *Service) classicSources(ctx context.Context, out *authz.Grants, userID string, groupIDs []string, sc authz.Scope, projectID string) error {
-	as, err := s.assignmentsOf(ctx, func(a assignment) bool {
-		mine := a.Subject == subjectGroup && slices.Contains(groupIDs, a.SubjectID) ||
-			a.Subject == subjectUser && a.SubjectID == userID
-		return mine && applies(a, sc, projectID)
-	})
+// subjectSources adds the classic roles of the grants that match.
+func (s *Service) subjectSources(ctx context.Context, out *authz.Grants, match func(assignment) bool) error {
+	as, err := s.assignmentsOf(ctx, match)
 	if err != nil {
 		return err
 	}
@@ -212,11 +268,10 @@ func (s *Service) classicSources(ctx context.Context, out *authz.Grants, userID 
 	return nil
 }
 
-func (s *Service) v5Sources(ctx context.Context, out *authz.Grants, userID string, groupIDs []string) error {
-	atts, err := s.attachmentsWhere(ctx, func(a policyAttachment) bool {
-		return a.Subject == subjectUser && a.SubjectID == userID ||
-			a.Subject == subjectGroup && slices.Contains(groupIDs, a.SubjectID)
-	})
+// attachedSources adds the identity policies of the attachments that
+// match.
+func (s *Service) attachedSources(ctx context.Context, out *authz.Grants, match func(policyAttachment) bool) error {
+	atts, err := s.attachmentsWhere(ctx, match)
 	if err != nil {
 		return err
 	}

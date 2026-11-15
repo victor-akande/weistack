@@ -14,16 +14,23 @@ the real cloud.
      the default enterprise project, a user's enterprise project grant,
      and an access key;
    - IAM 5.0: a user, a group and its members, an identity policy attached
-     to both, and an access key.
+     to both, and an access key;
+   - agencies (`agencies.tf`): a classic agency for a cloud service, one
+     for a second account (the partner, which `run.sh` adds through the
+     admin API first), and a trust agency both accounts may assume.
 
    The outputs show them in their final states. The provider is given no
    domain ID: it finds the account through IAM.
-2. A second `terraform plan` must find no changes. This catches every read
+2. The partner assumes the agencies with the provider's `assume_role`
+   (`assume/main.tf`): once through classic IAM (`domain_name`), once
+   through STS (`domain_id`), and reads the scenario's VPC with each set
+   of temporary credentials.
+3. A second `terraform plan` must find no changes. This catches every read
    that disagrees with what was written.
-3. `terraform destroy` deletes everything, and the emulator must hold
+4. `terraform destroy` deletes everything, and the emulator must hold
    nothing but what outlives a project's resources in the cloud: job
-   history, public images, the default security group, and the account's
-   projects and root user.
+   history, public images, the default security group, and the accounts'
+   projects and root users.
 
 ```bash
 make test-terraform

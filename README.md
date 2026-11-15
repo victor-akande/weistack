@@ -21,7 +21,8 @@ place, and so are **IMS** (M3), **ECS** (M4), **OBS** (M5) and **RDS**
 discovery (so clients need no project or domain ID), users and groups,
 access keys, classic permissions with their assignments (including the
 default [enterprise project](docs/services/eps.md)), IAM 5.0 identity
-policies, and agencies.
+policies, agencies, and temporary credentials (IAM's securitytokens and
+STS's AssumeAgency).
 
 | Milestone | Scope | State |
 | --- | --- | --- |
@@ -258,7 +259,10 @@ eval "$(./bin/weistack credentials)"
 `/_weistack/services` reports the account's ID and name. Keys WeiStack
 knows, the administrator's and IAM users' (see
 [IAM: access keys](docs/services/iam.md#access-keys)), act for the
-account: their OBS buckets belong to it, as on Huawei Cloud.
+account: their OBS buckets belong to it, as on Huawei Cloud. So do
+temporary credentials, with their security token (see
+[IAM: temporary credentials](docs/services/iam.md#temporary-credentials)):
+another account that assumes one of the account's agencies acts in it.
 
 **By default WeiStack accepts any credentials**: signatures and tokens are
 parsed but not checked, so any access key and secret key work, and any

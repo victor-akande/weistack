@@ -41,8 +41,12 @@ calling and **what they may do**: see [Permissions](#permissions).
 - **IAM tokens** from WeiStack's IAM (`POST /v3/auth/tokens`), sent in
   `X-Auth-Token`. Signing in with a password needs no credentials.
 
-Temporary credentials (`X-Security-Token`) are not supported yet: a
-temporary access key is refused as unknown.
+- **Temporary credentials** from IAM or STS
+  ([temporary credentials](services/iam.md#temporary-credentials)), with
+  their security token in `X-Security-Token` (OBS: `x-obs-security-token`
+  or `x-amz-security-token`, also in a pre-signed URL). A missing, invalid
+  or expired security token makes the key unknown. Temporary keys are not
+  locked out after failed signatures.
 
 The CI suites drive permissions with the SDK too: a user in a group with
 `VPC ReadOnlyAccess` lists VPCs but cannot create one, an attached IAM 5.0
@@ -129,6 +133,13 @@ the administrator included (see [IAM: accounts](services/iam.md#accounts)).
   - granted in the default enterprise project (`0`): every service but IAM.
 - IAM 5.0 identity policies attached to the user or its groups, everywhere.
 
+**Temporary credentials** hold what their user or assumed agency holds
+(an agency: the classic roles granted to it, by the same scopes, and the
+identity policies attached to it), narrowed by the session policies they
+were issued with: a request must be allowed by both, even for a root
+user's or the administrator's. STS's session policies apply to every
+service; classic IAM's, as Huawei documents, to OBS only.
+
 Evaluation follows Huawei's documented rules: a request is denied unless a
 statement allows it, and a `Deny` anywhere wins. Statements may name
 resources (`vpc:*:*:vpc:<id>`, `obs:*:*:object:my-bucket/logs/*`) and use
@@ -196,8 +207,9 @@ denial at the `info` level, with the action, resources, user and reason.
   policy is attached to), is checked on no particular resource, or on all
   of their type: a statement limited to named resources does not allow it.
   Operations on resources named in the path are checked on them.
-- **Temporary credentials and assuming agencies** (`X-Security-Token`, assumed
-  agencies) are not supported yet.
+- **Agency tokens** (`POST /v3/auth/tokens` with `assume_role`) and
+  federation (`AssumeAgencyWithSAML`, `AssumeAgencyWithOIDC`) are not
+  emulated.
 - **The admin API** (`/_weistack/*`) is not protected by `-iam`: keep the
   emulator's port to yourself.
 - **Other algorithms.** The SDKs' opt-in algorithms (`V11-HMAC-SHA256`,

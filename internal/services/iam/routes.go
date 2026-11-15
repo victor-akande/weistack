@@ -86,6 +86,9 @@ func (s *Service) classicRoutes(r chi.Router) {
 	// A user's own keys need no permission, so the handlers check once
 	// they know whose key it is.
 	r.With(authz.Defer()).Post("/v3.0/OS-CREDENTIAL/credentials", s.handle("CreatePermanentAccessKey", s.handleCreateCredential))
+	// Temporary credentials for oneself need no permission; assuming an
+	// agency is checked in the handler (iam:tokens:assume).
+	r.With(authz.Defer()).Post("/v3.0/OS-CREDENTIAL/securitytokens", s.handle("CreateTemporaryAccessKey", s.handleCreateSecurityToken))
 	r.With(authz.Defer()).Get("/v3.0/OS-CREDENTIAL/credentials", s.handle("ListPermanentAccessKeys", s.handleListCredentials))
 	r.With(authz.Defer()).Get("/v3.0/OS-CREDENTIAL/credentials/{access_key}", s.handle("ShowPermanentAccessKey", s.handleShowCredential))
 	r.With(authz.Defer()).Put("/v3.0/OS-CREDENTIAL/credentials/{access_key}", s.handle("UpdatePermanentAccessKey", s.handleUpdateCredential))
