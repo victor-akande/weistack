@@ -24,7 +24,7 @@ func TestS3OverPathPrefix(t *testing.T) {
 	t.Cleanup(transport.CloseIdleConnections)
 	c := s3.New(s3.Options{
 		Region:           region,
-		Credentials:      awscreds.NewStaticCredentialsProvider("AKprefix", "weistack-does-not-verify-signatures", ""),
+		Credentials:      awscreds.NewStaticCredentialsProvider(signingAK("AKprefix"), signingSK(), ""),
 		BaseEndpoint:     aws.String("http://" + emulatorAddr + "/obs"),
 		UsePathStyle:     true,
 		HTTPClient:       &http.Client{Transport: transport},

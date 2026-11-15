@@ -77,3 +77,23 @@ func PresignV2(method, secretKey, expires, resource string) string {
 	mac.Write([]byte(method + "\n\n\n" + expires + "\n" + resource))
 	return url.QueryEscape(base64.StdEncoding.EncodeToString(mac.Sum(nil)))
 }
+
+// SignV4 signs r with S3 signature version 4 in its Authorization
+// header, for region and service "s3", at now, over path (escaped), with
+// payload as x-amz-content-sha256. It signs host, x-amz-content-sha256
+// and x-amz-date. For tests and tools.
+func SignV4(r *http.Request, accessKey, secretKey, region, path, payload string, now time.Time) {
+	amzDate := now.UTC().Format(amzDateFormat)
+	date := amzDate[:8]
+	r.Header.Set("X-Amz-Date", amzDate)
+	r.Header.Set("X-Amz-Content-Sha256", payload)
+	signed := []string{"host", "x-amz-content-sha256", "x-amz-date"}
+	canonical := strings.Join([]string{
+		r.Method, path, v4Query(r.URL.RawQuery, false), v4Headers(r, signed, r.Host), strings.Join(signed, ";"), payload,
+	}, "\n")
+	crHash := sha256.Sum256([]byte(canonical))
+	scope := date + "/" + region + "/s3/aws4_request"
+	sig := hex.EncodeToString(hmacSHA256(deriveV4Key(secretKey, date, region, "s3"),
+		V4+"\n"+amzDate+"\n"+scope+"\n"+hex.EncodeToString(crHash[:])))
+	r.Header.Set("Authorization", V4+" Credential="+accessKey+"/"+scope+", SignedHeaders="+strings.Join(signed, ";")+", Signature="+sig)
+}

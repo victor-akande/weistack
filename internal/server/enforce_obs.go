@@ -4,15 +4,15 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/victor-akande/weistack/internal/core/apierr"
 	"github.com/victor-akande/weistack/internal/core/auth"
 	"github.com/victor-akande/weistack/internal/core/sigcheck"
 )
 
-// OBS enforcement: OBS and S3 v2 signatures, in a header or a pre-signed
-// URL. Failures are answered with OBS's documented error codes
+// OBS enforcement: OBS and S3 v2 signatures and S3 signature version 4,
+// in a header or a pre-signed URL, and the chunk signatures of
+// aws-chunked uploads. Failures are answered with OBS's documented error codes
 // (support.huaweicloud.com/intl/en-us/api-obs/obs_04_0115.html), in its
 // XML envelope.
 
@@ -29,72 +29,96 @@ var (
 	errOBSLocked = apierr.New(http.StatusBadRequest, "TooManyWrongSignature", "The request is rejected due to frequent errors.")
 )
 
-// signedWithV4 reports a request with an S3 signature version 4, in a
-// header or a pre-signed URL. Those are not checked yet.
-func signedWithV4(r *http.Request) bool {
-	return strings.HasPrefix(r.Header.Get("Authorization"), "AWS4-HMAC-SHA256") || r.URL.Query().Get("X-Amz-Algorithm") != ""
-}
-
 // authenticateOBS checks an OBS request's credentials. received is the
 // URL as the client sent it, before any /obs prefix was stripped.
 func (s *Server) authenticateOBS(w http.ResponseWriter, r *http.Request, received *url.URL) *http.Request {
-	id, err := s.verifyOBS(r, received)
+	ctx := r.Context()
+	id, chunks, err := s.verifyOBS(r, received)
 	if err != nil {
 		var apiErr *apierr.Error
 		if !errors.As(err, &apiErr) {
-			s.log.ErrorContext(r.Context(), "checking OBS credentials", "error", err)
+			s.log.ErrorContext(ctx, "checking OBS credentials", "error", err)
 			apiErr = apierr.Internal(err)
 		}
 		apierr.Write(w, r, apierr.StyleXML, apiErr)
 		return nil
 	}
-	return r.WithContext(auth.WithIdentity(r.Context(), id))
+	ctx = auth.WithIdentity(ctx, id)
+	if chunks != nil {
+		ctx = sigcheck.WithChunkVerifier(ctx, chunks)
+	}
+	return r.WithContext(ctx)
 }
 
-func (s *Server) verifyOBS(r *http.Request, received *url.URL) (auth.Identity, error) {
+// verifyOBS checks an S3 signature version 4 or a v2 one (OBS or AWS), in
+// a header or a pre-signed URL. For an upload of signed chunks it also
+// returns the verifier of the chunks.
+func (s *Server) verifyOBS(r *http.Request, received *url.URL) (auth.Identity, *sigcheck.ChunkVerifier, error) {
 	id := auth.FromContext(r.Context())
-	a, signed, err := sigcheck.ParseV2(r)
-	switch {
-	case err != nil:
-		return id, errOBSBadSignature
-	case !signed && signedWithV4(r):
-		return id, nil // checked from a later release
-	case !signed:
-		return id, errOBSAnonymous
+	var (
+		ak     string
+		verify func(secret string) (*sigcheck.ChunkVerifier, error)
+	)
+	if a4, ok, err := sigcheck.ParseV4(r); ok {
+		if err != nil {
+			return id, nil, errOBSBadSignature
+		}
+		ak = a4.AccessKey
+		verify = func(secret string) (*sigcheck.ChunkVerifier, error) {
+			return sigcheck.VerifyV4(r, a4, secret, obsPaths(r, received), s.now())
+		}
+	} else if a2, ok, err := sigcheck.ParseV2(r); ok {
+		if err != nil {
+			return id, nil, errOBSBadSignature
+		}
+		ak = a2.AccessKey
+		verify = func(secret string) (*sigcheck.ChunkVerifier, error) {
+			return nil, sigcheck.VerifyV2(r, a2, secret, obsResources(r, received), s.now())
+		}
+	} else {
+		return id, nil, errOBSAnonymous
 	}
-	p, known := s.dir.Lookup(a.AccessKey)
-	secret, hasSecret := s.dir.Secret(a.AccessKey)
+
+	p, known := s.dir.Lookup(ak)
+	secret, hasSecret := s.dir.Secret(ak)
 	if !known || !hasSecret || p.Disabled {
-		return id, errOBSUnknownKey
+		return id, nil, errOBSUnknownKey
 	}
-	if s.dir.Locked(a.AccessKey) {
-		return id, errOBSLocked
+	if s.dir.Locked(ak) {
+		return id, nil, errOBSLocked
 	}
-	err = sigcheck.VerifyV2(r, a, secret, obsResources(r, received), s.now())
+	chunks, err := verify(secret)
 	switch {
 	case errors.Is(err, sigcheck.ErrNoDate):
-		return id, errOBSNoDate
+		return id, nil, errOBSNoDate
 	case errors.Is(err, sigcheck.ErrExpired):
-		return id, errOBSExpired
+		return id, nil, errOBSExpired
 	case errors.Is(err, sigcheck.ErrSkewed):
-		return id, errOBSSkewed
+		return id, nil, errOBSSkewed
 	case err != nil:
-		s.dir.SignatureFailed(a.AccessKey)
-		return id, errOBSBadSignature
+		s.dir.SignatureFailed(ak)
+		return id, nil, errOBSBadSignature
 	}
-	s.dir.SignatureSucceeded(a.AccessKey)
-	id.AccessKey, id.Known, id.Principal = a.AccessKey, true, p
-	return id, nil
+	s.dir.SignatureSucceeded(ak)
+	id.AccessKey, id.Known, id.Principal = ak, true, p
+	return id, chunks, nil
+}
+
+// obsPaths are the escaped paths an S3 signature version 4 may cover:
+// as received, and without an /obs prefix.
+func obsPaths(r *http.Request, received *url.URL) []string {
+	paths := []string{r.URL.EscapedPath()}
+	if raw := received.EscapedPath(); raw != paths[0] {
+		paths = append(paths, raw)
+	}
+	return paths
 }
 
 // obsResources are the paths a v2 signature may cover: the escaped path
 // as received and as served (without an /obs prefix), each with
 // "/bucket" before it for a virtual-hosted request.
 func obsResources(r *http.Request, received *url.URL) []string {
-	paths := []string{r.URL.EscapedPath()}
-	if raw := received.EscapedPath(); raw != paths[0] {
-		paths = append(paths, raw)
-	}
+	paths := obsPaths(r, received)
 	bucket := sigcheck.HostBucketAsSent(r.Host)
 	if bucket == "" {
 		return paths
