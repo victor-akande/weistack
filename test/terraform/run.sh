@@ -109,6 +109,7 @@ import json, sys
 out = {k: v["value"] for k, v in json.loads(sys.argv[1]).items()}
 want = {"server_status": "ACTIVE", "rds_status": "ACTIVE",
         "bucket_domain": "tf-assets-bucket.obs.ap-southeast-1.myhuaweicloud.com",
+        "kms": {"key_state": "2", "rotation": True, "data_key_chars": 128},
         "iam": {"v5_policy_type": "custom", "access_key_status": "active",
                 "v5_policy_version": "v1", "v5_key_status": "active"}}
 bad = {k: out.get(k) for k, v in want.items() if out.get(k) != v}
@@ -156,12 +157,13 @@ import json, sys
 state = json.load(sys.stdin)["resources"]
 def records(kind):
     return [r["data"] for scope, recs in state.items() if scope.endswith("/" + kind) for r in recs]
-# Job history, the seeded public images, the partner account, the
+# Job history, the seeded public images, KMS keys (pending deletion, as
+# in the cloud), the partner account, the
 # projects, root users and built-in admin groups of both accounts, and
 # the project default security group with its rules outlive the
 # scenario, as in the real cloud. Every other IAM record (groups, keys,
 # roles, grants, policies, attachments) must be gone.
-kept = ("job", "ims.image", "iam.account", "iam.project", "iam.user", "iam.group", "vpc.secgroup", "vpc.secgroup-rule")
+kept = ("job", "ims.image", "kms.key", "iam.account", "iam.project", "iam.user", "iam.group", "vpc.secgroup", "vpc.secgroup-rule")
 left = {scope: len(recs) for scope, recs in state.items()
         if recs and not scope.endswith(kept)}
 users = [u["name"] for u in records("iam.user") if not u.get("root")]

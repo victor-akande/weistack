@@ -22,7 +22,8 @@ discovery (so clients need no project or domain ID), users and groups,
 access keys, classic permissions with their assignments (including the
 default [enterprise project](docs/services/eps.md)), IAM 5.0 identity
 policies, agencies, and temporary credentials (IAM's securitytokens and
-STS's AssumeAgency).
+STS's AssumeAgency), and [KMS](docs/services/kms.md) keys with real
+cryptography.
 
 | Milestone | Scope | State |
 | --- | --- | --- |

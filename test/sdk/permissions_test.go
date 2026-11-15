@@ -10,6 +10,7 @@ import (
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/sdkerr"
 	iam "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3/model"
 	v5 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v5/model"
+	kmsmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/kms/v2/model"
 	stsv1 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/sts/v1"
 	sts "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/sts/v1/model"
 	stsregion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/sts/v1/region"
@@ -115,6 +116,12 @@ func TestPermissions(t *testing.T) {
 	}
 	_, err = user.CreateVpc(&vpc.CreateVpcRequest{Body: &vpc.CreateVpcRequestBody{Vpc: &vpc.CreateVpcOption{Name: ptr("sdk-denied")}}})
 	encoded := denialOf(t, err, "WeiStack.0403")
+
+	// KMS refuses with its own code; a key resource is named.
+	_, err = kmsAs(t, ak, sk).CreateKey(&kmsmodel.CreateKeyRequest{Body: &kmsmodel.CreateKeyRequestBody{KeyAlias: "sdk-denied"}})
+	denialOf(t, err, "KMS.0306")
+	_, err = kmsAs(t, ak, sk).ListKeyDetail(&kmsmodel.ListKeyDetailRequest{Body: &kmsmodel.OperateKeyRequestBody{KeyId: "00000000-0000-0000-0000-000000000000"}})
+	denialOf(t, err, "KMS.0306")
 
 	// STS decodes the denial, for whoever may decode.
 	decoded, err := stsAs(t, adminAK, adminSK).DecodeAuthorizationMessage(&sts.DecodeAuthorizationMessageRequest{
