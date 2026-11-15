@@ -46,6 +46,10 @@ the image), so you only fetch it once.
 | [OBS SDK for Python](#obs-sdk-for-python) | Proxy, trusting the CA | By hand with esdk-obs-python 3.26.6 |
 | [KooCLI](#koocli) | Proxy, trusting the CA | By hand with KooCLI 7.3.12 |
 
+Every guide uses any keys by default. With `-iam=enforce`, give each client
+the administrator's keys (`weistack credentials`) or an IAM user's instead;
+see [Checking credentials](enforce.md).
+
 "By hand" means run exactly as written here, on openEuler 24.03 (x86_64)
 against WeiStack v0.1.0, except where a section says it needs a later
 version. If a guide does not work for you, please open an issue.

@@ -8,7 +8,7 @@ IAM belongs to the account, not to a project. WeiStack has one account
 (Huawei Cloud's "domain"), named `weistack`; `/_weistack/services` shows its
 ID. By default **credentials are not checked**: every caller acts for that
 account. With `-iam=enforce` every request needs a valid signature or IAM
-token; see [Authentication](../../README.md#authentication).
+token; see [Checking credentials](../enforce.md).
 
 Legend: **Yes** implemented, **No** returns `501 WeiStack.0501`.
 

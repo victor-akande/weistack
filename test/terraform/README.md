@@ -29,6 +29,15 @@ the real cloud.
 make test-terraform
 ```
 
+To run it with credentials enforced (`-iam=enforce`), set
+`WEISTACK_TF_IAM=enforce`. Terraform then signs with the administrator's
+keys, which `run.sh` gets from `weistack credentials`; CI runs it both
+ways.
+
+```bash
+WEISTACK_TF_IAM=enforce make test-terraform
+```
+
 It needs `terraform` (1.6 or later), `go`, `curl` and `python3`. Set
 `WEISTACK_BIN` to test an existing binary instead of building one, and
 `TF_PLUGIN_CACHE_DIR` to avoid downloading the provider on every run.

@@ -1,6 +1,8 @@
 package server
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/xml"
 	"net/http"
 	"net/http/httptest"
@@ -143,5 +145,25 @@ func TestEnforceOBSLockout(t *testing.T) {
 	}
 	if code, errCode := e.obsSend(t, target, sigcheck.SchemeOBS, userKey, userSecret, "/bucket/key", enforceNow); code != 400 || errCode != "TooManyWrongSignature" {
 		t.Fatalf("after six failures = %d %s", code, errCode)
+	}
+}
+
+// TestEnforceOBSPayloadHash checks that a body whose SHA-256 the client
+// declared in x-amz-content-sha256 reaches the service only if it
+// matches: the fake service echoes what it reads, and reading a changed
+// body fails.
+func TestEnforceOBSPayloadHash(t *testing.T) {
+	t.Parallel()
+	e := newEnforceEnv(t, config.IAMEnforce)
+	sum := sha256.Sum256([]byte(`{"a":1}`))
+	declared := hex.EncodeToString(sum[:])
+	for body, wantEcho := range map[string]bool{`{"a":1}`: true, `{"a":2}`: false} {
+		r := request(http.MethodPost, "http://obs.localhost/v1/echo", body)
+		sigcheck.SignV4(r, userKey, userSecret, "ap-southeast-1", "/v1/echo", declared, enforceNow)
+		w := httptest.NewRecorder()
+		e.srv.Handler().ServeHTTP(w, r)
+		if echoed := w.Code == http.StatusOK && w.Body.String() == body; echoed != wantEcho {
+			t.Errorf("%s: %d %q, echoed %v", body, w.Code, w.Body, echoed)
+		}
 	}
 }

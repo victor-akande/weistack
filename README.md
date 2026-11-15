@@ -220,7 +220,7 @@ defaults. Run `weistack -h` for the full list.
 | `-proxy-domains` | `WEISTACK_PROXY_DOMAINS` | `myhuaweicloud.com` | Domains the proxy answers for itself |
 | `-proxy-bypass` | `WEISTACK_PROXY_BYPASS` | KooCLI's downloads and API Explorer | Hosts inside the proxy domains that are passed on instead of answered: `*` is one label, `{region}` the same label everywhere. Empty turns it off |
 | `-proxy-passthrough` | `WEISTACK_PROXY_PASSTHROUGH` | `loopback` | Which proxy clients may reach other hosts: `loopback`, `all` or `none` |
-| `-iam` | `WEISTACK_IAM` | `accept` | `accept` takes any credentials; `enforce` requires a valid signature or IAM token (see [Authentication](#authentication)) |
+| `-iam` | `WEISTACK_IAM` | `accept` | `accept` takes any credentials; `enforce` requires a valid signature or IAM token (see [Checking credentials](docs/enforce.md)) |
 | `-admin-access-key`, `-admin-secret-key` | `WEISTACK_ADMIN_ACCESS_KEY`, `WEISTACK_ADMIN_SECRET_KEY` | generated | Fix the administrator's keys, for example in CI. Prefer the environment variables for the secret: flags show in process lists |
 | `-tls-dir` | `WEISTACK_TLS_DIR` | see above | Where the local CA is kept |
 | `-metrics` | `WEISTACK_METRICS` | off | Serve Prometheus metrics |
@@ -240,39 +240,7 @@ defaults. Run `weistack -h` for the full list.
 
 ## Authentication
 
-By default WeiStack accepts any credentials: signatures and tokens are
-parsed but not checked, so any access key and secret key work.
-
-With `-iam=enforce` (or `WEISTACK_IAM=enforce`) it checks them. Every
-request to an emulated service must then carry one of these:
-
-- a valid `SDK-HMAC-SHA256` signature, the one the SDKs, Terraform and
-  KooCLI send, made with a key WeiStack knows: the administrator's, or an
-  active key of an enabled IAM user;
-- a valid IAM token (`X-Auth-Token`) issued by WeiStack's IAM.
-
-Failures are answered as Huawei's API gateway documents them: 401 with
-`APIGW.0301` and the documented message for a wrong signature (including
-a clock more than 15 minutes off), an unknown key or token, or a key
-locked after more than five failures in a row (for five minutes; the
-administrator's key is never locked); `APIGW.0307` for an expired token;
-`APIGW.0305` without credentials. Signing in with a password needs no
-credentials.
-
-OBS takes OBS and S3 v2 signatures and S3 signature version 4, in the
-`Authorization` header or a pre-signed URL, and checks each chunk's
-signature in `aws-chunked` uploads. It answers failures with OBS's
-documented codes (`InvalidAccessKeyId`, `SignatureDoesNotMatch`,
-`RequestTimeTooSkewed`, `AccessDenied`, `TooManyWrongSignature`).
-Anonymous OBS requests are refused until bucket ACLs and policies are
-evaluated.
-
-Enforcement checks who is calling, not what they may do: any valid
-principal of the account may use every API.
-The admin API (`/_weistack/*`) is not protected by `-iam`: keep the
-emulator's port to yourself.
-
-It does have one account (Huawei Cloud's "domain") and an administrator.
+WeiStack has one account (Huawei Cloud's "domain") and an administrator.
 The administrator's keys are generated on first start and kept beside the
 CA (`~/.config/weistack/tls/admin-credentials.json`, readable only by you),
 so they stay the same across restarts. The banner shows them, and
@@ -285,8 +253,20 @@ eval "$(./bin/weistack credentials)"
 `/_weistack/services` reports the account's ID and name. Keys WeiStack
 knows, the administrator's and IAM users' (see
 [IAM: access keys](docs/services/iam.md#access-keys)), act for the
-account: their OBS buckets belong to it, as on Huawei Cloud. Any other
-key is, as before, an owner of its own.
+account: their OBS buckets belong to it, as on Huawei Cloud.
+
+**By default WeiStack accepts any credentials**: signatures and tokens are
+parsed but not checked, so any access key and secret key work, and any
+other key is an owner of its own.
+
+**With `-iam=enforce`** (or `WEISTACK_IAM=enforce`) it checks them as
+Huawei Cloud does. Every request needs a valid signature by a key WeiStack
+knows (`SDK-HMAC-SHA256` from the SDKs, Terraform and KooCLI; OBS, S3 v2 or
+S3 v4 for OBS) or a valid IAM token, and failures get the errors Huawei
+documents. It checks who is calling, not what they may do. See
+[Checking credentials](docs/enforce.md) for what is checked, the errors,
+and what is not covered yet. The admin API (`/_weistack/*`) is not
+protected by `-iam`: keep the emulator's port to yourself.
 
 ## Development
 

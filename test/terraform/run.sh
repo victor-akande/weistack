@@ -9,6 +9,10 @@
 # off, so a request for anything WeiStack does not emulate fails instead
 # of reaching the real cloud.
 #
+# With WEISTACK_TF_IAM=enforce the emulator runs with -iam=enforce and
+# Terraform signs with the administrator's keys, which it gets as a user
+# would, from `weistack credentials`.
+#
 # Needs terraform, go (unless WEISTACK_BIN names a built binary), curl
 # and python3. Run from anywhere: make test-terraform.
 set -euo pipefail
@@ -42,12 +46,13 @@ if [[ -z "$bin" ]]; then
 	(cd "$root" && CGO_ENABLED=0 go build -o "$bin" ./cmd/weistack)
 fi
 
+iam="${WEISTACK_TF_IAM:-accept}"
 port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
 project="0123456789abcdef0123456789abcdef"
 admin="http://127.0.0.1:$port/_weistack"
 
-step "Starting WeiStack on port $port"
-"$bin" -port "$port" -project-id "$project" -lifecycle-delay 200ms \
+step "Starting WeiStack on port $port (-iam=$iam)"
+"$bin" -port "$port" -project-id "$project" -lifecycle-delay 200ms -iam "$iam" \
 	-proxy-passthrough none -tls-dir "$work/tls" -log-format text \
 	>"$work/weistack.log" 2>&1 &
 pid=$!
@@ -71,6 +76,11 @@ fresh_secret() { python3 -c 'import secrets; print("Ws-1" + secrets.token_hex(8)
 TF_VAR_db_password="$(fresh_secret)"
 TF_VAR_iam_password="$(fresh_secret)"
 export TF_VAR_db_password TF_VAR_iam_password
+if [[ $iam == enforce ]]; then
+	# Exports HW_ACCESS_KEY and HW_SECRET_KEY, among others.
+	eval "$("$bin" credentials -tls-dir "$work/tls" 2>/dev/null)"
+	export TF_VAR_access_key="$HW_ACCESS_KEY" TF_VAR_secret_key="$HW_SECRET_KEY"
+fi
 
 step "terraform init"
 # Without the proxy: the provider comes from the public registry.
