@@ -543,6 +543,12 @@ func (s *Service) handleDeleteObjects(c *call) error {
 
 	res := deleteResult{XMLNS: c.dialect.namespace()}
 	for _, o := range req.Objects {
+		// Each key is authorized on its own; a refused one is reported
+		// in the result, as OBS reports per-key errors.
+		if !mayDelete(c.r, c.target.Bucket, o.Key) {
+			res.Errors = append(res.Errors, deleteError{Key: o.Key, Code: errAccessDenied.Code, Message: errAccessDenied.Message})
+			continue
+		}
 		if err := s.deleteObject(ctx, c.target.Bucket, o.Key); err != nil {
 			s.log.ErrorContext(ctx, "batch delete of one object failed", "key", o.Key, "error", err)
 			res.Errors = append(res.Errors, deleteError{Key: o.Key, Code: "InternalError", Message: "We encountered an internal error. Please try again."})
