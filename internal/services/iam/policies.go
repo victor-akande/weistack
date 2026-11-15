@@ -19,6 +19,7 @@ import (
 
 	"github.com/victor-akande/weistack/internal/core/apierr"
 	"github.com/victor-akande/weistack/internal/core/httpx"
+	policydoc "github.com/victor-akande/weistack/internal/core/policy"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
@@ -146,12 +147,12 @@ func validPolicyPath(p string) bool { return len(p) <= maxPolicyPath && policyPa
 
 func validPolicyDescription(d string) bool { return utf8.RuneCountInString(d) <= maxPolicyDesc }
 
-// checkDocument validates a policy document against IAM 5.0's grammar:
-// Version "5.0" and a Statement list, each statement with an optional
-// Sid, an Effect of Allow or Deny, an Action or NotAction list, an
-// optional Resource or NotResource list and an optional Condition map.
-// It returns PAP5.0011 for a malformed document and PAP5.0027 for one
-// over 6,144 bytes.
+// checkDocument validates a policy document against IAM 5.0's grammar
+// (internal/core/policy): Version "5.0" and a Statement list, each
+// statement with an optional Sid, an Effect of Allow or Deny, an Action
+// or NotAction list, an optional Resource or NotResource list and an
+// optional Condition map of known operators. It returns PAP5.0011 for a
+// malformed document and PAP5.0027 for one over 6,144 bytes.
 func checkDocument(doc string) error {
 	var compact bytes.Buffer
 	if err := json.Compact(&compact, []byte(doc)); err != nil {
@@ -160,86 +161,11 @@ func checkDocument(doc string) error {
 	if compact.Len() > maxPolicyBytes {
 		return errV5PolicySize
 	}
-	var top map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(doc), &top); err != nil || len(top) != 2 {
+	p, err := policydoc.Parse(compact.Bytes())
+	if err != nil || p.Version() != policydoc.Version5 {
 		return errV5Malformed
-	}
-	var version string
-	if json.Unmarshal(top["Version"], &version) != nil || version != "5.0" {
-		return errV5Malformed
-	}
-	var statements []map[string]json.RawMessage
-	if json.Unmarshal(top["Statement"], &statements) != nil || len(statements) == 0 {
-		return errV5Malformed
-	}
-	for _, st := range statements {
-		if !validStatement(st) {
-			return errV5Malformed
-		}
 	}
 	return nil
-}
-
-func validStatement(st map[string]json.RawMessage) bool {
-	allowed := map[string]bool{
-		"Sid": true, "Effect": true, "Action": true, "NotAction": true,
-		"Resource": true, "NotResource": true, "Condition": true,
-	}
-	for k := range st {
-		if !allowed[k] {
-			return false
-		}
-	}
-	var str string
-	if raw, ok := st["Sid"]; ok && json.Unmarshal(raw, &str) != nil {
-		return false
-	}
-	if json.Unmarshal(st["Effect"], &str) != nil || str != "Allow" && str != "Deny" {
-		return false
-	}
-	// Exactly one of Action and NotAction; at most one of Resource and
-	// NotResource.
-	if !oneStringList(st, "Action", "NotAction", true) || !oneStringList(st, "Resource", "NotResource", false) {
-		return false
-	}
-	if raw, ok := st["Condition"]; ok {
-		var cond map[string]map[string]json.RawMessage
-		if json.Unmarshal(raw, &cond) != nil {
-			return false
-		}
-		for _, keys := range cond {
-			for _, v := range keys {
-				var one string
-				var many []string
-				if json.Unmarshal(v, &one) != nil && json.Unmarshal(v, &many) != nil {
-					return false
-				}
-			}
-		}
-	}
-	return true
-}
-
-// oneStringList checks that at most one of a and b is present (exactly
-// one if required) and that it is a non-empty list of non-empty strings.
-func oneStringList(st map[string]json.RawMessage, a, b string, required bool) bool {
-	rawA, okA := st[a]
-	rawB, okB := st[b]
-	switch {
-	case okA && okB:
-		return false
-	case !okA && !okB:
-		return !required
-	}
-	raw := rawA
-	if okB {
-		raw = rawB
-	}
-	var list []string
-	if json.Unmarshal(raw, &list) != nil || len(list) == 0 {
-		return false
-	}
-	return !slices.Contains(list, "")
 }
 
 // Views.

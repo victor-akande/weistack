@@ -141,6 +141,11 @@ func TestCustomRoles(t *testing.T) {
 		"both":            {"IAM.1031", body("x", "AX", `{"Version":"1.1","Statement":[{"Effect":"Allow","Action":["a:b:c"],"NotAction":["a:b:d"]}]}`)},
 		"action urn":      {"IAM.1035", body("x", "AX", `{"Version":"1.1","Statement":[{"Effect":"Allow","Action":["not an action"]}]}`)},
 		"resources":       {"IAM.1037", body("x", "AX", `{"Version":"1.1","Statement":[{"Effect":"Allow","Action":["a:b:c"],"Resource":[]}]}`)},
+		"resource urn":    {"IAM.1045", body("x", "AX", `{"Version":"1.1","Statement":[{"Effect":"Allow","Action":["a:b:c"],"Resource":["obs:bucket"]}]}`)},
+		"operator":        {"IAM.1059", body("x", "AX", `{"Version":"1.1","Statement":[{"Effect":"Allow","Action":["a:b:c"],"Condition":{"StringSortOf":{"g:UserName":["x"]}}}]}`)},
+		"attribute":       {"IAM.1052", body("x", "AX", `{"Version":"1.1","Statement":[{"Effect":"Allow","Action":["a:b:c"],"Condition":{"StringEquals":{"UserName":["x"]}}}]}`)},
+		"attribute array": {"IAM.1053", body("x", "AX", `{"Version":"1.1","Statement":[{"Effect":"Allow","Action":["a:b:c"],"Condition":{"StringEquals":{"g:UserName":"x"}}}]}`)},
+		"attribute value": {"IAM.1057", body("x", "AX", `{"Version":"1.1","Statement":[{"Effect":"Allow","Action":["a:b:c"],"Condition":{"DateLessThan":{"g:CurrentTime":["soon"]}}}]}`)},
 		"size": {"IAM.1021", body("x", "AX", `{"Version":"1.1","Statement":[{"Effect":"Allow","Action":["a:b:c"],"Resource":["`+
 			strings.Repeat("r", 6200)+`"]}]}`)},
 	} {

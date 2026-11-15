@@ -19,6 +19,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/victor-akande/weistack/internal/core/httpx"
+	policydoc "github.com/victor-akande/weistack/internal/core/policy"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
@@ -463,7 +464,41 @@ func checkPolicy(raw json.RawMessage) (json.RawMessage, error) {
 			return nil, err
 		}
 	}
+	// The document must also be one the evaluator understands: its
+	// resources and conditions are checked here.
+	if _, err := policydoc.Parse(compact.Bytes()); err != nil {
+		return nil, classicPolicyError(err)
+	}
 	return json.RawMessage(compact.Bytes()), nil
+}
+
+// classicPolicyError maps a document error to the code classic IAM
+// documents for it.
+func classicPolicyError(err error) error {
+	var pe *policydoc.Error
+	if !errors.As(err, &pe) {
+		return errPolicyObject
+	}
+	switch pe.Kind {
+	case policydoc.ErrResource:
+		service, _, _ := strings.Cut(pe.Item, ":")
+		return apiErr400("IAM.1045", fmt.Sprintf("Resource URI '%s' or service '%s' is invalid.", pe.Item, service))
+	case policydoc.ErrOperator:
+		return apiErr400("IAM.1059", fmt.Sprintf("Invalid key '%s'.", pe.Item))
+	case policydoc.ErrConditionKey:
+		return apiErr400("IAM.1052", fmt.Sprintf("Invalid attribute '%s'.", pe.Item))
+	case policydoc.ErrConditionList:
+		return apiErr400("IAM.1053", fmt.Sprintf("Attribute '%s' must be a JSONArray.", pe.Item))
+	case policydoc.ErrConditionValue:
+		return apiErr400("IAM.1057", fmt.Sprintf("Value %s of attribute %s for operator %s contains invalid characters.", pe.Value, pe.Item, pe.Operator))
+	case policydoc.ErrEffect:
+		return errEffect
+	case policydoc.ErrAction:
+		return errActionArray
+	case policydoc.ErrStatement:
+		return errStatementArray
+	}
+	return errPolicyObject
 }
 
 func checkStatement(st map[string]json.RawMessage) error {
