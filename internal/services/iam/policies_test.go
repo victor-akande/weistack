@@ -53,6 +53,8 @@ func TestPoliciesV5(t *testing.T) {
 		"no action":     {400, "PAP5.0011", `{"policy_name":"x","policy_document":` + docJSON(`{"Version":"5.0","Statement":[{"Effect":"Allow","Resource":["*"]}]}`) + `}`},
 		"unknown key":   {400, "PAP5.0011", `{"policy_name":"x","policy_document":` + docJSON(`{"Version":"5.0","Statement":[{"Effect":"Allow","Action":["*"],"Extra":1}]}`) + `}`},
 		"bad condition": {400, "PAP5.0011", `{"policy_name":"x","policy_document":` + docJSON(`{"Version":"5.0","Statement":[{"Effect":"Allow","Action":["*"],"Condition":{"StringEquals":{"k":1}}}]}`) + `}`},
+		"operator":      {400, "PAP5.0011", `{"policy_name":"x","policy_document":` + docJSON(`{"Version":"5.0","Statement":[{"Effect":"Allow","Action":["*"],"Condition":{"StringSortOf":{"g:UserName":["x"]}}}]}`) + `}`},
+		"resource urn":  {400, "PAP5.0011", `{"policy_name":"x","policy_document":` + docJSON(`{"Version":"5.0","Statement":[{"Effect":"Allow","Action":["*"],"Resource":["vpc:x"]}]}`) + `}`},
 		"too large": {409, "PAP5.0027", `{"policy_name":"x","policy_document":` + docJSON(`{"Version":"5.0","Statement":[{"Effect":"Allow","Action":["`+
 			strings.Repeat("a", 6200)+`"]}]}`) + `}`},
 	} {

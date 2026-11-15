@@ -19,6 +19,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/victor-akande/weistack/internal/core/httpx"
+	policydoc "github.com/victor-akande/weistack/internal/core/policy"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
@@ -60,71 +61,159 @@ type role struct {
 // table of system-defined permissions. The catalog is the service's
 // abbreviation, BASE for account-wide permissions and Server
 // Administrator, as Huawei's examples show it.
+//
+// Huawei does not publish the statements of its system permissions,
+// only what each one allows ("supported operations" tables on each
+// service's permissions page, and the descriptions). The statements
+// here are written to match those: FullAccess grants every action of
+// the service, ReadOnlyAccess its get and list actions (which, through
+// the classic aliases, cover every read), and the others what their
+// tables and descriptions say. roles_matrix_test.go checks each against
+// the documented tables.
 type systemRole struct {
 	name, display, description, catalog, scope string
 	fine                                       bool
+	statements                                 []systemStatement
+}
+
+// systemStatement is one Allow statement: Actions, or with Not every
+// action except those.
+type systemStatement struct {
+	Not     bool
+	Actions []string
+}
+
+func allow(actions ...string) []systemStatement {
+	return []systemStatement{{Actions: actions}}
+}
+
+// readOnly is the get and list actions of the given services.
+func readOnly(services ...string) []systemStatement {
+	var actions []string
+	for _, svc := range services {
+		actions = append(actions, svc+":*:get*", svc+":*:list*")
+	}
+	return allow(actions...)
+}
+
+// tenantServices are the services of the account-wide roles Tenant
+// Administrator and Tenant Guest, which cover every service but IAM.
+var tenantServices = []string{"ecs", "evs", "ims", "vpc", "obs", "rds", "eps", "nat", "elb", "kms"}
+
+// OBS's documented permissions (usermanual-permissions iam_01_0001,
+// and the statement of Huawei's policy example in iam_01_0019).
+var (
+	obsBucketsViewer = []string{"obs:bucket:listAllMyBuckets", "obs:bucket:headBucket", "obs:bucket:getBucketLocation"}
+	obsReadOnly      = append(slices.Clone(obsBucketsViewer), "obs:bucket:listBucket")
+	obsOperate       = append(slices.Clone(obsReadOnly),
+		"obs:object:putObject", "obs:object:getObject", "obs:object:deleteObject", "obs:object:getObjectAcl",
+		"obs:bucket:listBucketMultipartUploads", "obs:object:listMultipartUploadParts", "obs:object:abortMultipartUpload")
+)
+
+// vpcAdministrator is every VPC resource type but security groups and
+// their rules, which the role excludes (productdesc-vpc
+// overview_permission).
+var vpcAdministrator = []string{
+	"vpc:vpcs:*", "vpc:subnets:*", "vpc:subNetworkInterfaces:*", "vpc:ports:*", "vpc:privateIps:*",
+	"vpc:networks:*", "vpc:routeTables:*", "vpc:peerings:*", "vpc:firewalls:*", "vpc:addressGroups:*",
+	"vpc:flowLogs:*", "vpc:trafficMirrorSessions:*", "vpc:trafficMirrorFilters:*",
+	"vpc:trafficMirrorFilterRules:*", "vpc:quotas:*", "vpc:nativeSubnets:*", "vpc:nativePorts:*",
+	"vpc:nativeNetworks:*", "vpc:nativeRouters:*", "vpc:nativeFirewallGroups:*",
+	"vpc:nativeFirewallPolicies:*", "vpc:nativeFirewallRules:*",
 }
 
 // systemRoles is the catalogue: the services WeiStack emulates, and the
-// account-wide permissions. Their policy statements are not yet
-// emulated, so each policy has an empty Statement list.
+// account-wide permissions.
 var systemRoles = []systemRole{
-	{"system_all_1001", "FullAccess", "Full permissions for all services that support policy-based authorization", "BASE", typeGlobal, true},
-	{"te_admin", "Tenant Administrator", "Tenant Administrator (Exclude IAM)", "BASE", typeBoth, false},
-	{"readonly", "Tenant Guest", "Tenant Guest (Exclude IAM)", "BASE", typeBoth, false},
-	{"secu_admin", "Security Administrator", "Full permissions for Identity and Access Management", "BASE", typeGlobal, false},
+	{"system_all_1001", "FullAccess", "Full permissions for all services that support policy-based authorization", "BASE", typeGlobal, true, allow("*:*:*")},
+	{"te_admin", "Tenant Administrator", "Tenant Administrator (Exclude IAM)", "BASE", typeBoth, false, []systemStatement{{Not: true, Actions: []string{"iam:*:*"}}}},
+	{"readonly", "Tenant Guest", "Tenant Guest (Exclude IAM)", "BASE", typeBoth, false, append(readOnly(tenantServices...), allow("obs:bucket:headBucket")...)},
+	{"secu_admin", "Security Administrator", "Full permissions for Identity and Access Management", "BASE", typeGlobal, false, allow("iam:*:*")},
 
-	{"server_adm", "Server Administrator", "Server Administrator", "BASE", typeProject, false},
-	{"system_all_3", "ECS FullAccess", "All permissions of ECS service", "ECS", typeProject, true},
-	{"system_all_1", "ECS CommonOperations", "Permissions for basic ECS operations,such as start,stop restart a ECS,query ECS details,automatic recovery of ECSs and so on", "ECS", typeProject, true},
-	{"system_all_8", "ECS ReadOnlyAccess", "The read-only permissions to all ECS resources, which can be used for statistics and survey", "ECS", typeProject, true},
+	{"server_adm", "Server Administrator", "Server Administrator", "BASE", typeProject, false, allow(
+		"ecs:*:*", "evs:*:*", "ims:*:*", "vpc:securityGroups:*", "vpc:securityGroupRules:*", "vpc:ports:*", "vpc:firewalls:*")},
+	{"system_all_3", "ECS FullAccess", "All permissions of ECS service", "ECS", typeProject, true, allow("ecs:*:*")},
+	{"system_all_1", "ECS CommonOperations", "Permissions for basic ECS operations,such as start,stop restart a ECS,query ECS details,automatic recovery of ECSs and so on", "ECS", typeProject, true, allow(
+		"ecs:*:get*", "ecs:*:list*", "ecs:cloudServers:start", "ecs:cloudServers:stop", "ecs:cloudServers:reboot",
+		"ecs:cloudServers:vnc", "ecs:cloudServers:batchCreateServerTags", "ecs:cloudServers:batchDeleteServerTags",
+		"ecs:cloudServers:getAutoRecovery", "ecs:cloudServers:setAutoRecovery")},
+	{"system_all_8", "ECS ReadOnlyAccess", "The read-only permissions to all ECS resources, which can be used for statistics and survey", "ECS", typeProject, true, readOnly("ecs")},
 
-	{"ims_adm", "IMS Administrator", "IMS Administrator", "IMS", typeProject, false},
-	{"system_all_16", "IMS FullAccess", "All permissions of Image Management Service", "IMS", typeProject, true},
-	{"system_all_22", "IMS ReadOnlyAccess", "The read-only permissions to all IMS resources, which can be used for statistics and survey", "IMS", typeProject, true},
+	{"ims_adm", "IMS Administrator", "IMS Administrator", "IMS", typeProject, false, allow("ims:*:*")},
+	{"system_all_16", "IMS FullAccess", "All permissions of Image Management Service", "IMS", typeProject, true, allow("ims:*:*")},
+	{"system_all_22", "IMS ReadOnlyAccess", "The read-only permissions to all IMS resources, which can be used for statistics and survey", "IMS", typeProject, true, readOnly("ims")},
 
-	{"system_all_6", "EVS FullAccess", "Full permissions for Elastic Volume Service, including creating, expanding, attaching, detaching, querying, and deleting EVS disks", "EVS", typeProject, true},
-	{"system_all_2", "EVS ReadOnlyAccess", "Read-only permissions for Elastic Volume Service", "EVS", typeProject, true},
+	{"system_all_6", "EVS FullAccess", "Full permissions for Elastic Volume Service, including creating, expanding, attaching, detaching, querying, and deleting EVS disks", "EVS", typeProject, true, allow("evs:*:*")},
+	{"system_all_2", "EVS ReadOnlyAccess", "Read-only permissions for Elastic Volume Service", "EVS", typeProject, true, readOnly("evs")},
 
-	{"system_all_159", "OBS Administrator", "Object Storage Service Administrator", "OBS", typeGlobal, true},
-	{"system_all_72", "OBS OperateAccess", "Basic operation permissions to view the bucket list, obtain bucket metadata, list objects in a bucket, query bucket location, upload objects, download objects, delete objects, and obtain object ACLs", "OBS", typeGlobal, true},
-	{"system_all_64", "OBS ReadOnlyAccess", "Permissions to view the bucket list, obtain bucket metadata, list objects in a bucket, and query bucket location", "OBS", typeGlobal, true},
-	{"obs_b_list", "OBS Buckets Viewer", "Permissions to view the bucket list, obtain bucket metadata, and query bucket location", "OBS", typeGlobal, false},
+	{"system_all_159", "OBS Administrator", "Object Storage Service Administrator", "OBS", typeGlobal, true, allow("obs:*:*")},
+	{"system_all_72", "OBS OperateAccess", "Basic operation permissions to view the bucket list, obtain bucket metadata, list objects in a bucket, query bucket location, upload objects, download objects, delete objects, and obtain object ACLs", "OBS", typeGlobal, true, allow(obsOperate...)},
+	{"system_all_64", "OBS ReadOnlyAccess", "Permissions to view the bucket list, obtain bucket metadata, list objects in a bucket, and query bucket location", "OBS", typeGlobal, true, allow(obsReadOnly...)},
+	{"obs_b_list", "OBS Buckets Viewer", "Permissions to view the bucket list, obtain bucket metadata, and query bucket location", "OBS", typeGlobal, false, allow(obsBucketsViewer...)},
 
-	{"vpc_netadm", "VPC Administrator", "VPC Administrator", "VPC", typeProject, false},
-	{"system_all_7", "VPC FullAccess", "All permissions of VPC service", "VPC", typeProject, true},
-	{"system_all_5", "VPC ReadOnlyAccess", "The read-only permissions to all VPC resources, which can be used for statistics and survey", "VPC", typeProject, true},
+	{"vpc_netadm", "VPC Administrator", "VPC Administrator", "VPC", typeProject, false, allow(vpcAdministrator...)},
+	{"system_all_7", "VPC FullAccess", "All permissions of VPC service", "VPC", typeProject, true, allow("vpc:*:*")},
+	{"system_all_5", "VPC ReadOnlyAccess", "The read-only permissions to all VPC resources, which can be used for statistics and survey", "VPC", typeProject, true, readOnly("vpc")},
 
-	{"rds_adm", "RDS Administrator", "RDS Administrator", "RDS", typeProject, false},
-	{"system_all_14", "RDS FullAccess", "Full permissions for Relational Database Service", "RDS", typeProject, true},
-	{"system_all_12", "RDS ReadOnlyAccess", "Read-only permissions for Relational Database Service", "RDS", typeProject, true},
+	{"rds_adm", "RDS Administrator", "RDS Administrator", "RDS", typeProject, false, allow("rds:*:*")},
+	{"system_all_14", "RDS FullAccess", "Full permissions for Relational Database Service", "RDS", typeProject, true, allow("rds:*:*")},
+	{"system_all_12", "RDS ReadOnlyAccess", "Read-only permissions for Relational Database Service", "RDS", typeProject, true, readOnly("rds")},
 
-	{"nat_adm", "NAT Administrator", "NAT Gateway administrator with full permissions for this service", "NAT", typeProject, false},
-	{"system_all_75", "NAT FullAccess", "All permissions of NAT Gateway service", "NAT", typeProject, true},
-	{"system_all_76", "NAT ReadOnlyAccess", "The read-only permissions to all NAT Gateway resources", "NAT", typeProject, true},
+	{"nat_adm", "NAT Administrator", "NAT Gateway administrator with full permissions for this service", "NAT", typeProject, false, allow("nat:*:*")},
+	{"system_all_75", "NAT FullAccess", "All permissions of NAT Gateway service", "NAT", typeProject, true, allow("nat:*:*")},
+	{"system_all_76", "NAT ReadOnlyAccess", "The read-only permissions to all NAT Gateway resources", "NAT", typeProject, true, readOnly("nat")},
 
-	{"elb_adm", "ELB Administrator", "Elastic Load Balance administrator with full permissions for this service", "ELB", typeProject, false},
-	{"system_all_56", "ELB FullAccess", "All permissions of ELB service", "ELB", typeProject, true},
-	{"system_all_55", "ELB ReadOnlyAccess", "Read-only permissions for Elastic Load Balance", "ELB", typeProject, true},
+	{"elb_adm", "ELB Administrator", "Elastic Load Balance administrator with full permissions for this service", "ELB", typeProject, false, allow("elb:*:*")},
+	{"system_all_56", "ELB FullAccess", "All permissions of ELB service", "ELB", typeProject, true, allow("elb:*:*")},
+	{"system_all_55", "ELB ReadOnlyAccess", "Read-only permissions for Elastic Load Balance", "ELB", typeProject, true, readOnly("elb")},
 
-	{"kms_adm", "KMS Administrator", "KMS Administrator", "KMS", typeProject, false},
-	{"system_all_10", "EPS FullAccess", "All operations on the Enterprise Project Management service", "EPS", typeGlobal, true},
+	{"kms_adm", "KMS Administrator", "KMS Administrator", "KMS", typeProject, false, allow("kms:*:*")},
+	{"system_all_10", "EPS FullAccess", "All operations on the Enterprise Project Management service", "EPS", typeGlobal, true, allow("eps:*:*")},
 }
 
-// catalogue is systemRoles as roles, and by ID.
+// document is a system permission's policy: Version 1.1 for a
+// fine-grained policy, 1.0 for a role.
+func (sr systemRole) document() json.RawMessage {
+	type stmt struct {
+		Effect    string   `json:"Effect"`
+		Action    []string `json:"Action,omitempty"`
+		NotAction []string `json:"NotAction,omitempty"`
+	}
+	doc := struct {
+		Version   string `json:"Version"`
+		Statement []stmt `json:"Statement"`
+	}{Version: policydoc.VersionRole}
+	if sr.fine {
+		doc.Version = policydoc.VersionFine
+	}
+	for _, st := range sr.statements {
+		s := stmt{Effect: "Allow", Action: st.Actions}
+		if st.Not {
+			s.Action, s.NotAction = nil, st.Actions
+		}
+		doc.Statement = append(doc.Statement, s)
+	}
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		panic(err) // static data
+	}
+	return raw
+}
+
+// catalogue is systemRoles as roles, and by ID. Each document is parsed
+// once, so a mistake in the table fails at start-up.
 var catalogue, catalogueByID = func() ([]role, map[string]role) {
 	all := make([]role, 0, len(systemRoles))
 	byID := make(map[string]role, len(systemRoles))
 	for _, sr := range systemRoles {
 		sum := sha256.Sum256([]byte("weistack:system-role:" + sr.name))
-		version := "1.0"
-		if sr.fine {
-			version = "1.1"
+		doc := sr.document()
+		if _, err := policydoc.Parse(doc); err != nil {
+			panic(fmt.Sprintf("iam: system role %s: %v", sr.name, err))
 		}
 		ro := role{
 			ID: hex.EncodeToString(sum[:16]), Name: sr.name, DisplayName: sr.display, Type: sr.scope,
-			Catalog: sr.catalog, Description: sr.description, Fine: sr.fine,
-			Policy: json.RawMessage(`{"Version":"` + version + `","Statement":[]}`),
+			Catalog: sr.catalog, Description: sr.description, Fine: sr.fine, Policy: doc,
 		}
 		all = append(all, ro)
 		byID[ro.ID] = ro
@@ -463,7 +552,41 @@ func checkPolicy(raw json.RawMessage) (json.RawMessage, error) {
 			return nil, err
 		}
 	}
+	// The document must also be one the evaluator understands: its
+	// resources and conditions are checked here.
+	if _, err := policydoc.Parse(compact.Bytes()); err != nil {
+		return nil, classicPolicyError(err)
+	}
 	return json.RawMessage(compact.Bytes()), nil
+}
+
+// classicPolicyError maps a document error to the code classic IAM
+// documents for it.
+func classicPolicyError(err error) error {
+	var pe *policydoc.Error
+	if !errors.As(err, &pe) {
+		return errPolicyObject
+	}
+	switch pe.Kind {
+	case policydoc.ErrResource:
+		service, _, _ := strings.Cut(pe.Item, ":")
+		return apiErr400("IAM.1045", fmt.Sprintf("Resource URI '%s' or service '%s' is invalid.", pe.Item, service))
+	case policydoc.ErrOperator:
+		return apiErr400("IAM.1059", fmt.Sprintf("Invalid key '%s'.", pe.Item))
+	case policydoc.ErrConditionKey:
+		return apiErr400("IAM.1052", fmt.Sprintf("Invalid attribute '%s'.", pe.Item))
+	case policydoc.ErrConditionList:
+		return apiErr400("IAM.1053", fmt.Sprintf("Attribute '%s' must be a JSONArray.", pe.Item))
+	case policydoc.ErrConditionValue:
+		return apiErr400("IAM.1057", fmt.Sprintf("Value %s of attribute %s for operator %s contains invalid characters.", pe.Value, pe.Item, pe.Operator))
+	case policydoc.ErrEffect:
+		return errEffect
+	case policydoc.ErrAction:
+		return errActionArray
+	case policydoc.ErrStatement:
+		return errStatementArray
+	}
+	return errPolicyObject
 }
 
 func checkStatement(st map[string]json.RawMessage) error {
