@@ -203,7 +203,8 @@ WeiStack has one enterprise project, the default (ID `0`), served by
 
 ## Identity policies (IAM 5.0)
 
-IAM 5.0's custom identity policies, attached to users and groups.
+IAM 5.0's custom identity policies, attached to users, groups and
+agencies.
 
 | Operation | Method and path | Status | Notes |
 | --- | --- | --- | --- |
@@ -215,7 +216,6 @@ IAM 5.0's custom identity policies, attached to users and groups.
 | AttachUserPolicyV5, DetachUserPolicyV5, AttachGroupPolicyV5, DetachGroupPolicyV5 | `POST /v5/policies/{policy_id}/attach-user`, `detach-user`, `attach-group`, `detach-group` | Yes | |
 | ListAttachedUserPoliciesV5, ListAttachedGroupPoliciesV5 | `GET /v5/users/{user_id}/attached-policies`, `/v5/groups/{group_id}/attached-policies` | Yes | `limit` and `marker` |
 | ListEntitiesForPolicyV5 | `GET /v5/policies/{policy_id}/attached-entities` | Yes | Filter `entity_type`; `limit` and `marker` |
-| Agency attachments, trust policies | `/v5/policies/{policy_id}/attach-agency`, `/v5/agencies/...` | No | Agencies are not emulated |
 | Password and login policies | `/v5/password-policy`, `/v5/login-policy` | No | |
 
 - **Documents** follow IAM 5.0's grammar: `Version` `5.0` and a non-empty
@@ -236,7 +236,48 @@ IAM 5.0's custom identity policies, attached to users and groups.
 - **System policies** are not emulated: their names and IDs in IAM 5.0 are
   not published, so `policy_type=system` lists none. Classic IAM's
   [system permissions](#permissions) are.
-- Deleting a user or a group detaches its policies.
+- Deleting a user, a group or an agency detaches its policies.
+
+## Agencies
+
+An agency is an identity an account creates for another account or a
+cloud service, holding the permissions granted to it. Classic IAM and
+IAM 5.0 share one store: IAM 5.0 lists every agency, classic IAM its
+own. Agencies can be created and given permissions; assuming one comes
+with temporary credentials.
+
+| Operation | Method and path | Status | Notes |
+| --- | --- | --- | --- |
+| CreateAgency, ListAgencies | `POST`, `GET /v3.0/OS-AGENCY/agencies` | Yes | List needs `domain_id`; filters `trust_domain_id`, `name`; `page` with `per_page` |
+| ShowAgency, UpdateAgency, DeleteAgency | `GET`, `PUT`, `DELETE /v3.0/OS-AGENCY/agencies/{agency_id}` | Yes | |
+| Grants to an agency on the domain or a project | `GET`, `PUT`, `HEAD`, `DELETE /v3.0/OS-AGENCY/{domains,projects}/{id}/agencies/{agency_id}/roles[/{role_id}]` | Yes | As for groups |
+| Grants to an agency on all projects | `/v3.0/OS-INHERIT/domains/{domain_id}/agencies/{agency_id}/roles/.../inherited_to_projects` | Yes | |
+| AssociateRoleToAgencyOnEnterpriseProject, RevokeRoleFromAgencyOnEnterpriseProject | `PUT`, `DELETE /v3.0/OS-PERMISSION/subjects/agency/scopes/enterprise-project/role-assignments` | Yes | The assignments are in the body |
+| CreateAgencyV5, ListAgenciesV5 | `POST`, `GET /v5/agencies` | Yes | Filter `path_prefix`; `limit` and `marker` |
+| GetAgencyV5, UpdateAgencyV5, DeleteAgencyV5 | `GET`, `PUT`, `DELETE /v5/agencies/{agency_id}` | Yes | Update sets `max_session_duration` and the description |
+| UpdateTrustPolicyV5 | `PUT /v5/agencies/{agency_id}/trust-policy` | Yes | Not for classic agencies (`PAP5.0038`) |
+| AttachAgencyPolicyV5, DetachAgencyPolicyV5, ListAttachedAgencyPoliciesV5 | `POST /v5/policies/{policy_id}/attach-agency`, `detach-agency`; `GET /v5/agencies/{agency_id}/attached-policies` | Yes | Agencies of both generations |
+| CreateServiceLinkedAgencyV5, DeleteServiceLinkedAgencyV5 | `PUT /v5/service-linked-agencies`, `DELETE /v5/service-linked-agencies/{agency_id}` | Yes | Deleted at once |
+| GetServiceLinkedAgencyDeletionStatusV5 | `GET /v5/service-linked-agencies/deletion-task/{deletion_task_id}` | Yes | Always `succeeded` |
+| Agency tags | `/v5/agency/{agency_id}/tags/...` | No | |
+
+- **Classic agencies** name the delegated account by `trust_domain_name`
+  or `trust_domain_id`, which must be an account the emulator has (see
+  [Accounts](#accounts)), or a cloud service by `trust_domain_name`
+  `op_svc_<service>`. `duration` is `FOREVER` (the default), `ONEDAY` or a
+  number of days, and is answered in hours (`"24"`, `"480"`) with the
+  `expire_time` it gives. Names have 1 to 64 letters, digits and
+  `_+=,.@-`, are unique in the account ignoring case, and the URN is
+  `iam::<account ID>:agency:<name>`.
+- **Trust agencies** hold a trust policy: an IAM 5.0 document whose every
+  statement names a `Principal` or a `NotPrincipal`, of `IAM` (account
+  IDs, or user URNs), `Service` (`service.<name>`) or
+  `Identity_provider`. Anything else is `PAP5.0011`.
+  `max_session_duration` is 3,600 to 43,200 seconds, 3,600 by default.
+- **Service-linked agencies** are named `ServiceLinkedAgencyFor<service>`
+  under the path `service-linked-agency/service.<service>/`, and trust that
+  service. Nothing in WeiStack assumes them.
+- Deleting an agency removes its grants and detaches its policies.
 
 ## Tokens
 

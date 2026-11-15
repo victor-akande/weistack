@@ -34,11 +34,13 @@ func (s *Service) Routes(r chi.Router) {
 		r.Use(authz.Service(authz.ServiceOptions{Name: "iam", Global: true, Style: apierr.StyleFlat, Deny: classicDenied}))
 		s.classicRoutes(r)
 		s.roleRoutes(r)
+		s.classicAgencyRoutes(r)
 	})
 	r.Group(func(r chi.Router) {
 		r.Use(authz.Service(authz.ServiceOptions{Name: "iam", Global: true, Style: apierr.StyleFlat, Deny: v5Denied}))
 		s.v5Routes(r)
 		s.policyRoutes(r)
+		s.v5AgencyRoutes(r)
 	})
 }
 
@@ -200,8 +202,8 @@ func (s *Service) policyRoutes(r chi.Router) {
 	r.With(act("iam:policies:deleteVersionV5", pol)).Delete("/v5/policies/{policy_id}/versions/{version_id}", s.handle("DeletePolicyVersionV5", s.handleDeletePolicyVersionV5))
 	r.With(act("iam:policies:setDefaultVersionV5", pol)).Post("/v5/policies/{policy_id}/versions/{version_id}/set-default", s.handle("SetDefaultPolicyVersionV5", s.handleSetDefaultPolicyVersionV5))
 
-	// Attaching acts on the user or group the body names; it is checked
-	// on every user or group.
+	// Attaching acts on the user, group or agency the body names; it is
+	// checked on every user, group or agency.
 	r.With(act("iam:users:attachPolicyV5", authz.Fixed("user", "*"))).Post("/v5/policies/{policy_id}/attach-user", s.handle("AttachUserPolicyV5", s.attach(policyUser, true)))
 	r.With(act("iam:users:detachPolicyV5", authz.Fixed("user", "*"))).Post("/v5/policies/{policy_id}/detach-user", s.handle("DetachUserPolicyV5", s.attach(policyUser, false)))
 	r.With(act("iam:groups:attachPolicyV5", authz.Fixed("group", "*"))).Post("/v5/policies/{policy_id}/attach-group", s.handle("AttachGroupPolicyV5", s.attach(policyGroup, true)))
@@ -209,6 +211,64 @@ func (s *Service) policyRoutes(r chi.Router) {
 	r.With(act("iam:policies:listEntitiesV5", pol)).Get("/v5/policies/{policy_id}/attached-entities", s.handle("ListEntitiesForPolicyV5", s.handleListEntitiesForPolicyV5))
 	r.With(act("iam:users:listAttachedPoliciesV5", s.userResource)).Get("/v5/users/{user_id}/attached-policies", s.handle("ListAttachedUserPoliciesV5", s.listAttached(policyUser)))
 	r.With(act("iam:groups:listAttachedPoliciesV5", s.groupResource)).Get("/v5/groups/{group_id}/attached-policies", s.handle("ListAttachedGroupPoliciesV5", s.listAttached(policyGroup)))
+	r.With(act("iam:agencies:attachPolicyV5", authz.Fixed("agency", "*"))).Post("/v5/policies/{policy_id}/attach-agency", s.handle("AttachAgencyPolicyV5", s.attach(policyAgency, true)))
+	r.With(act("iam:agencies:detachPolicyV5", authz.Fixed("agency", "*"))).Post("/v5/policies/{policy_id}/detach-agency", s.handle("DetachAgencyPolicyV5", s.attach(policyAgency, false)))
+	r.With(act("iam:agencies:listAttachedPoliciesV5", s.agencyResource)).Get("/v5/agencies/{agency_id}/attached-policies", s.handle("ListAttachedAgencyPoliciesV5", s.listAttached(policyAgency)))
+}
+
+// classicAgencyRoutes are classic IAM's agencies and their grants
+// (agencies.go).
+func (s *Service) classicAgencyRoutes(r chi.Router) {
+	act := authz.Action
+	const agencies = "/v3.0/OS-AGENCY/agencies"
+	r.With(act("iam:agencies:create")).Post(agencies, s.handle("CreateAgency", s.handleCreateAgency))
+	r.With(act("iam:agencies:list")).Get(agencies, s.handle("ListAgencies", s.handleListAgencies))
+	r.With(act("iam:agencies:get")).Get(agencies+"/{agency_id}", s.handle("ShowAgency", s.handleShowAgency))
+	r.With(act("iam:agencies:update")).Put(agencies+"/{agency_id}", s.handle("UpdateAgency", s.handleUpdateAgency))
+	r.With(act("iam:agencies:delete")).Delete(agencies+"/{agency_id}", s.handle("DeleteAgency", s.handleDeleteAgency))
+
+	type scoped struct {
+		prefix, scope, op, action string
+	}
+	for _, sc := range []scoped{
+		{"/v3.0/OS-AGENCY/domains/{domain_id}/agencies/{agency_id}/roles", scopeDomain, "Domain", "OnDomain"},
+		{"/v3.0/OS-AGENCY/projects/{project_id}/agencies/{agency_id}/roles", scopeProject, "Project", "OnProject"},
+	} {
+		r.With(act("iam:agencies:listRoles"+sc.action)).Get(sc.prefix, s.handle("List"+sc.op+"PermissionsForAgency", s.listGranted(subjectAgency, sc.scope)))
+		r.With(act("iam:agencies:grantRole"+sc.action)).Put(sc.prefix+"/{role_id}", s.handle("AssociateAgencyWith"+sc.op+"Permission", s.grant(subjectAgency, sc.scope)))
+		r.With(act("iam:agencies:checkRole"+sc.action)).Head(sc.prefix+"/{role_id}", s.handle("Check"+sc.op+"PermissionForAgency", s.check(subjectAgency, sc.scope)))
+		r.With(act("iam:agencies:revokeRole"+sc.action)).Delete(sc.prefix+"/{role_id}", s.handle("Remove"+sc.op+"PermissionFromAgency", s.revoke(subjectAgency, sc.scope)))
+	}
+	const inherited = "/v3.0/OS-INHERIT/domains/{domain_id}/agencies/{agency_id}/roles"
+	r.With(act("iam:agencies:listRoles")).Get(inherited+"/inherited_to_projects", s.handle("ListAllProjectsPermissionsForAgency", s.listGranted(subjectAgency, scopeInherited)))
+	r.With(act("iam:agencies:grantRole")).Put(inherited+"/{role_id}/inherited_to_projects", s.handle("AssociateAgencyWithAllProjectsPermission", s.grant(subjectAgency, scopeInherited)))
+	r.With(act("iam:agencies:checkRole")).Head(inherited+"/{role_id}/inherited_to_projects", s.handle("CheckAllProjectsPermissionForAgency", s.check(subjectAgency, scopeInherited)))
+	r.With(act("iam:agencies:revokeRole")).Delete(inherited+"/{role_id}/inherited_to_projects", s.handle("RemoveAllProjectsPermissionFromAgency", s.revoke(subjectAgency, scopeInherited)))
+
+	// The enterprise-project grants name their agencies in the body.
+	const ep = "/v3.0/OS-PERMISSION/subjects/agency/scopes/enterprise-project/role-assignments"
+	r.With(act("iam:agencies:grantRoleOnEnterpriseProject")).Put(ep, s.handle("AssociateRoleToAgencyOnEnterpriseProject", s.agencyEPGrants(true)))
+	r.With(act("iam:agencies:revokeRoleOnEnterpriseProject")).Delete(ep, s.handle("RevokeRoleFromAgencyOnEnterpriseProject", s.agencyEPGrants(false)))
+}
+
+func (s *Service) v5AgencyRoutes(r chi.Router) {
+	act := authz.Action
+	agency, anyAgency := s.agencyResource, authz.Fixed("agency", "*")
+	r.With(act("iam:agencies:createV5", anyAgency)).Post("/v5/agencies", s.handle("CreateAgencyV5", s.handleCreateAgencyV5))
+	r.With(act("iam:agencies:listV5", anyAgency)).Get("/v5/agencies", s.handle("ListAgenciesV5", s.handleListAgenciesV5))
+	r.With(act("iam:agencies:getV5", agency)).Get("/v5/agencies/{agency_id}", s.handle("GetAgencyV5", s.handleGetAgencyV5))
+	r.With(act("iam:agencies:updateV5", agency)).Put("/v5/agencies/{agency_id}", s.handle("UpdateAgencyV5", s.handleUpdateAgencyV5))
+	r.With(act("iam:agencies:deleteV5", agency)).Delete("/v5/agencies/{agency_id}", s.handle("DeleteAgencyV5", s.handleDeleteAgencyV5))
+	r.With(act("iam:agencies:updateTrustPolicyV5", agency)).Put("/v5/agencies/{agency_id}/trust-policy", s.handle("UpdateTrustPolicyV5", s.handleUpdateTrustPolicyV5))
+	r.With(act("iam:agencies:createServiceLinkedAgencyV5", anyAgency)).Put("/v5/service-linked-agencies", s.handle("CreateServiceLinkedAgencyV5", s.handleCreateServiceLinkedAgencyV5))
+	r.With(act("iam:agencies:deleteServiceLinkedAgencyV5", agency)).Delete("/v5/service-linked-agencies/{agency_id}", s.handle("DeleteServiceLinkedAgencyV5", s.handleDeleteServiceLinkedAgencyV5))
+	r.With(act("iam:agencies:getServiceLinkedAgencyDeletionStatusV5", anyAgency)).Get("/v5/service-linked-agencies/deletion-task/{deletion_task_id}", s.handle("GetServiceLinkedAgencyDeletionStatusV5", s.handleGetDeletionTaskV5))
+}
+
+func (s *Service) agencyResource(r *http.Request) (authz.Resource, bool) {
+	ctx := r.Context()
+	a, err := s.agencies(ctx).Get(ctx, chi.URLParam(r, "agency_id"))
+	return authz.Resource{Type: "agency", Path: a.Path + a.Name}, err == nil
 }
 
 // authorizeOwn checks action unless the caller is ownerID: IAM users

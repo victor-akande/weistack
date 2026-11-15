@@ -15,9 +15,10 @@ import (
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
-// Role assignments: classic IAM grants a role to a user group for the
-// account's global services (the domain), for one region's project, or
-// for all projects, and to a group or a user for an enterprise project.
+// Role assignments: classic IAM grants a role to a user group or an
+// agency for the account's global services (the domain), for one
+// region's project, or for all projects, and to a group, a user or an
+// agency for an enterprise project.
 
 const kindAssignment = "iam.assignment"
 
@@ -126,6 +127,12 @@ func (s *Service) target(r *http.Request, subject, scope string) (grantTarget, e
 		} else if err != nil {
 			return t, err
 		}
+	case subjectAgency:
+		a, err := s.classicAgency(r)
+		if err != nil {
+			return t, err
+		}
+		t.subjectID = a.ID
 	}
 	return t, nil
 }
@@ -440,12 +447,12 @@ func (s *Service) handleListRoleAssignments(w http.ResponseWriter, r *http.Reque
 		}
 	}
 	subject, subjectID := q.Get("subject"), ""
-	for _, kind := range []string{"user", "group", "agency"} {
+	for _, kind := range []string{subjectUser, subjectGroup, subjectAgency} {
 		if id := q.Get("subject." + kind + "_id"); id != "" {
 			subject, subjectID = kind, id
 		}
 	}
-	if subject != "" && subject != subjectUser && subject != subjectGroup && subject != "agency" {
+	if subject != "" && subject != subjectUser && subject != subjectGroup && subject != subjectAgency {
 		return errInvalidParam("subject")
 	}
 	scope, scopeID := q.Get("scope"), ""
