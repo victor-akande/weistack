@@ -76,18 +76,23 @@ func (s *Server) authenticate(m *mounted, w http.ResponseWriter, r *http.Request
 
 // gate is the authorization gate for r's authenticated caller.
 func (s *Server) gate(r *http.Request) *authz.Gate {
-	var account string
-	if s.dir != nil {
+	principal := auth.FromContext(r.Context()).Principal
+	account := principal.AccountID
+	if account == "" && s.dir != nil {
 		account = s.dir.Account().ID
 	}
 	ip := r.RemoteAddr
 	if host, _, err := net.SplitHostPort(ip); err == nil {
 		ip = host
 	}
-	return authz.NewGate(authz.GateOptions{
-		Principal: auth.FromContext(r.Context()).Principal, Account: account,
+	o := authz.GateOptions{
+		Principal: principal, Account: account,
 		Provider: s.perms, Sealer: s.sealer, Log: s.log, Now: s.now(), SourceIP: ip,
-	})
+	}
+	if s.accounts != nil {
+		o.ProjectOwner = s.accounts.ProjectOwner
+	}
+	return authz.NewGate(o)
 }
 
 // verify returns the identity r's credentials prove, or the error to

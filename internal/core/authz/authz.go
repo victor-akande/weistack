@@ -82,6 +82,8 @@ type Gate struct {
 	now       time.Time
 	sourceIP  string
 
+	projectOwner func(projectID, region string) (string, bool)
+
 	mu        sync.Mutex
 	grants    map[Scope]Grants
 	consulted bool
@@ -98,6 +100,11 @@ type GateOptions struct {
 	Now      time.Time
 	// SourceIP is the caller's address, for g:SourceIp.
 	SourceIP string
+	// ProjectOwner returns the ID of the account a project in a region
+	// belongs to, if it is a known account's. A request on another
+	// account's project is refused, whatever the caller may do in its
+	// own. Nil skips the check.
+	ProjectOwner func(projectID, region string) (string, bool)
 }
 
 // NewGate returns a gate for one request.
@@ -107,7 +114,7 @@ func NewGate(o GateOptions) *Gate {
 	}
 	return &Gate{
 		principal: o.Principal, account: o.Account, provider: o.Provider, sealer: o.Sealer,
-		log: o.Log, now: o.Now, sourceIP: o.SourceIP,
+		log: o.Log, now: o.Now, sourceIP: o.SourceIP, projectOwner: o.ProjectOwner,
 	}
 }
 
@@ -144,6 +151,8 @@ type Denial struct {
 	Action    string
 	Resources []string
 	Decision  policy.Decision
+	// Reason is why, when not the decision's failure.
+	Reason string
 	// Encoded is the sealed explanation, for the response's
 	// encoded_authorization_message.
 	Encoded string
@@ -320,9 +329,6 @@ func check(r *http.Request, a actions.Action, res []Resource) error {
 	ctx := r.Context()
 	g := GateFrom(ctx)
 	g.markConsulted()
-	if g.principal.Admin {
-		return nil
-	}
 	o := serviceFrom(ctx)
 	if o == nil {
 		// A route outside any declared service: refuse rather than guess.
@@ -331,6 +337,12 @@ func check(r *http.Request, a actions.Action, res []Resource) error {
 	scope := Scope{Service: o.Name, Region: reqctx.From(ctx).Region, Global: o.Global}
 	if !o.Global {
 		scope.ProjectID = chi.URLParam(r, "project_id")
+	}
+	if g.foreignProject(scope) {
+		return g.deny(ctx, o, a, nil, policy.Decision{}, "the project belongs to another account")
+	}
+	if g.principal.Admin {
+		return nil
 	}
 	grants, err := g.grantsFor(ctx, scope)
 	if err != nil {
@@ -349,10 +361,28 @@ func check(r *http.Request, a actions.Action, res []Resource) error {
 	if d.Allowed {
 		return nil
 	}
+	return g.deny(ctx, o, a, urns, d, d.Failure())
+}
+
+// foreignProject reports whether scope is a project of an account other
+// than the caller's.
+func (g *Gate) foreignProject(scope Scope) bool {
+	if scope.Global || scope.ProjectID == "" || g.projectOwner == nil {
+		return false
+	}
+	owner, ok := g.projectOwner(scope.ProjectID, scope.Region)
+	return ok && owner != g.principal.AccountID
+}
+
+// deny logs a denial and returns the service's error for it.
+func (g *Gate) deny(ctx context.Context, o *ServiceOptions, a actions.Action, urns []string, d policy.Decision, reason string) error {
 	denial := &Denial{Action: a.Name, Resources: urns, Decision: d}
+	if reason != d.Failure() {
+		denial.Reason = reason
+	}
 	denial.Encoded = g.encode(denial)
 	g.log.InfoContext(ctx, "permission denied",
-		"action", a.Name, "resources", urns, "user", g.principal.UserName, "reason", d.Failure(),
+		"action", a.Name, "resources", urns, "user", g.principal.UserName, "reason", reason,
 		"policy", d.Policy)
 	return o.Deny(denial)
 }
@@ -437,6 +467,9 @@ func (g *Gate) encode(d *Denial) string {
 	e.Context.UserProfile.AccountID = g.principal.AccountID
 	e.Context.Action, e.Context.Resources = d.Action, d.Resources
 	e.Failure, e.Policy, e.Statement = d.Decision.Failure(), d.Decision.Policy, d.Decision.Sid
+	if d.Reason != "" {
+		e.Failure = d.Reason
+	}
 	plain, err := json.Marshal(e)
 	if err != nil {
 		return ""
