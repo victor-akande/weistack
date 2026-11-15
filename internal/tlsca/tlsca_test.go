@@ -110,6 +110,16 @@ func TestBrokenCADirectories(t *testing.T) {
 		t.Errorf("half a CA: %v", err)
 	}
 
+	// A key without its certificate: Load waits for the process creating
+	// the CA, then gives up.
+	keyOnly := t.TempDir()
+	if err := os.WriteFile(filepath.Join(keyOnly, keyFile), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := load(keyOnly, 50*time.Millisecond); err == nil || !strings.Contains(err.Error(), "half") {
+		t.Errorf("a key without its certificate: %v", err)
+	}
+
 	junk := t.TempDir()
 	for _, f := range []string{CertFile, keyFile} {
 		if err := os.WriteFile(filepath.Join(junk, f), []byte("not pem"), 0o600); err != nil {
@@ -167,5 +177,43 @@ func TestConcurrentIssue(t *testing.T) {
 		if c != certs[0] {
 			t.Fatal("concurrent requests for one host got different certificates")
 		}
+	}
+}
+
+// Processes starting at once on a new directory agree on one CA.
+func TestConcurrentLoadCreatesOneCA(t *testing.T) {
+	t.Parallel()
+	dir := filepath.Join(t.TempDir(), "tls")
+	const n = 8
+	pems := make([][]byte, n)
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			a, err := Load(dir)
+			errs[i] = err
+			if err == nil {
+				pems[i] = a.CertPEM()
+			}
+		}()
+	}
+	wg.Wait()
+	for i := range n {
+		if errs[i] != nil {
+			t.Fatalf("Load %d: %v", i, errs[i])
+		}
+		if string(pems[i]) != string(pems[0]) {
+			t.Fatalf("Load %d returned a different CA", i)
+		}
+	}
+	b, err := Load(dir)
+	if err != nil || string(b.CertPEM()) != string(pems[0]) {
+		t.Fatalf("reload: %v", err)
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 2 {
+		t.Errorf("the directory holds %d files, want the certificate and the key", len(entries))
 	}
 }
