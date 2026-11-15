@@ -1,7 +1,8 @@
 # Adding a service
 
 Every emulated service follows the same shape. This page describes the
-contract the core framework gives you; `internal/server/server_test.go` has a
+contract the core framework gives you ([Architecture](architecture.md)
+explains the framework itself); `internal/server/server_test.go` has a
 minimal fake service you can read alongside it.
 
 ## Layout
