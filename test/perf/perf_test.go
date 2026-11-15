@@ -6,7 +6,8 @@
 //   - cold start, from exec to a healthy admin endpoint: under 1 s
 //   - idle resident memory: under 50 MB, and within 20% of the baseline
 //   - p99 latency of get and list with 1,000 resources stored: under
-//     10 ms, in memory and with -persist. A round of samples over budget
+//     10 ms, in memory, with -persist, and with -iam=enforce, where every
+//     request is signed and checked. A round of samples over budget
 //     is measured again, up to three rounds, and fails only if every
 //     round is over: a regression is slow every time, a pause on a
 //     shared CI machine is not.
@@ -34,6 +35,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/victor-akande/weistack/internal/core/identity"
+	"github.com/victor-akande/weistack/internal/core/sigcheck"
 )
 
 // Budgets, from the project plan.
@@ -96,6 +100,33 @@ func TestMain(m *testing.M) {
 type proc struct {
 	cmd  *exec.Cmd
 	base string
+	// keys sign every request when credentials are enforced.
+	keys *identity.Credentials
+}
+
+// enforced returns the environment of an emulator that checks
+// credentials, and the administrator's keys it is given.
+func enforced(t *testing.T) ([]string, *identity.Credentials) {
+	t.Helper()
+	keys, err := identity.NewCredentials()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return []string{"WEISTACK_IAM=enforce", "WEISTACK_ADMIN_ACCESS_KEY=" + keys.AccessKey, "WEISTACK_ADMIN_SECRET_KEY=" + keys.SecretKey}, &keys
+}
+
+// sign signs req as a client would: OBS requests (those with a Host) with
+// S3 signature version 4, the others with the SDKs' SDK-HMAC-SHA256.
+func (p *proc) sign(req *http.Request, body string) {
+	if p.keys == nil {
+		return
+	}
+	req.Header.Del("Authorization")
+	if strings.HasPrefix(req.Host, "obs.") {
+		sigcheck.SignV4(req, p.keys.AccessKey, p.keys.SecretKey, "ap-southeast-1", req.URL.EscapedPath(), "UNSIGNED-PAYLOAD", time.Now())
+		return
+	}
+	sigcheck.SignSDKHMAC(req, p.keys.AccessKey, p.keys.SecretKey, req.URL.Path, []byte(body), time.Now())
 }
 
 func freePort(t *testing.T) string {
@@ -176,6 +207,7 @@ func (p *proc) do(t *testing.T, method, path, body string, hdr map[string]string
 		}
 		req.Header.Set(k, v)
 	}
+	p.sign(req, body)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, path, err)
@@ -270,15 +302,19 @@ func baseline(t *testing.T) map[string]float64 {
 }
 
 func TestLatencyAtScale(t *testing.T) {
+	enforceEnv, adminKeys := enforced(t)
 	for _, mode := range []struct {
 		name string
 		env  []string
+		keys *identity.Credentials
 	}{
-		{"memory", nil},
-		{"persist", []string{"WEISTACK_PERSIST=1", "WEISTACK_DATA_DIR=" + t.TempDir()}},
+		{"memory", nil, nil},
+		{"persist", []string{"WEISTACK_PERSIST=1", "WEISTACK_DATA_DIR=" + t.TempDir()}, nil},
+		{"enforce", enforceEnv, adminKeys},
 	} {
 		t.Run(mode.name, func(t *testing.T) {
 			p, _ := start(t, mode.env...)
+			p.keys = mode.keys
 			vpcs := "/vpc/v1/" + project + "/vpcs"
 			obsHost := map[string]string{"Host": "obs.ap-southeast-1.myhuaweicloud.com", "Authorization": "OBS AKPERF:c2ln"}
 
