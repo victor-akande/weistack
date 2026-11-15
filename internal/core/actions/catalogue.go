@@ -113,6 +113,9 @@ var all = []Action{
 
 	// STS: support.huaweicloud.com/intl/en-us/usermanual-permissions/iam_11_0106.html
 	{"sts::decodeAuthorizationMessage", nil, Write, ""},
+	{"sts:agencies:assume", nil, Write, "agency"},
+	{"sts::tagSession", nil, Tagging, ""},
+	{"sts::setSourceIdentity", nil, Write, ""},
 
 	// IAM: support.huaweicloud.com/intl/en-us/usermanual-permissions/iam_11_0085.html
 	{"iam:users:create", []string{"iam:users:createUser"}, Write, ""},
@@ -233,4 +236,8 @@ var all = []Action{
 	{"iam:agencies:createServiceLinkedAgencyV5", nil, Write, "agency"},
 	{"iam:agencies:deleteServiceLinkedAgencyV5", nil, Write, "agency"},
 	{"iam:agencies:getServiceLinkedAgencyDeletionStatusV5", nil, Read, "agency"},
+	// The classic permission to get an agency's temporary credentials,
+	// whose policies name agencies in a {"uri": [...]} Resource
+	// (usermanual-iam iam_01_0059).
+	{"iam:tokens:assume", nil, Write, ""},
 }

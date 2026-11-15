@@ -91,6 +91,10 @@ type statement struct {
 	res     []resourcePattern
 	conds   []condition
 	vars    bool // resources or condition values use ${...} variables
+	// uris, from a classic Resource object ({"uri": [...]}), name the
+	// agencies a statement lets the caller assume: it matches only a
+	// request for one of them (Request.URIs).
+	uris []string
 
 	// principals, in a trust policy, are who the statement applies to
 	// (or, with notPrin, applies to all but).
@@ -214,10 +218,9 @@ func (st *statement) parseResources(el map[string]json.RawMessage, v5 bool) *Err
 		return errorf(ErrResource, "NotResource is not supported in a classic policy")
 	}
 	if !v5 && hasRes && isObject(el["Resource"]) {
-		// The classic object form ({"uri": [...]}) names agencies, which
-		// are not resources of the services evaluated here: such a
-		// statement matches no service request.
-		return nil
+		// The classic object form ({"uri": [...]}) names agencies, for
+		// iam:tokens:assume: such a statement matches no service request.
+		return st.parseURIs(el["Resource"])
 	}
 	list, not, err := stringListElement(el, "Resource", "NotResource", false)
 	if err != nil {
@@ -232,6 +235,29 @@ func (st *statement) parseResources(el map[string]json.RawMessage, v5 bool) *Err
 			return e
 		}
 		st.res = append(st.res, p)
+	}
+	return nil
+}
+
+func (st *statement) parseURIs(raw json.RawMessage) *Error {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return errorf(ErrResource, "Resource must be a list of URNs or an object of uri")
+	}
+	for k, v := range obj {
+		if k != "uri" {
+			return errorf(ErrResource, "unknown resource kind %q", k)
+		}
+		list, _, err := stringListElement(map[string]json.RawMessage{k: v}, k, "", true)
+		if err != nil {
+			return errorf(ErrResource, "%s", err)
+		}
+		for _, u := range list {
+			st.uris = append(st.uris, strings.ToLower(u))
+		}
+	}
+	if len(st.uris) == 0 {
+		return errorf(ErrResource, "uri must not be empty")
 	}
 	return nil
 }
