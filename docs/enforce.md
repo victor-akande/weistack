@@ -174,6 +174,7 @@ project ID, as Huawei advises, or grant it the permission.
 | IAM (classic) | 403 | `IAM.0003`, `Policy doesn't allow <action> to be performed.` |
 | IAM 5.0 | 403 | `PAP5.0001`, `access denied: ...` |
 | STS | 403 | `STS5.1001`, `you are not authorized to perform this operation` |
+| KMS | 403 | `KMS.0306`, `No access permissions.`, in KMS's envelope |
 | OBS | 403 | `AccessDenied` (XML); in a batch delete, per refused key |
 
 Huawei documents no permission error for the first group of services, so

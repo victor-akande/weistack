@@ -32,6 +32,9 @@ const (
 	// StyleFlatRequestID is StyleFlat with a leading "request_id" field.
 	// Used by the VPC v3 API (security groups).
 	StyleFlatRequestID
+	// StyleNestedFlat is {"error": {"error_code": "KMS.0207",
+	// "error_msg": "..."}}. Used by KMS.
+	StyleNestedFlat
 )
 
 // Codes for conditions that originate in the emulator rather than in an
@@ -141,6 +144,16 @@ type nestedDetail struct {
 	Message string `json:"message"`
 }
 
+type nestedFlatBody struct {
+	Error         flatDetail `json:"error"`
+	Authorization string     `json:"encoded_authorization_message,omitempty"`
+}
+
+type flatDetail struct {
+	Code    string `json:"error_code"`
+	Message string `json:"error_msg"`
+}
+
 type xmlBody struct {
 	XMLName   xml.Name `xml:"Error"`
 	Code      string   `xml:"Code"`
@@ -166,6 +179,11 @@ func Write(w http.ResponseWriter, r *http.Request, style Style, err error) {
 		contentType = "application/json"
 		body, encErr = json.Marshal(nestedBody{
 			Error: nestedDetail{Code: e.Code, Message: e.Message}, Authorization: e.AuthorizationMessage,
+		})
+	case StyleNestedFlat:
+		contentType = "application/json"
+		body, encErr = json.Marshal(nestedFlatBody{
+			Error: flatDetail{Code: e.Code, Message: e.Message}, Authorization: e.AuthorizationMessage,
 		})
 	case StyleXML:
 		contentType = "application/xml"

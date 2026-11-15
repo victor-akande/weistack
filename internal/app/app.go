@@ -34,6 +34,7 @@ import (
 	"github.com/victor-akande/weistack/internal/services/evs"
 	"github.com/victor-akande/weistack/internal/services/iam"
 	"github.com/victor-akande/weistack/internal/services/ims"
+	"github.com/victor-akande/weistack/internal/services/kms"
 	"github.com/victor-akande/weistack/internal/services/obs"
 	"github.com/victor-akande/weistack/internal/services/rds"
 	"github.com/victor-akande/weistack/internal/services/sts"
@@ -391,7 +392,11 @@ func buildServices(
 	if err != nil {
 		return nil, err
 	}
-	return []server.Service{vpcSvc, imsSvc, ecsSvc, evsSvc, obsSvc, rdsSvc, iamSvc, stsSvc, epsSvc}, nil
+	kmsSvc, err := kms.New(kms.Deps{Store: st, Logger: log, IDs: gen, Vault: vlt, Directory: directory})
+	if err != nil {
+		return nil, err
+	}
+	return []server.Service{vpcSvc, imsSvc, ecsSvc, evsSvc, obsSvc, rdsSvc, iamSvc, stsSvc, epsSvc, kmsSvc}, nil
 }
 
 // objectDataDir returns the directory for OBS object bodies and a

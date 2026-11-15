@@ -52,6 +52,19 @@ var openRoutes = map[string]string{
 	"sts POST /v5/agencies/assume":                                   "checked once the body names the agency",
 }
 
+// KMS names the key in the body of most operations, and checks the
+// action on it once read.
+func init() {
+	for _, op := range []string{
+		"describe-key", "enable-key", "disable-key", "schedule-key-deletion", "cancel-key-deletion",
+		"update-key-alias", "update-key-description", "encrypt-data", "decrypt-data", "create-datakey",
+		"create-datakey-without-plaintext", "encrypt-datakey", "decrypt-datakey", "enable-key-rotation",
+		"disable-key-rotation", "update-key-rotation-interval", "get-key-rotation-status",
+	} {
+		openRoutes["kms POST /v1.0/{project_id}/kms/"+op] = "checked once the body names the key"
+	}
+}
+
 var paramRE = regexp.MustCompile(`\{[^}]+\}`)
 
 func TestEveryRouteIsAuthorized(t *testing.T) {

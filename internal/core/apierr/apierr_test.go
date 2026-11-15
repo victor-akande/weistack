@@ -43,6 +43,14 @@ func TestWriteStyles(t *testing.T) {
 			wantBody:   `{"error":{"code":"Ecs.0005","message":"bad request"}}`,
 		},
 		{
+			name:       "nested flat",
+			style:      StyleNestedFlat,
+			err:        New(http.StatusNotFound, "KMS.0207", "The key does not exist."),
+			wantStatus: http.StatusNotFound,
+			wantType:   "application/json",
+			wantBody:   `{"error":{"error_code":"KMS.0207","error_msg":"The key does not exist."}}`,
+		},
+		{
 			name:       "xml",
 			style:      StyleXML,
 			err:        New(http.StatusNotFound, "NoSuchBucket", "The specified bucket does not exist"),
@@ -188,6 +196,7 @@ func TestAuthorizationMessage(t *testing.T) {
 		StyleCodeMessage:   `{"code":"PAP5.0001","message":"access denied: x","encoded_authorization_message":"ENC"}`,
 		StyleFlatRequestID: `{"request_id":"","error_code":"PAP5.0001","error_msg":"access denied: x","encoded_authorization_message":"ENC"}`,
 		StyleNested:        `{"error":{"code":"PAP5.0001","message":"access denied: x"},"encoded_authorization_message":"ENC"}`,
+		StyleNestedFlat:    `{"error":{"error_code":"PAP5.0001","error_msg":"access denied: x"},"encoded_authorization_message":"ENC"}`,
 	} {
 		rec := httptest.NewRecorder()
 		Write(rec, httptest.NewRequest(http.MethodGet, "/", nil), style, e)
