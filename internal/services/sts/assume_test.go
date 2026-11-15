@@ -111,6 +111,8 @@ func TestAssumeAgency(t *testing.T) {
 		{caller, true, `{"agency_urn":"` + urn + `","agency_session_name":"s1","policy":"{\"Version\":\"1.1\",\"Statement\":[]}"}`, 400, "WeiStack.0400"},
 		{caller, true, `{"agency_urn":"iam::x:agency:ops","agency_session_name":"s1"}`, 400, "WeiStack.0400"},
 		{caller, true, `{"agency_urn":"` + urn + `","agency_session_name":"a"}`, 400, "WeiStack.0400"},
+		{caller, true, `{"agency_urn":"` + urn + `","agency_session_name":"` + strings.Repeat("s", 129) + `"}`, 400, "WeiStack.0400"},
+		{caller, true, `{"agency_urn":"` + urn + `","agency_session_name":"has space"}`, 400, "WeiStack.0400"},
 		{caller, true, `{"agency_urn":"iam::` + acct.ID + `:agency:nobody","agency_session_name":"s1"}`, 403, "STS5.1001"},
 		{caller, false, `{"agency_urn":"iam::` + acct.ID + `:agency:nobody","agency_session_name":"s1"}`, 403, "STS5.1001"},
 		// Trust is checked under enforce only.

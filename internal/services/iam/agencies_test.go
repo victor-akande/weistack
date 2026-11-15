@@ -56,6 +56,7 @@ func TestClassicAgencies(t *testing.T) {
 		{`{"name":"x",` + dom + `,"trust_domain_name":"partner","duration":0}`, "IAM.0073", http.StatusBadRequest},
 		{`{"name":"x","domain_id":"` + partner.ID + `","trust_domain_name":"partner"}`, "IAM.0073", http.StatusBadRequest},
 		{`{"name":"has space",` + dom + `,"trust_domain_name":"partner"}`, "IAM.0073", http.StatusBadRequest},
+		{`{"name":"` + strings.Repeat("n", 65) + `",` + dom + `,"trust_domain_name":"partner"}`, "IAM.0073", http.StatusBadRequest},
 		{`{"name":"OPS",` + dom + `,"trust_domain_name":"partner"}`, "IAM.0005", http.StatusConflict},
 	} {
 		e.wantErr(t, c.status, c.code, http.MethodPost, "/v3.0/OS-AGENCY/agencies", `{"agency":`+c.body+`}`)

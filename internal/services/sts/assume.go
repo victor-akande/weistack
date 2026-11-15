@@ -35,8 +35,11 @@ const (
 )
 
 var (
-	agencyURNRE   = regexp.MustCompile(`^iam::([0-9a-f]{32}):agency:(.+)$`)
-	sessionNameRE = regexp.MustCompile(`^[\w+=,.@-]{2,128}$`)
+	agencyURNRE = regexp.MustCompile(`^iam::([0-9a-f]{32}):agency:(.+)$`)
+	// The session name's length (2 to 128) is checked apart: a counted
+	// repetition compiles to a large program, which every start would
+	// pay for.
+	sessionNameRE = regexp.MustCompile(`^[\w+=,.@-]+$`)
 )
 
 // v5Time is IAM 5.0's time format.
@@ -94,7 +97,7 @@ func (s *Service) assumeAgency(w http.ResponseWriter, r *http.Request) error {
 	switch {
 	case m == nil:
 		return errInput("agency_urn must be iam::<account-id>:agency:<name>")
-	case !sessionNameRE.MatchString(b.SessionName):
+	case len(b.SessionName) < 2 || len(b.SessionName) > 128 || !sessionNameRE.MatchString(b.SessionName):
 		return errInput("agency_session_name must be 2 to 128 letters, digits or +=,.@-_")
 	case len(b.PolicyIDs) > maxPolicyIDs:
 		return errPolicyIDs

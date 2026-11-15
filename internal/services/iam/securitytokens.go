@@ -31,8 +31,13 @@ const (
 	defaultClassicDuration = 900
 )
 
-// sessionUserRE is the documented form of session_user.name.
-var sessionUserRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{4,63}$`)
+// sessionUserRE is the documented form of session_user.name, whose
+// length (5 to 64) validSessionUser checks.
+var sessionUserRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
+
+func validSessionUser(n string) bool {
+	return len(n) >= 5 && len(n) <= 64 && sessionUserRE.MatchString(n)
+}
 
 type securityTokenRequest struct {
 	Auth *struct {
@@ -194,7 +199,7 @@ func (s *Service) assumeClassic(r *http.Request, name string, domain nameID, su 
 		return identity.Principal{}, errRequired("agency_name")
 	case domain.ID == "" && domain.Name == "":
 		return identity.Principal{}, errRequired("domain_id")
-	case su != nil && !sessionUserRE.MatchString(su.Name):
+	case su != nil && !validSessionUser(su.Name):
 		return identity.Principal{}, errInvalidField("session_user.name", su.Name)
 	}
 	caller := s.principalOf(r)

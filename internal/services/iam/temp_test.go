@@ -150,6 +150,14 @@ func TestAssumingAgencies(t *testing.T) {
 		t.Errorf("FindAgency = %s, %v, %v", got, longest, ok)
 	}
 
+	for _, name := range []string{"bob", strings.Repeat("a", 65), "1alice", "al ice"} {
+		w, out := e.do(t, http.MethodPost, securityTokens,
+			`{"auth":{"identity":{"methods":["assume_role"],"assume_role":{"agency_name":"ops","domain_id":"`+testAccount.ID+`","session_user":{"name":"`+name+`"}}}}}`, as(root.AccessKey)...)
+		if w.Code != http.StatusBadRequest || out["error_code"] != "IAM.0073" {
+			t.Errorf("session_user %q = %d %v", name, w.Code, out)
+		}
+	}
+
 	// Unknown agencies, and credentials of a deleted one.
 	w, out := e.do(t, http.MethodPost, securityTokens,
 		`{"auth":{"identity":{"methods":["assume_role"],"assume_role":{"agency_name":"nobody","domain_id":"`+testAccount.ID+`"}}}}`, as(root.AccessKey)...)
