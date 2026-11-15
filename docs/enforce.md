@@ -196,7 +196,7 @@ denial at the `info` level, with the action, resources, user and reason.
   policy is attached to), is checked on no particular resource, or on all
   of their type: a statement limited to named resources does not allow it.
   Operations on resources named in the path are checked on them.
-- **Temporary credentials and agencies** (`X-Security-Token`, assumed
+- **Temporary credentials and assuming agencies** (`X-Security-Token`, assumed
   agencies) are not supported yet.
 - **The admin API** (`/_weistack/*`) is not protected by `-iam`: keep the
   emulator's port to yourself.

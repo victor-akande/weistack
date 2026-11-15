@@ -20,8 +20,8 @@ place, and so are **IMS** (M3), **ECS** (M4), **OBS** (M5) and **RDS**
 [EVS](docs/services/evs.md) view of server disks, and [IAM](docs/services/iam.md):
 discovery (so clients need no project or domain ID), users and groups,
 access keys, classic permissions with their assignments (including the
-default [enterprise project](docs/services/eps.md)), and IAM 5.0 identity
-policies.
+default [enterprise project](docs/services/eps.md)), IAM 5.0 identity
+policies, and agencies.
 
 | Milestone | Scope | State |
 | --- | --- | --- |
