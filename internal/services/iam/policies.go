@@ -519,8 +519,9 @@ type policySubject struct {
 }
 
 var (
-	policyUser  = policySubject{subjectUser, "user_id", errV5NoUser, errV5UserPolicies}
-	policyGroup = policySubject{subjectGroup, "group_id", errV5NoGroup, errV5GroupPolicies}
+	policyUser   = policySubject{subjectUser, "user_id", errV5NoUser, errV5UserPolicies}
+	policyGroup  = policySubject{subjectGroup, "group_id", errV5NoGroup, errV5GroupPolicies}
+	policyAgency = policySubject{subjectAgency, "agency_id", errV5NoAgency, errV5AgencyPolicies}
 )
 
 func (s *Service) subjectExists(ctx context.Context, sub policySubject, id string) (bool, error) {
@@ -530,6 +531,8 @@ func (s *Service) subjectExists(ctx context.Context, sub policySubject, id strin
 		_, err = s.users(ctx).Get(ctx, id)
 	case subjectGroup:
 		_, err = s.groups(ctx).Get(ctx, id)
+	case subjectAgency:
+		_, err = s.agencies(ctx).Get(ctx, id)
 	}
 	if errors.Is(err, store.ErrNotFound) {
 		return false, nil
@@ -643,7 +646,7 @@ func (s *Service) listAttached(sub policySubject) handler {
 // entity_type: user, group or agency.
 func (s *Service) handleListEntitiesForPolicyV5(w http.ResponseWriter, r *http.Request) error {
 	kind := r.URL.Query().Get("entity_type")
-	if kind != "" && kind != subjectUser && kind != subjectGroup && kind != "agency" {
+	if kind != "" && kind != subjectUser && kind != subjectGroup && kind != subjectAgency {
 		return errV5Input
 	}
 	p, err := s.getPolicy(r)
@@ -668,18 +671,24 @@ func (s *Service) handleListEntitiesForPolicyV5(w http.ResponseWriter, r *http.R
 		GroupID    string `json:"group_id"`
 		AttachedAt string `json:"attached_at"`
 	}
+	type agencyRef struct {
+		AgencyID   string `json:"agency_id"`
+		AttachedAt string `json:"attached_at"`
+	}
 	out := struct {
-		PolicyAgencies []struct{} `json:"policy_agencies"`
-		PolicyGroups   []groupRef `json:"policy_groups"`
-		PolicyUsers    []userRef  `json:"policy_users"`
-		PageInfo       pageInfo   `json:"page_info"`
-	}{PolicyAgencies: []struct{}{}, PolicyGroups: []groupRef{}, PolicyUsers: []userRef{}, PageInfo: info}
+		PolicyAgencies []agencyRef `json:"policy_agencies"`
+		PolicyGroups   []groupRef  `json:"policy_groups"`
+		PolicyUsers    []userRef   `json:"policy_users"`
+		PageInfo       pageInfo    `json:"page_info"`
+	}{PolicyAgencies: []agencyRef{}, PolicyGroups: []groupRef{}, PolicyUsers: []userRef{}, PageInfo: info}
 	for _, a := range got {
 		switch a.Subject {
 		case subjectUser:
 			out.PolicyUsers = append(out.PolicyUsers, userRef{a.SubjectID, v5At(a.AttachedAt)})
 		case subjectGroup:
 			out.PolicyGroups = append(out.PolicyGroups, groupRef{a.SubjectID, v5At(a.AttachedAt)})
+		case subjectAgency:
+			out.PolicyAgencies = append(out.PolicyAgencies, agencyRef{a.SubjectID, v5At(a.AttachedAt)})
 		}
 	}
 	return httpx.WriteJSON(w, http.StatusOK, out)
