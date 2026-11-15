@@ -48,11 +48,14 @@ Legend: **Yes** implemented, **No** returns `501 WeiStack.0501`.
 
 | Operation | Method and path | Status | Notes |
 | --- | --- | --- | --- |
-| EncryptData, DecryptData | `POST .../encrypt-data`, `decrypt-data` | Yes | Symmetric keys (`SYMMETRIC_DEFAULT`) |
+| EncryptData, DecryptData | `POST .../encrypt-data`, `decrypt-data` | Yes | Symmetric keys (`SYMMETRIC_DEFAULT`), RSA (`RSAES_OAEP_SHA_256`) and SM2 (`SM2_ENCRYPT`) keys |
 | CreateDatakey, CreateDatakeyWithoutPlaintext | `POST .../create-datakey`, `create-datakey-without-plaintext` | Yes | `datakey_length` 8 to 8,192 bits, or `key_spec` |
 | EncryptDatakey, DecryptDatakey | `POST .../encrypt-datakey`, `decrypt-datakey` | Yes | |
 | CreateRandom | `POST .../gen-random` | Yes | 512 bits |
-| Asymmetric encryption, Sign, ValidateSignature, GenerateMac, VerifyMac, ShowPublicKey, data key pairs, ReEncrypt | | No | |
+| Sign, ValidateSignature | `POST .../sign`, `verify` | Yes | See below |
+| ShowPublicKey | `POST .../get-publickey` | Yes | PEM `PUBLIC KEY`, CRLF line ends |
+| GenerateMac, VerifyMac | `POST .../generate-mac`, `verify-mac` | Yes | HMAC keys; the MAC in hexadecimal |
+| Data key pairs, ReEncrypt, DeriveSharedSecret | | No | |
 
 - `encrypt-data` takes 1 to 4,096 bytes and returns Base64. The ciphertext
   names its key, so `decrypt-data` needs no `key_id`; a `key_id` that does
@@ -66,6 +69,25 @@ Legend: **Yes** implemented, **No** returns `501 WeiStack.0501`.
   `encrypt-datakey` takes the data key followed by its SHA-256 (SM3 for an
   SM4 key), checked (`KMS.2103`); `decrypt-datakey` returns it with that
   digest in `datakey_dgst`.
+
+- **Asymmetric encryption.** RSA keys with `key_usage`
+  `ENCRYPT_DECRYPT` encrypt with OAEP and SHA-256, up to the key size
+  less 66 bytes (`KMS.2108`); SM2 keys with SM2 (ASN.1, C1C3C2). Their
+  ciphertexts do not name the key: `decrypt-data` needs `key_id` and
+  `encryption_algorithm`. EC and Ed25519 keys do not encrypt
+  (`KMS.1114`).
+- **Signing.** `message` is Base64, up to 4,096 bytes: a digest
+  (`message_type` `DIGEST`, the default) of the algorithm's hash size
+  (`KMS.0329`), or the message itself (`RAW`), which KMS hashes. RSA keys
+  sign with `RSASSA_PSS_*` or `RSASSA_PKCS1_V1_5_*`; EC and secp256k1
+  keys with `ECDSA_*` (ASN.1 DER); SM2 keys with `SM2DSA_SM3`, digests
+  only (`KMS.0333`); Ed25519 keys with `ED25519_SHA_512` (a `RAW`
+  message) or `ED25519_PH_SHA_512` (Ed25519ph, a SHA-512 digest). Another
+  pairing is `KMS.0332`. Signatures are Base64; `verify` answers
+  `signature_valid` `"true"` or `"false"`. The public key verifies them
+  outside KMS too.
+- **MACs.** `HMAC_SHA_256`, `HMAC_SHA_384`, `HMAC_SHA_512` and `HMAC_SM3`
+  with an HMAC key of that size; `verify-mac` answers `mac_valid`.
 
 ## Rotation
 

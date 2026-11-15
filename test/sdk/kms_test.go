@@ -1,7 +1,12 @@
 package sdk
 
 import (
+	"crypto/ecdsa"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/pem"
 	"strings"
 	"testing"
 
@@ -112,4 +117,71 @@ func TestKMS(t *testing.T) {
 	}
 	_, err = c.ListKeyDetail(&kms.ListKeyDetailRequest{Body: &kms.OperateKeyRequestBody{KeyId: "00000000-0000-0000-0000-000000000000"}})
 	wantError(t, err, 404, "KMS.0207")
+}
+
+// TestKMSSigningAndMACs signs and verifies with an EC key, reads its
+// public key, and makes and checks an HMAC, through the SDK's models.
+func TestKMSSigningAndMACs(t *testing.T) {
+	t.Parallel()
+	c := kmsAs(t, signingAK("AKKMSSIGN00000000000"), signingSK())
+	suffix := strings.ToLower(rand.Text()[:6])
+	spec := kms.GetCreateKeyRequestBodyKeySpecEnum()
+	ec, err := c.CreateKey(&kms.CreateKeyRequest{Body: &kms.CreateKeyRequestBody{KeyAlias: "sdk-ec-" + suffix, KeySpec: &spec.EC_P256}})
+	if err != nil {
+		t.Fatalf("CreateKey(EC_P256): %v", err)
+	}
+	id := *ec.KeyInfo.KeyId
+	digest := sha256.Sum256([]byte("release"))
+	msg := base64.StdEncoding.EncodeToString(digest[:])
+	signed, err := c.Sign(&kms.SignRequest{Body: &kms.SignRequestBody{
+		KeyId: id, Message: msg, SigningAlgorithm: kms.GetSignRequestBodySigningAlgorithmEnum().ECDSA_SHA_256,
+	}})
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	valid, err := c.ValidateSignature(&kms.ValidateSignatureRequest{Body: &kms.VerifyRequestBody{
+		KeyId: id, Message: msg, Signature: *signed.Signature, SigningAlgorithm: kms.GetVerifyRequestBodySigningAlgorithmEnum().ECDSA_SHA_256,
+	}})
+	if err != nil || *valid.SignatureValid != "true" {
+		t.Fatalf("ValidateSignature = %+v, %v", valid, err)
+	}
+	pub, err := c.ShowPublicKey(&kms.ShowPublicKeyRequest{Body: &kms.OperateKeyRequestBody{KeyId: id}})
+	if err != nil {
+		t.Fatalf("ShowPublicKey: %v", err)
+	}
+	block, _ := pem.Decode([]byte(*pub.PublicKey))
+	if block == nil {
+		t.Fatalf("public key %q", *pub.PublicKey)
+	}
+	key, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		t.Fatalf("ParsePKIXPublicKey: %v", err)
+	}
+	// The signature verifies outside KMS, with the public key alone.
+	sig, _ := base64.StdEncoding.DecodeString(*signed.Signature)
+	if !ecdsa.VerifyASN1(key.(*ecdsa.PublicKey), digest[:], sig) {
+		t.Error("the signature does not verify with the public key")
+	}
+
+	mk, err := c.CreateKey(&kms.CreateKeyRequest{Body: &kms.CreateKeyRequestBody{KeyAlias: "sdk-mac-" + suffix, KeySpec: &spec.HMAC_256}})
+	if err != nil {
+		t.Fatalf("CreateKey(HMAC_256): %v", err)
+	}
+	mac, err := c.GenerateMac(&kms.GenerateMacRequest{Body: &kms.GenerateMacRequestBody{
+		KeyId: *mk.KeyInfo.KeyId, MacAlgorithm: kms.GetGenerateMacRequestBodyMacAlgorithmEnum().HMAC_SHA_256, Message: msg,
+	}})
+	if err != nil {
+		t.Fatalf("GenerateMac: %v", err)
+	}
+	checked, err := c.VerifyMac(&kms.VerifyMacRequest{Body: &kms.VerifyMacRequestBody{
+		KeyId: *mk.KeyInfo.KeyId, MacAlgorithm: kms.GetVerifyMacRequestBodyMacAlgorithmEnum().HMAC_SHA_256, Message: msg, Mac: *mac.Mac,
+	}})
+	if err != nil || !*checked.MacValid {
+		t.Fatalf("VerifyMac = %+v, %v", checked, err)
+	}
+	for _, k := range []string{id, *mk.KeyInfo.KeyId} {
+		if _, err := c.DeleteKey(&kms.DeleteKeyRequest{Body: &kms.ScheduleKeyDeletionRequestBody{KeyId: k, PendingDays: "7"}}); err != nil {
+			t.Errorf("DeleteKey: %v", err)
+		}
+	}
 }
