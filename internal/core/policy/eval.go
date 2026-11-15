@@ -19,6 +19,9 @@ type Request struct {
 	// Keys are the request's condition keys, lower case, with their
 	// values. An absent key is one the request does not supply.
 	Keys map[string][]string
+	// Caller is who makes the request, for trust policies, whose
+	// statements apply only to the principals they name.
+	Caller *Caller
 }
 
 // Source is a policy a principal holds, under a name that identifies it
@@ -79,7 +82,7 @@ func Evaluate(req Request, sources []Source) Decision {
 		classic := src.Policy.classic()
 		for i := range src.Policy.statements {
 			st := &src.Policy.statements[i]
-			if !st.matchesAction(action, aliases, classic) || !st.conditionsHold(req.Keys) {
+			if !st.matchesAction(action, aliases, classic) || !st.matchesCaller(req.Caller) || !st.conditionsHold(req.Keys) {
 				continue
 			}
 			for j, r := range resources {

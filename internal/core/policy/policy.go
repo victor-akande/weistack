@@ -70,6 +70,7 @@ func errorf(kind ErrorKind, format string, args ...any) *Error {
 // Policy is a parsed document.
 type Policy struct {
 	version    string
+	trust      bool // a trust policy: statements name principals
 	statements []statement
 }
 
@@ -90,6 +91,11 @@ type statement struct {
 	res     []resourcePattern
 	conds   []condition
 	vars    bool // resources or condition values use ${...} variables
+
+	// principals, in a trust policy, are who the statement applies to
+	// (or, with notPrin, applies to all but).
+	principals principals
+	notPrin    bool
 }
 
 // Parse parses a document. Its Version decides the grammar.
