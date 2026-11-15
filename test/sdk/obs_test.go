@@ -134,14 +134,11 @@ func TestOBSBuckets(t *testing.T) {
 				if !slices.ContainsFunc(list.Buckets, func(b obs.Bucket) bool { return b.Name == bucket }) || list.Owner.ID == "" {
 					t.Fatalf("ListBuckets = %+v, want it to include %s", list, bucket)
 				}
-				// S3 signature version 4 is not checked yet.
-				if mode.signature != obs.SignatureV4 {
-					unknown := newOBSWithKey(t, emulatorAddr, "UNKNOWNOBSKEY0000000", fakeSecret, mode.signature, mode.pathStyle)
-					_, err = unknown.ListBuckets(nil)
-					wantOBSError(t, err, 403, "InvalidAccessKeyId")
-					_, err = unknown.DeleteBucket(bucket)
-					wantOBSError(t, err, 403, "InvalidAccessKeyId")
-				}
+				unknown := newOBSWithKey(t, emulatorAddr, "UNKNOWNOBSKEY0000000", fakeSecret, mode.signature, mode.pathStyle)
+				_, err = unknown.ListBuckets(nil)
+				wantOBSError(t, err, 403, "InvalidAccessKeyId")
+				_, err = unknown.DeleteBucket(bucket)
+				wantOBSError(t, err, 403, "InvalidAccessKeyId")
 			} else {
 				if len(list.Buckets) != 1 || list.Buckets[0].Name != bucket || list.Owner.ID == "" ||
 					time.Since(list.Buckets[0].CreationDate) > time.Hour {

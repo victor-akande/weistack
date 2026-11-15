@@ -70,13 +70,14 @@ dialect with `obs.WithSignature(obs.SignatureObs)`.
 - A bucket's region is that of the endpoint it was created through. A
   location in the request body must name the same region.
 - **Credentials.** By default signatures are not verified. With
-  `-iam=enforce`, OBS and S3 v2 signatures are, in the `Authorization`
-  header and in pre-signed URLs (see [Authentication](../../README.md#authentication)).
-  Failures get OBS's documented codes: `InvalidAccessKeyId`,
-  `SignatureDoesNotMatch`, `RequestTimeTooSkewed` (a clock more than 15
-  minutes off), `AccessDenied` (no credentials, no date, or an expired
-  URL) and `TooManyWrongSignature` (a locked key). S3 signature version 4
-  is not checked yet.
+  `-iam=enforce`, OBS and S3 v2 signatures and S3 signature version 4
+  are, in the `Authorization` header and in pre-signed URLs (see
+  [Authentication](../../README.md#authentication)), and so is each
+  chunk of an `aws-chunked` upload. Failures get OBS's documented codes:
+  `InvalidAccessKeyId`, `SignatureDoesNotMatch` (also for a chunk, which
+  ends the upload), `RequestTimeTooSkewed` (a clock more than 15 minutes
+  off), `AccessDenied` (no credentials, no date, or an expired URL) and
+  `TooManyWrongSignature` (a locked key).
 - **Ownership follows the access key.** A key WeiStack knows (the
   administrator's or an IAM user's) acts for the account, so all of them
   share the account's buckets, as on Huawei Cloud. Any other key, as

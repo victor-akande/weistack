@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -39,7 +40,7 @@ func newS3(t *testing.T, accessKey string, pathStyle bool) *s3.Client {
 	t.Cleanup(transport.CloseIdleConnections)
 	return s3.New(s3.Options{
 		Region:           region,
-		Credentials:      awscreds.NewStaticCredentialsProvider(accessKey, "weistack-does-not-verify-signatures", ""),
+		Credentials:      awscreds.NewStaticCredentialsProvider(signingAK(accessKey), signingSK(), ""),
 		BaseEndpoint:     aws.String(obsEndpoint),
 		UsePathStyle:     pathStyle,
 		HTTPClient:       &http.Client{Transport: transport},
@@ -80,7 +81,11 @@ func TestS3Compatibility(t *testing.T) {
 				t.Fatalf("HeadBucket: %v", err)
 			}
 			buckets, err := c.ListBuckets(ctx, &s3.ListBucketsInput{})
-			if err != nil || len(buckets.Buckets) != 1 || aws.ToString(buckets.Buckets[0].Name) != *bucket {
+			// In accept mode the key is this test's own and lists only its
+			// bucket; when enforced, every test is the administrator, and
+			// the list is the account's.
+			found := err == nil && slices.ContainsFunc(buckets.Buckets, func(b types.Bucket) bool { return aws.ToString(b.Name) == *bucket })
+			if !found || !enforcing && len(buckets.Buckets) != 1 {
 				t.Fatalf("ListBuckets = %+v, %v", buckets, err)
 			}
 

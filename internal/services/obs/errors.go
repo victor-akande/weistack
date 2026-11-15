@@ -12,6 +12,10 @@ import (
 
 var (
 	errAccessDenied = apierr.New(http.StatusForbidden, "AccessDenied", "Access Denied")
+	// errSignatureMismatch answers a chunk of an aws-chunked upload whose
+	// signature does not match.
+	errSignatureMismatch = apierr.New(http.StatusForbidden, "SignatureDoesNotMatch",
+		"The signature included in the request does not match the signature calculated by the system.")
 	errMalformedXML = apierr.New(http.StatusBadRequest, "MalformedXML",
 		"The XML you provided was not well-formed or did not validate against our published schema")
 	errInvalidBucketName = apierr.New(http.StatusBadRequest, "InvalidBucketName", "The specified bucket is not valid.")

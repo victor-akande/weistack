@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/victor-akande/weistack/internal/core/sigcheck"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
@@ -194,7 +195,7 @@ func (s *Service) receive(c *call) (blob string, size int64, sum string, err err
 	var body io.Reader = c.r.Body
 	wantSize := int64(-1)
 	if isAWSChunked(c.r) {
-		body = newAWSChunkedReader(c.r.Body)
+		body = newAWSChunkedReader(c.r.Body, sigcheck.ChunkVerifierFrom(c.r.Context()))
 		if raw := c.r.Header.Get("x-amz-decoded-content-length"); raw != "" {
 			n, ok := nonNegative(raw)
 			if !ok {
@@ -215,6 +216,9 @@ func (s *Service) receive(c *call) (blob string, size int64, sum string, err err
 	if err != nil {
 		if errors.Is(err, errBadChunk) || errors.Is(err, io.ErrUnexpectedEOF) {
 			return "", 0, "", errIncompleteBody
+		}
+		if errors.Is(err, sigcheck.ErrChunk) {
+			return "", 0, "", errSignatureMismatch
 		}
 		return "", 0, "", err
 	}

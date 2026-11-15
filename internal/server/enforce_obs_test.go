@@ -77,10 +77,39 @@ func TestEnforceOBS(t *testing.T) {
 		}
 	}
 
-	// S3 signature version 4 is not checked yet: it passes.
-	if code, _ := e.obsSend(t, pathStyle, "", "", "", "", enforceNow,
-		"Authorization", "AWS4-HMAC-SHA256 Credential=AK/20261114/ap-southeast-1/s3/aws4_request, SignedHeaders=host, Signature=x"); !reached(code) {
-		t.Errorf("SigV4 = %d", code)
+	// S3 signature version 4.
+	v4 := func(ak, sk, path string, header ...string) (int, string) {
+		t.Helper()
+		r := request(http.MethodGet, pathStyle, "")
+		for i := 0; i+1 < len(header); i += 2 {
+			r.Header.Set(header[i], header[i+1])
+		}
+		if ak != "" {
+			sigcheck.SignV4(r, ak, sk, "ap-southeast-1", path, "UNSIGNED-PAYLOAD", enforceNow)
+		}
+		w := httptest.NewRecorder()
+		e.srv.Handler().ServeHTTP(w, r)
+		var body struct {
+			Code string `xml:"Code"`
+		}
+		_ = xml.Unmarshal(w.Body.Bytes(), &body)
+		return w.Code, body.Code
+	}
+	if code, errCode := v4(userKey, userSecret, resource); !reached(code) {
+		t.Errorf("SigV4 = %d %s", code, errCode)
+	}
+	for name, tc := range map[string]struct {
+		ak, sk  string
+		header  []string
+		errCode string
+	}{
+		"SigV4, wrong secret": {ak: userKey, sk: "wrong", errCode: "SignatureDoesNotMatch"},
+		"SigV4, unknown key":  {ak: "UNKNOWNKEY0000000000", sk: userSecret, errCode: "InvalidAccessKeyId"},
+		"SigV4, malformed":    {header: []string{"Authorization", "AWS4-HMAC-SHA256 Credential=x"}, errCode: "SignatureDoesNotMatch"},
+	} {
+		if code, errCode := v4(tc.ak, tc.sk, resource, tc.header...); code != 403 || errCode != tc.errCode {
+			t.Errorf("%s: %d %s, want 403 %s", name, code, errCode, tc.errCode)
+		}
 	}
 }
 
