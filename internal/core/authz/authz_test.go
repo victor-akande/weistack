@@ -242,3 +242,33 @@ func TestActionPanicsOnUnknownName(t *testing.T) {
 	}()
 	Action("vpc:vpcs:fly")
 }
+
+func TestSelfOrAndIsCaller(t *testing.T) {
+	t.Parallel()
+	r := chi.NewRouter()
+	r.Use(Service(ServiceOptions{Name: "iam", Global: true}))
+	r.With(SelfOr("user_id", "iam:users:get")).Get("/users/{user_id}", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	g := func() *Gate {
+		return NewGate(GateOptions{Principal: identity.Principal{UserID: "me"}, Provider: &fakeProvider{}})
+	}
+	self := g()
+	if w := serve(r, self, http.MethodGet, "/users/me"); w.Code != http.StatusOK || !self.Consulted() {
+		t.Errorf("self = %d, consulted %v", w.Code, self.Consulted())
+	}
+	if w := serve(r, g(), http.MethodGet, "/users/other"); w.Code != http.StatusForbidden {
+		t.Errorf("other = %d", w.Code)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	if IsCaller(req, "me") {
+		t.Error("IsCaller without a gate")
+	}
+	req = req.WithContext(WithGate(req.Context(), g()))
+	if !IsCaller(req, "me") || IsCaller(req, "") || IsCaller(req, "other") {
+		t.Error("IsCaller")
+	}
+	if res, ok := Fixed("user", "*")(req); !ok || res != (Resource{Type: "user", Path: "*"}) {
+		t.Errorf("Fixed = %+v", res)
+	}
+}

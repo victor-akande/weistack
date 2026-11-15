@@ -223,6 +223,38 @@ func Param(typ, param string) ResourceFunc {
 	}
 }
 
+// Fixed is a resource of the given type and path whatever the request,
+// such as every user ("user", "*") for an operation that lists them.
+func Fixed(typ, path string) ResourceFunc {
+	return func(*http.Request) (Resource, bool) { return Resource{Type: typ, Path: path}, true }
+}
+
+// IsCaller reports whether userID is the user the request's caller
+// authenticated as. Without a gate (nothing enforced) it is false.
+func IsCaller(r *http.Request, userID string) bool {
+	g := GateFrom(r.Context())
+	return g != nil && userID != "" && g.principal.UserID == userID
+}
+
+// SelfOr is Action for operations a user may perform on itself without
+// permission, as Huawei documents for reading one's own details: when
+// the user the route's URL parameter names is the caller, the request
+// passes; otherwise the action is checked.
+func SelfOr(param, name string, resources ...ResourceFunc) func(http.Handler) http.Handler {
+	checked := Action(name, resources...)
+	return func(next http.Handler) http.Handler {
+		other := checked(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if IsCaller(r, chi.URLParam(r, param)) {
+				GateFrom(r.Context()).markConsulted()
+				next.ServeHTTP(w, r)
+				return
+			}
+			other.ServeHTTP(w, r)
+		})
+	}
+}
+
 // Action returns middleware that lets a request through only if the
 // caller may perform the named action on the resources found. The name
 // must be in the action catalogue: a typo panics when routes are built.
