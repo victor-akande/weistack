@@ -32,6 +32,25 @@ var all = []Action{
 	{"vpc:ports:get", nil, Read, "port"},
 	{"vpc:ports:list", []string{"vpc:ports:get"}, List, "port"},
 
+	// EIP: support.huaweicloud.com/intl/en-us/usermanual-permissions/iam_11_0018.html
+	{"eip:publicIps:create", []string{"vpc:publicIps:create"}, Write, "publicip"},
+	{"eip:publicIps:list", []string{"vpc:publicIps:list"}, List, "publicip"},
+	{"eip:publicIps:get", []string{"vpc:publicIps:get"}, Read, "publicip"},
+	{"eip:publicIps:update", []string{"vpc:publicIps:update"}, Write, "publicip"},
+	{"eip:publicIps:delete", []string{"vpc:publicIps:delete"}, Write, "publicip"},
+	{"eip:publicIps:associateInstance", []string{"vpc:publicIps:update"}, Write, "publicip"},
+	{"eip:publicIps:disassociateInstance", []string{"vpc:publicIps:update"}, Write, "publicip"},
+	{"eip:publicIps:createTags", []string{"vpc:publicipTags:create"}, Tagging, "publicip"},
+	{"eip:publicIps:deleteTags", []string{"vpc:publicipTags:delete"}, Tagging, "publicip"},
+	{"eip:publicIps:listTags", []string{"vpc:publicipTags:get"}, List, "publicip"},
+	{"eip:bandwidths:create", []string{"vpc:bandwidths:create"}, Write, "bandwidth"},
+	{"eip:bandwidths:list", []string{"vpc:bandwidths:list"}, List, "bandwidth"},
+	{"eip:bandwidths:get", []string{"vpc:bandwidths:get"}, Read, "bandwidth"},
+	{"eip:bandwidths:update", []string{"vpc:bandwidths:update"}, Write, "bandwidth"},
+	{"eip:bandwidths:delete", []string{"vpc:bandwidths:delete"}, Write, "bandwidth"},
+	{"eip:bandwidths:insertPublicIps", []string{"vpc:publicIps:insert"}, Write, "bandwidth"},
+	{"eip:bandwidths:removePublicIps", []string{"vpc:publicIps:insert"}, Write, "bandwidth"},
+
 	// ECS: support.huaweicloud.com/intl/en-us/usermanual-permissions/iam_11_0007.html
 	{"ecs:cloudServers:createServers", []string{"ecs:cloudServers:create"}, Write, ""},
 	{"ecs:cloudServers:listServersDetails", []string{"ecs:cloudServers:list"}, List, ""},

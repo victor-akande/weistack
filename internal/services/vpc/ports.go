@@ -63,6 +63,20 @@ func (s *Service) listPorts(ctx context.Context, t Tenant) ([]Port, error) {
 	return src.Ports(ctx, t)
 }
 
+// Port finds a port of a project.
+func (s *Service) Port(ctx context.Context, t Tenant, id string) (Port, bool, error) {
+	all, err := s.listPorts(ctx, t)
+	if err != nil {
+		return Port{}, false, err
+	}
+	for _, p := range all {
+		if p.ID == id {
+			return p, true, nil
+		}
+	}
+	return Port{}, false, nil
+}
+
 // v1Port mirrors the SDK model vpc/v2 Port.
 type v1Port struct {
 	ID                  string            `json:"id"`

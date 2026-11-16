@@ -27,6 +27,9 @@ func (s *Service) Routes(r chi.Router) {
 		r.With(act("vpc:vpcs:listTags", authz.Param("vpc", "id"))).Get("/vpcs/{id}/tags", s.v1("ShowVpcTags", s.handleShowVPCTags))
 		r.With(act("vpc:subnets:listTags", authz.Param("subnet", "id"))).Get("/subnets/{id}/tags", s.v1("ShowSubnetTags", s.handleShowSubnetTags))
 		r.With(act("vpc:securityGroups:listTags", authz.Param("securityGroup", "id"))).Get("/security-groups/{id}/tags", s.v1("ShowSecurityGroupTags", s.handleShowSecurityGroupTags))
+		if s.ext != nil {
+			s.ext.RoutesV20(r)
+		}
 	})
 	r.Route("/v1/{project_id}", func(r chi.Router) {
 		r.Use(authz.Service(authz.ServiceOptions{Name: "vpc", Style: apierr.StyleCodeMessage}))
@@ -55,6 +58,9 @@ func (s *Service) Routes(r chi.Router) {
 		r.With(act("vpc:securityGroupRules:list")).Get("/security-group-rules", s.v1("ListSecurityGroupRulesV1", s.handleListRulesV1))
 		r.With(act("vpc:securityGroupRules:get", rule)).Get("/security-group-rules/{security_group_rule_id}", s.v1("ShowSecurityGroupRuleV1", s.handleShowRuleV1))
 		r.With(act("vpc:securityGroupRules:delete", rule)).Delete("/security-group-rules/{security_group_rule_id}", s.v1("DeleteSecurityGroupRuleV1", s.handleDeleteRuleV1))
+		if s.ext != nil {
+			s.ext.RoutesV1(r)
+		}
 	})
 	r.Route("/v3/{project_id}/vpc", func(r chi.Router) {
 		r.Use(authz.Service(authz.ServiceOptions{Name: "vpc", Style: apierr.StyleFlatRequestID}))
@@ -72,6 +78,9 @@ func (s *Service) Routes(r chi.Router) {
 		r.With(act("vpc:vpcs:list")).Get("/vpcs", s.v3("ListVpcsV3", s.handleListVPCsV3))
 		r.With(act("vpc:vpcs:get", vpc)).Get("/vpcs/{vpc_id}", s.v3("ShowVpcV3", s.handleShowVPCv3))
 	})
+	if s.ext != nil {
+		s.ext.Routes(r)
+	}
 }
 
 // v1ListLimits bounds "limit" on v1 list operations: 0 to the maximum

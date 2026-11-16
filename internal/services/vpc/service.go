@@ -69,6 +69,7 @@ type Service struct {
 	ipamMu sync.Mutex
 
 	ports portSource
+	ext   Extension
 }
 
 // New returns the VPC service.
