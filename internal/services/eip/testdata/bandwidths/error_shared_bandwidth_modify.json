@@ -1,0 +1,8 @@
+{
+  "source": "docs",
+  "status": 400,
+  "body": {
+    "code": "VPC.0323",
+    "message": "<string>"
+  }
+}
