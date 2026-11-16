@@ -64,6 +64,9 @@ A request is validated completely before anything is written.
   (default) or `sync`.
 - **Storage:** `volume.type` is `ULTRAHIGH`, `CLOUDSSD`, `ESSD` or `ESSD2`;
   the size is a multiple of 10 within the engine's range.
+- **Encryption:** `disk_encryption_id`, if given, must be an enabled
+  symmetric [KMS](kms.md) key of the project (`DBS.200001`); the instance
+  shows it. Instances hold no data, so nothing is encrypted with it.
 - **Placement:** `region` must be the endpoint's region; zones must exist.
 - **Network:** the VPC, a subnet of that VPC and the security group must
   exist. The instance takes one private address from the subnet, so the

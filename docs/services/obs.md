@@ -91,9 +91,10 @@ dialect with `obs.WithSignature(obs.SignatureObs)`.
 
 ## Bucket configuration
 
-WeiStack stores no bucket configuration, so every bucket is in the state of
-a bucket nobody has configured. Reading configuration returns what OBS
-returns for such a bucket. Tools that read everything after a create, such
+WeiStack stores no bucket configuration but default encryption (see
+[Server-side encryption](#server-side-encryption)), so every bucket is
+otherwise in the state of a bucket nobody has configured. Reading
+configuration returns what OBS returns for such a bucket. Tools that read everything after a create, such
 as Terraform's `huaweicloud_obs_bucket`, therefore work.
 
 | Subresource | Answer |
@@ -105,7 +106,7 @@ as Terraform's `huaweicloud_obs_bucket`, therefore work.
 | `?storageClass` (OBS), `?storagePolicy` (S3) | `STANDARD` |
 | `?requestPayment` | `BucketOwner` |
 | `?policy`, `?lifecycle`, `?cors`, `?tagging`, `?website` | `404` `NoSuchBucketPolicy`, `NoSuchLifecycleConfiguration`, `NoSuchCORSConfiguration`, `NoSuchTagSet`, `NoSuchWebsiteConfiguration` |
-| `?encryption` | `404` `NoSuchEncryptionConfiguration`, or `ServerSideEncryptionConfigurationNotFoundError` in the S3 dialect |
+| `?encryption` | The default encryption, set with `PUT` and removed with `DELETE`; without one, `404` `NoSuchEncryptionConfiguration`, or `ServerSideEncryptionConfigurationNotFoundError` in the S3 dialect |
 
 ## Objects
 
@@ -168,6 +169,41 @@ as Terraform's `huaweicloud_obs_bucket`, therefore work.
   unchanged.
 - Uploads survive a restart with `-persist`, so a resumable client can
   continue after one.
+
+## Server-side encryption
+
+| Request header | Values |
+| --- | --- |
+| `x-obs-server-side-encryption` (S3: `x-amz-server-side-encryption`) | `kms` (S3: `aws:kms`) or `AES256` |
+| `x-obs-server-side-encryption-kms-key-id` (S3: `x-amz-server-side-encryption-aws-kms-key-id`) | A [KMS](kms.md) key ID, or `<region>:<account-id>:key/<key-id>`; none means the account's `obs/default` key, made on first use |
+| `x-obs-server-side-data-encryption` | `AES256` (default) or `SM4`, with `kms` |
+
+They apply to `PutObject`, `CopyObject` (for the copy),
+`InitiateMultipartUpload` (for every part and the object) and
+`CreateBucket` (as the bucket's default). An object written without them
+takes the bucket's default encryption (`?encryption`), if any.
+
+- **SSE-KMS encrypts at rest.** Each object, or multipart upload, gets
+  its own data key from KMS, kept sealed beside it, and its body is stored
+  encrypted with it (AES-256 or SM4 in CTR mode, so a range is read
+  without the rest). A download asks KMS to open the data key: while the
+  key is disabled or pending deletion the object cannot be read
+  (`KMS.DisabledException`, 400), and once the key is deleted, never again
+  (`KMS.NotFoundException`). An unknown key on upload is
+  `KMS.NotFoundException`.
+- **SSE-OBS** (`AES256`), whose keys OBS manages, is recorded and
+  reported, but the body is stored as given.
+- The response to an upload, a download and a `HEAD` carries the
+  encryption headers back: the algorithm and, for SSE-KMS, the key as
+  `<region>:<account-id>:key/<key-id>`.
+- A copy is encrypted as its request or the target bucket says, not as
+  its source: an encrypted source is decrypted and the copy encrypted
+  with a data key of its own.
+- With `-iam=enforce`, using a key also needs the KMS permission OBS
+  depends on: `kms:cmk:createDataKey` to write, `kms:cmk:decryptDataKey`
+  to read.
+- SSE-C (customer-provided keys) is `501`. HTTPS is not required, unlike
+  on Huawei Cloud.
 
 ## Storage
 

@@ -97,6 +97,13 @@ resource "huaweicloud_compute_instance" "web" {
   system_disk_type   = "SSD"
   system_disk_size   = 40
 
+  # An encrypted data disk, with the KMS key of kms.tf.
+  data_disks {
+    type       = "SSD"
+    size       = 10
+    kms_key_id = huaweicloud_kms_key.app.id
+  }
+
   network {
     uuid = huaweicloud_vpc_subnet.main.id
   }
@@ -104,6 +111,11 @@ resource "huaweicloud_compute_instance" "web" {
 
 resource "huaweicloud_obs_bucket" "assets" {
   bucket = "tf-assets-bucket"
+
+  # Objects are encrypted with the KMS key by default.
+  encryption    = true
+  sse_algorithm = "kms"
+  kms_key_id    = huaweicloud_kms_key.app.id
 }
 
 resource "huaweicloud_rds_instance" "db" {
@@ -121,8 +133,9 @@ resource "huaweicloud_rds_instance" "db" {
   }
 
   volume {
-    type = "CLOUDSSD"
-    size = 40
+    type               = "CLOUDSSD"
+    size               = 40
+    disk_encryption_id = huaweicloud_kms_key.app.id
   }
 }
 

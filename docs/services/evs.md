@@ -27,6 +27,7 @@ Legend: **Yes** implemented, **No** returns `501 WeiStack.0501`.
 | `volume_image_metadata` | The image's `image_id` and `image_name`, on the system disk |
 | `volume_type`, `size`, `availability_zone` | As requested when the server was created |
 | `enterprise_project_id` | The server's, or `"0"` |
+| `encrypted`, `metadata` | `true` and `__system__encrypted` `"1"` with `__system__cmkid`, the KMS key, for a disk the server was created with encrypted; otherwise `false` and `"0"` |
 
 ## Error codes
 
