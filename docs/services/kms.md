@@ -48,11 +48,14 @@ Legend: **Yes** implemented, **No** returns `501 WeiStack.0501`.
 
 | Operation | Method and path | Status | Notes |
 | --- | --- | --- | --- |
-| EncryptData, DecryptData | `POST .../encrypt-data`, `decrypt-data` | Yes | Symmetric keys (`SYMMETRIC_DEFAULT`) |
+| EncryptData, DecryptData | `POST .../encrypt-data`, `decrypt-data` | Yes | Symmetric keys (`SYMMETRIC_DEFAULT`), RSA (`RSAES_OAEP_SHA_256`) and SM2 (`SM2_ENCRYPT`) keys |
 | CreateDatakey, CreateDatakeyWithoutPlaintext | `POST .../create-datakey`, `create-datakey-without-plaintext` | Yes | `datakey_length` 8 to 8,192 bits, or `key_spec` |
 | EncryptDatakey, DecryptDatakey | `POST .../encrypt-datakey`, `decrypt-datakey` | Yes | |
 | CreateRandom | `POST .../gen-random` | Yes | 512 bits |
-| Asymmetric encryption, Sign, ValidateSignature, GenerateMac, VerifyMac, ShowPublicKey, data key pairs, ReEncrypt | | No | |
+| Sign, ValidateSignature | `POST .../sign`, `verify` | Yes | See below |
+| ShowPublicKey | `POST .../get-publickey` | Yes | PEM `PUBLIC KEY`, CRLF line ends |
+| GenerateMac, VerifyMac | `POST .../generate-mac`, `verify-mac` | Yes | HMAC keys; the MAC in hexadecimal |
+| Data key pairs, ReEncrypt, DeriveSharedSecret | | No | |
 
 - `encrypt-data` takes 1 to 4,096 bytes and returns Base64. The ciphertext
   names its key, so `decrypt-data` needs no `key_id`; a `key_id` that does
@@ -66,6 +69,25 @@ Legend: **Yes** implemented, **No** returns `501 WeiStack.0501`.
   `encrypt-datakey` takes the data key followed by its SHA-256 (SM3 for an
   SM4 key), checked (`KMS.2103`); `decrypt-datakey` returns it with that
   digest in `datakey_dgst`.
+
+- **Asymmetric encryption.** RSA keys with `key_usage`
+  `ENCRYPT_DECRYPT` encrypt with OAEP and SHA-256, up to the key size
+  less 66 bytes (`KMS.2108`); SM2 keys with SM2 (ASN.1, C1C3C2). Their
+  ciphertexts do not name the key: `decrypt-data` needs `key_id` and
+  `encryption_algorithm`. EC and Ed25519 keys do not encrypt
+  (`KMS.1114`).
+- **Signing.** `message` is Base64, up to 4,096 bytes: a digest
+  (`message_type` `DIGEST`, the default) of the algorithm's hash size
+  (`KMS.0329`), or the message itself (`RAW`), which KMS hashes. RSA keys
+  sign with `RSASSA_PSS_*` or `RSASSA_PKCS1_V1_5_*`; EC and secp256k1
+  keys with `ECDSA_*` (ASN.1 DER); SM2 keys with `SM2DSA_SM3`, digests
+  only (`KMS.0333`); Ed25519 keys with `ED25519_SHA_512` (a `RAW`
+  message) or `ED25519_PH_SHA_512` (Ed25519ph, a SHA-512 digest). Another
+  pairing is `KMS.0332`. Signatures are Base64; `verify` answers
+  `signature_valid` `"true"` or `"false"`. The public key verifies them
+  outside KMS too.
+- **MACs.** `HMAC_SHA_256`, `HMAC_SHA_384`, `HMAC_SHA_512` and `HMAC_SM3`
+  with an HMAC key of that size; `verify-mac` answers `mac_valid`.
 
 ## Rotation
 
@@ -92,6 +114,34 @@ what it encrypted. `number_of_rotations` counts them.
 
 A key has at most 20 tags. Keys are 1 to 36 characters, values up to 43,
 without control characters or `*<>\=`.
+
+## Grants
+
+| Operation | Method and path | Status | Notes |
+| --- | --- | --- | --- |
+| CreateGrant | `POST .../create-grant` | Yes | `grantee_principal_type` `user` (default) or `domain` |
+| ListGrants | `POST .../list-grants` | Yes | `limit` (up to 100) and `marker` |
+| CancelGrant (revoke) | `POST .../revoke-grant` | Yes | |
+| CancelSelfGrant (retire) | `POST .../retire-grant` | Yes | By the retiring principal, or a grantee allowed `retire-grant` |
+| ListRetirableGrants | `POST .../list-retirable-grants` | Yes | The grants the caller may retire |
+
+A grant lets a user, or every caller of another account (`domain`), use
+a key for its `operations`: `create-datakey`,
+`create-datakey-without-plaintext`, `encrypt-datakey`, `decrypt-datakey`,
+`describe-key`, `create-grant`, `retire-grant`, `encrypt-data` and
+`decrypt-data` (not `create-grant` alone, `KMS.2401`).
+
+- **A grant is a permission.** Its grantee may perform those operations
+  on the key with no IAM policy, also under `-iam=enforce`, as Huawei
+  documents grants. Anything else on the key still needs IAM.
+- **Another account** names the key by its ID in requests to its own
+  project, and decrypts what the key's owner encrypted (and the reverse).
+  Without a grant, another account's key is not found (`KMS.0207`).
+- Grantees and retiring principals are 1 to 64 letters and digits
+  (`KMS.2402`); a key has at most 100 grants (`KMS.2404`). Default keys
+  cannot be granted (`KMS.0211`). `issuing_principal` is the user that
+  made the grant, or the account for the root user and the administrator.
+- Revoking or retiring a grant ends the grantee's access at once.
 
 ## Errors
 

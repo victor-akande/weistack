@@ -411,6 +411,14 @@ func Refuse(r *http.Request, name, reason string, resources ...Resource) error {
 	return g.deny(ctx, o, a, urns, policy.Decision{}, reason)
 }
 
+// Granted records that a resource-based permission (a KMS grant)
+// allowed r, so that no action was checked.
+func Granted(r *http.Request) {
+	if g := GateFrom(r.Context()); g != nil {
+		g.markConsulted()
+	}
+}
+
 // Enforced reports whether r's caller is authorized at all, which is
 // so under -iam=enforce.
 func Enforced(r *http.Request) bool { return GateFrom(r.Context()) != nil }
