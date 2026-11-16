@@ -1,0 +1,10 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "tags": [
+      {"key": "key1", "value": "value1"},
+      {"key": "key2", "value": "value3"}
+    ]
+  }
+}
