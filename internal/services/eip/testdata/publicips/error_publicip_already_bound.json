@@ -1,0 +1,1 @@
+{"source": "docs", "status": 409, "body": {"code": "VPC.0510", "message": "EIP has already been bound to a port."}}
