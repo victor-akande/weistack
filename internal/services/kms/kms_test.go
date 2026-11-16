@@ -51,7 +51,10 @@ func newEnv(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	e := &env{now: time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)}
-	svc, err := New(Deps{Store: st, Logger: log, IDs: ids.NewSeeded(1), Vault: vlt, Directory: dir, Now: func() time.Time { return e.now }})
+	svc, err := New(Deps{
+		Store: st, Logger: log, IDs: ids.NewSeeded(1), Vault: vlt, Directory: dir, Now: func() time.Time { return e.now },
+		DefaultRegion: testRegion, DefaultProjectID: testProject,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
