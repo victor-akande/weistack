@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/victor-akande/weistack/internal/core/cmk"
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
@@ -34,6 +35,8 @@ type Deps struct {
 	Logger *slog.Logger
 	// DataDir is where object bodies are kept. It is created if missing.
 	DataDir string
+	// Keys are KMS's, for SSE-KMS. Nil leaves SSE-KMS unimplemented.
+	Keys cmk.Keys
 	// Now defaults to time.Now.
 	Now func() time.Time
 }
@@ -45,6 +48,7 @@ type Service struct {
 	log   *slog.Logger
 	now   func() time.Time
 	blobs *blobStore
+	keys  cmk.Keys
 
 	// maxObjectSize bounds a single upload, object or part.
 	maxObjectSize int64
@@ -77,7 +81,7 @@ func New(d Deps) (*Service, error) {
 		return nil, err
 	}
 	s := &Service{
-		store: d.Store, ids: d.IDs, log: d.Logger, now: d.Now, blobs: blobs,
+		store: d.Store, ids: d.IDs, log: d.Logger, now: d.Now, blobs: blobs, keys: d.Keys,
 		maxObjectSize: DefaultMaxObjectSize,
 	}
 	s.configs = s.configReads()

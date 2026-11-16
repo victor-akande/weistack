@@ -317,6 +317,14 @@ func buildServices(
 	st store.Store, engine *lifecycle.Engine, gen *ids.Generator, log *slog.Logger, directory *identity.Directory,
 	vlt *vault.Vault,
 ) ([]server.Service, error) {
+	// KMS keys encrypt for OBS, ECS disks and RDS: it comes first.
+	kmsSvc, err := kms.New(kms.Deps{
+		Store: st, Logger: log, IDs: gen, Vault: vlt, Directory: directory,
+		DefaultRegion: cfg.Region, DefaultProjectID: projectID,
+	})
+	if err != nil {
+		return nil, err
+	}
 	vpcSvc, err := vpc.New(vpc.Deps{Store: st, Engine: engine, IDs: gen, Logger: log})
 	if err != nil {
 		return nil, err
@@ -339,7 +347,7 @@ func buildServices(
 
 	ecsSvc, err := ecs.New(ecs.Deps{
 		Store: st, Engine: engine, IDs: gen, Logger: log, SeedDir: cfg.SeedDir,
-		Network: vpcSvc, Images: imsSvc,
+		Network: vpcSvc, Images: imsSvc, Keys: kmsSvc,
 		Quota: ecs.Quota{Servers: cfg.ECSMaxServers, VCPUs: cfg.ECSMaxVCPUs},
 	})
 	if err != nil {
@@ -360,13 +368,13 @@ func buildServices(
 		return nil, err
 	}
 
-	obsSvc, err := obs.New(obs.Deps{Store: st, IDs: gen, Logger: log, DataDir: objectDir})
+	obsSvc, err := obs.New(obs.Deps{Store: st, IDs: gen, Logger: log, DataDir: objectDir, Keys: kmsSvc})
 	if err != nil {
 		return nil, err
 	}
 
 	rdsSvc, err := rds.New(rds.Deps{
-		Store: st, Engine: engine, IDs: gen, Logger: log, Network: vpcSvc, MaxInstances: cfg.RDSMaxInstances,
+		Store: st, Engine: engine, IDs: gen, Logger: log, Network: vpcSvc, Keys: kmsSvc, MaxInstances: cfg.RDSMaxInstances,
 	})
 	if err != nil {
 		return nil, err
@@ -389,10 +397,6 @@ func buildServices(
 		return nil, err
 	}
 	epsSvc, err := eps.New(log, time.Now())
-	if err != nil {
-		return nil, err
-	}
-	kmsSvc, err := kms.New(kms.Deps{Store: st, Logger: log, IDs: gen, Vault: vlt, Directory: directory})
 	if err != nil {
 		return nil, err
 	}

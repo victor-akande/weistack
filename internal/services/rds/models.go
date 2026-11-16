@@ -22,32 +22,34 @@ const (
 // Instance is the stored record of a DB instance. The API form is
 // InstanceResponse, built by Instance.view.
 type Instance struct {
-	ID              string    `json:"id"`
-	Name            string    `json:"name"`
-	Status          string    `json:"status"`
-	Engine          string    `json:"engine"`
-	Version         string    `json:"version"`
-	Mode            string    `json:"mode"`
-	ReplicationMode string    `json:"replication_mode,omitempty"`
-	FlavorRef       string    `json:"flavor_ref"`
-	VolumeType      string    `json:"volume_type"`
-	VolumeSize      int       `json:"volume_size"`
-	Region          string    `json:"region"`
-	Zones           []string  `json:"zones"`
-	VPCID           string    `json:"vpc_id"`
-	SubnetID        string    `json:"subnet_id"`
-	SecurityGroupID string    `json:"security_group_id"`
-	Port            int       `json:"port"`
-	PrivateIP       string    `json:"private_ip"`
-	BackupStart     string    `json:"backup_start"`
-	KeepDays        int       `json:"keep_days"`
-	ConfigurationID string    `json:"configuration_id,omitempty"`
-	EnterpriseProj  string    `json:"enterprise_project_id"`
-	TimeZone        string    `json:"time_zone"`
-	Tags            []Tag     `json:"tags"`
-	NodeIDs         []string  `json:"node_ids"`
-	Created         time.Time `json:"created"`
-	Updated         time.Time `json:"updated"`
+	ID              string   `json:"id"`
+	Name            string   `json:"name"`
+	Status          string   `json:"status"`
+	Engine          string   `json:"engine"`
+	Version         string   `json:"version"`
+	Mode            string   `json:"mode"`
+	ReplicationMode string   `json:"replication_mode,omitempty"`
+	FlavorRef       string   `json:"flavor_ref"`
+	VolumeType      string   `json:"volume_type"`
+	VolumeSize      int      `json:"volume_size"`
+	Region          string   `json:"region"`
+	Zones           []string `json:"zones"`
+	VPCID           string   `json:"vpc_id"`
+	SubnetID        string   `json:"subnet_id"`
+	SecurityGroupID string   `json:"security_group_id"`
+	Port            int      `json:"port"`
+	PrivateIP       string   `json:"private_ip"`
+	BackupStart     string   `json:"backup_start"`
+	KeepDays        int      `json:"keep_days"`
+	ConfigurationID string   `json:"configuration_id,omitempty"`
+	EnterpriseProj  string   `json:"enterprise_project_id"`
+	TimeZone        string   `json:"time_zone"`
+	// DiskEncryptionID is the KMS key of encrypted storage.
+	DiskEncryptionID string    `json:"disk_encryption_id,omitempty"`
+	Tags             []Tag     `json:"tags"`
+	NodeIDs          []string  `json:"node_ids"`
+	Created          time.Time `json:"created"`
+	Updated          time.Time `json:"updated"`
 	// Pending is the operation in flight, kept on the record so that it
 	// can be resumed after a restart.
 	Pending *Pending `json:"pending,omitempty"`

@@ -143,6 +143,19 @@ a key for its `operations`: `create-datakey`,
   made the grant, or the account for the root user and the administrator.
 - Revoking or retiring a grant ends the grantee's access at once.
 
+## Services that use KMS
+
+| Service | What uses a key |
+| --- | --- |
+| [OBS](obs.md#server-side-encryption) | SSE-KMS objects are encrypted at rest with a data key under the key; disabling or deleting the key makes them unreadable |
+| [ECS](ecs.md#disks) and [EVS](evs.md) | Encrypted system and data disks (`__system__cmkid`) |
+| [RDS](rds.md#creating-instances) | Encrypted storage (`disk_encryption_id`) |
+
+Each checks that the key exists in the caller's project, is enabled and
+is a symmetric encryption key; with none named, OBS and ECS use the
+account's `obs/default` and `evs/default` keys, which KMS makes on first
+use.
+
 ## Errors
 
 Only codes from Huawei's published DEW error table are used, in KMS's

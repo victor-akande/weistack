@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/victor-akande/weistack/internal/core/apierr"
+	"github.com/victor-akande/weistack/internal/core/cmk"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/core/zones"
@@ -78,6 +79,9 @@ type plan struct {
 	groups  []string
 	rootGB  int
 	tags    []string
+	// rootKey and dataKeys are the KMS keys of encrypted disks.
+	rootKey  string
+	dataKeys []string
 }
 
 func checkServerName(name string) error {
@@ -245,6 +249,16 @@ func (s *Service) validate(ctx context.Context, t Tenant, opt CreateServerOption
 			return p, errInvalidRequest("data_volumes size is required and must be between %d and %d GB", minDataGB, maxDataGB)
 		}
 	}
+	if p.rootKey, err = s.diskKey(ctx, t, opt.RootVolume.Metadata); err != nil {
+		return p, err
+	}
+	for _, dv := range opt.DataVolumes {
+		k, err := s.diskKey(ctx, t, dv.Metadata)
+		if err != nil {
+			return p, err
+		}
+		p.dataKeys = append(p.dataKeys, k)
+	}
 
 	// Network.
 	if opt.VPCID == "" {
@@ -405,7 +419,7 @@ func (s *Service) CreateServers(ctx context.Context, t Tenant, opt CreateServerO
 			LaunchIndex:         i,
 			Created:             now,
 			Updated:             now,
-			RootVolume:          Volume{ID: s.ids.UUID(), Type: opt.RootVolume.VolumeType, SizeGB: p.rootGB, Device: "/dev/vda"},
+			RootVolume:          Volume{ID: s.ids.UUID(), Type: opt.RootVolume.VolumeType, SizeGB: p.rootGB, Device: "/dev/vda", KMSKeyID: p.rootKey},
 		}
 		if p.count > 1 {
 			srv.Name = fmt.Sprintf("%s-%04d", opt.Name, i+1)
@@ -413,6 +427,7 @@ func (s *Service) CreateServers(ctx context.Context, t Tenant, opt CreateServerO
 		for n, dv := range opt.DataVolumes {
 			srv.DataVolumes = append(srv.DataVolumes, Volume{
 				ID: s.ids.UUID(), Type: dv.VolumeType, SizeGB: *dv.Size, Device: "/dev/vd" + string(rune('b'+n)),
+				KMSKeyID: p.dataKeys[n],
 			})
 		}
 		if len(opt.PublicIP) > 0 && string(opt.PublicIP) != "null" {
@@ -784,4 +799,30 @@ func vmState(status string) (state string, power int) {
 		return "resized", 4
 	}
 	return strings.ToLower(status), 0
+}
+
+// diskKey checks the KMS key of a disk the request encrypts
+// (__system__encrypted "1"): the one __system__cmkid names, or the
+// account's evs/default key. It returns "" for a disk not encrypted.
+func (s *Service) diskKey(ctx context.Context, t Tenant, m *VolumeMetadata) (string, error) {
+	if m == nil || m.Encrypted == "" || m.Encrypted == "0" {
+		if m != nil && m.CMKID != "" {
+			return "", errInvalidRequest("__system__cmkid needs __system__encrypted set to 1")
+		}
+		return "", nil
+	}
+	if m.Encrypted != "1" {
+		return "", errInvalidRequest("__system__encrypted must be 0 or 1")
+	}
+	if s.keys == nil {
+		return "", errInvalidRequest("encrypted disks need KMS")
+	}
+	id, err := s.keys.Check(ctx, t.Region, t.ProjectID, m.CMKID, "evs")
+	switch {
+	case errors.Is(err, cmk.ErrNotFound), errors.Is(err, cmk.ErrDisabled):
+		return "", errInvalidRequest("The KMS key %s does not exist or is not enabled.", m.CMKID)
+	case err != nil:
+		return "", err
+	}
+	return id, nil
 }

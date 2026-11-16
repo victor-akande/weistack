@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/victor-akande/weistack/internal/core/cmk"
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/store"
@@ -37,6 +38,8 @@ type Deps struct {
 	Network *vpc.Service
 	// Images resolves imageRef.
 	Images *ims.Service
+	// Keys checks the KMS keys of encrypted disks. Nil refuses them.
+	Keys cmk.Keys
 	// Quota bounds what one project may hold. Zero fields get defaults.
 	Quota Quota
 	// SeedDir optionally holds flavors.yaml, extending the built-in
@@ -69,6 +72,7 @@ type Service struct {
 
 	network *vpc.Service
 	images  *ims.Service
+	keys    cmk.Keys
 	quota   Quota
 
 	// mu serialises operations that check then write across records:
@@ -99,7 +103,7 @@ func New(d Deps) (*Service, error) {
 	}
 	s := &Service{
 		store: d.Store, engine: d.Engine, ids: d.IDs, log: d.Logger, now: d.Now,
-		network: d.Network, images: d.Images, quota: d.Quota,
+		network: d.Network, images: d.Images, keys: d.Keys, quota: d.Quota,
 		flavors:      flavors,
 		flavorByName: make(map[string]FlavorSpec, len(flavors)),
 	}

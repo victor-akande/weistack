@@ -15,6 +15,9 @@ the real cloud.
      and an access key;
    - IAM 5.0: a user, a group and its members, an identity policy attached
      to both, and an access key;
+   - KMS (`kms.tf`): a key with rotation and tags, a grant and a data key;
+     the bucket, the server's data disk and the RDS storage are encrypted
+     with the key;
    - agencies (`agencies.tf`): a classic agency for a cloud service, one
      for a second account (the partner, which `run.sh` adds through the
      admin API first), and a trust agency both accounts may assume.

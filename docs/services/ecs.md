@@ -75,6 +75,14 @@ disk has `bootIndex` 0 and device `/dev/vda`, data disks have -1 and
 `{server name}-volume-0000` onwards. A volume that is not attached to the
 server is `400 Ecs.0111`.
 
+**Encrypted disks.** A `root_volume` or data volume with `metadata`
+`{"__system__encrypted": "1"}` is encrypted with the [KMS](kms.md) key
+`__system__cmkid` names, or the account's `evs/default` key, made on first
+use. The key must exist in the project and be enabled, or the request is
+`400 Ecs.0005`. EVS shows such a disk as `encrypted` with the key in
+`metadata.__system__cmkid`, which is how Terraform's `kms_key_id` reads it
+back. Disks are not real, so nothing is encrypted with the key.
+
 ## Deleting servers
 
 `DeleteServers` takes a list and returns a job. Every listed server must

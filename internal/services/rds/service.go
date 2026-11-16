@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/victor-akande/weistack/internal/core/cmk"
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/store"
@@ -42,6 +43,8 @@ type Deps struct {
 	IDs     *ids.Generator
 	Logger  *slog.Logger
 	Network *vpc.Service
+	// Keys checks the KMS keys of encrypted storage. Nil refuses them.
+	Keys cmk.Keys
 	// MaxInstances is the per-project quota; zero means the default.
 	MaxInstances int
 	// Now defaults to time.Now.
@@ -55,6 +58,7 @@ type Service struct {
 	ids          *ids.Generator
 	log          *slog.Logger
 	network      *vpc.Service
+	keys         cmk.Keys
 	maxInstances int
 	now          func() time.Time
 
@@ -75,7 +79,7 @@ func New(d Deps) (*Service, error) {
 		d.MaxInstances = DefaultMaxInstances
 	}
 	return &Service{
-		store: d.Store, engine: d.Engine, ids: d.IDs, log: d.Logger, network: d.Network,
+		store: d.Store, engine: d.Engine, ids: d.IDs, log: d.Logger, network: d.Network, keys: d.Keys,
 		maxInstances: d.MaxInstances, now: d.Now,
 	}, nil
 }

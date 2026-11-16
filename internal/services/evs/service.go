@@ -36,6 +36,8 @@ type Volume struct {
 	Created             string
 	Updated             string
 	EnterpriseProjectID string
+	// KMSKeyID is the KMS key of an encrypted disk.
+	KMSKeyID string
 }
 
 // VolumeSource lists the disks of a project. The ECS service implements

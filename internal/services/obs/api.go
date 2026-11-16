@@ -122,6 +122,12 @@ func (s *Service) route(c *call) (string, handlerFunc) {
 			if read, ok := s.configs[sub]; ok && m == http.MethodGet {
 				return "GetBucket?" + sub, read
 			}
+			if sub == "encryption" && m == http.MethodPut {
+				return "PutBucketEncryption", s.handlePutBucketEncryption
+			}
+			if sub == "encryption" && m == http.MethodDelete {
+				return "DeleteBucketEncryption", s.handleDeleteBucketEncryption
+			}
 			return "Bucket?" + sub, func(*call) error { return errNotImplemented("bucket " + sub) }
 		}
 		switch m {
@@ -268,9 +274,25 @@ func (s *Service) handleCreateBucket(c *call) error {
 			return errInvalidLocation(location, c.region)
 		}
 	}
+	// Encryption headers on creation set the bucket's default
+	// encryption; for buckets OBS names SSE-OBS "obs".
+	if c.vendorHeader("server-side-encryption") == sseBucketOBS {
+		c.r.Header.Set(c.dialect.prefix()+"server-side-encryption", sseOBS)
+	}
+	enc, withSSE, err := requestedSSE(c)
+	if err != nil {
+		return err
+	}
 	b, err := s.CreateBucket(c.r.Context(), c.owner, c.region, c.target.Bucket)
 	if err != nil {
 		return err
+	}
+	if withSSE {
+		e := bucketSSE{Algorithm: enc.Algorithm, DataAlgorithm: enc.DataAlgorithm, KeyID: enc.KeyID,
+			ProjectID: c.r.Header.Get("x-obs-sse-kms-key-project-id")}
+		if err := s.setBucketEncryption(c, &e); err != nil {
+			return err
+		}
 	}
 	c.w.Header().Set("Location", "/"+b.Name)
 	c.w.WriteHeader(http.StatusOK)

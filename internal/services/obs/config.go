@@ -9,8 +9,9 @@ import (
 
 // Bucket configuration reads.
 //
-// WeiStack stores no bucket configuration: a bucket has no policy, CORS
-// rules, tags, website, lifecycle rules or encryption, is unversioned,
+// WeiStack stores no bucket configuration but default encryption
+// (sse.go): a bucket has no policy, CORS rules, tags, website or
+// lifecycle rules, is unversioned,
 // has no quota and logs nothing. Reading that configuration therefore
 // has a truthful answer, which is what tools such as Terraform ask for
 // after every create. Each answer is the one OBS gives for a bucket that
@@ -74,18 +75,6 @@ func (s *Service) handleGetBucketACL(c *call) error {
 			Permission: "FULL_CONTROL",
 		}},
 	})
-}
-
-// handleGetBucketEncryption reports that the bucket has no default
-// encryption, under the code of the request's dialect.
-func (s *Service) handleGetBucketEncryption(c *call) error {
-	if _, err := s.bucketFor(c.r.Context(), c.owner, c.target.Bucket); err != nil {
-		return err
-	}
-	if c.dialect == dialectS3 {
-		return errNoEncryptionS3
-	}
-	return errNoEncryptionOBS
 }
 
 // handleGetStorageInfo reports the bucket's real size and object count.

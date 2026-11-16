@@ -21,6 +21,8 @@ type Bucket struct {
 	// Region is the bucket's location.
 	Region  string    `json:"region"`
 	Created time.Time `json:"created"`
+	// Encryption is the bucket's default encryption, if any.
+	Encryption *bucketSSE `json:"encryption,omitempty"`
 }
 
 // CreateBucket creates a bucket owned by owner in region.

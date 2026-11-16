@@ -36,6 +36,12 @@ func (b *blobStore) path(id string) string {
 // hex MD5. The body is written to a temporary file and moved into place
 // only when complete, so a failed or aborted upload leaves nothing.
 func (b *blobStore) put(id string, body io.Reader) (size int64, sum string, err error) {
+	return b.putThrough(id, body, nil)
+}
+
+// putThrough is put with the bytes written through wrap (an encrypting
+// writer), when given. The size and MD5 are the body's as given.
+func (b *blobStore) putThrough(id string, body io.Reader, wrap func(io.Writer) io.Writer) (size int64, sum string, err error) {
 	tmp, err := os.CreateTemp(filepath.Join(b.dir, blobTempDir), "upload-*")
 	if err != nil {
 		return 0, "", fmt.Errorf("obs: creating upload file: %w", err)
@@ -48,7 +54,11 @@ func (b *blobStore) put(id string, body io.Reader) (size int64, sum string, err 
 	}()
 
 	hash := md5.New() //nolint:gosec // see import
-	if size, err = io.Copy(io.MultiWriter(tmp, hash), body); err != nil {
+	var dst io.Writer = tmp
+	if wrap != nil {
+		dst = wrap(tmp)
+	}
+	if size, err = io.Copy(io.MultiWriter(dst, hash), body); err != nil {
 		return 0, "", err // the client's fault as often as ours: returned as is
 	}
 	if err = tmp.Close(); err != nil {

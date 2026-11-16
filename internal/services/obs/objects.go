@@ -2,6 +2,7 @@ package obs
 
 import (
 	"context"
+	"crypto/cipher"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/xml"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/victor-akande/weistack/internal/core/authz"
 	"github.com/victor-akande/weistack/internal/core/sigcheck"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
@@ -33,6 +35,8 @@ type Object struct {
 	// follows "x-obs-meta-" or "x-amz-meta-".
 	Meta     map[string]string `json:"meta,omitempty"`
 	Modified time.Time         `json:"modified"`
+	// SSE is the object's server-side encryption, if any.
+	SSE *sse `json:"sse,omitempty"`
 }
 
 const (
@@ -152,23 +156,33 @@ func (s *Service) handlePutObject(c *call) error {
 		return s.handleCopyObject(c, src)
 	}
 	ctx := c.r.Context()
-	if _, err := s.bucketFor(ctx, c.owner, c.target.Bucket); err != nil {
+	b, err := s.bucketFor(ctx, c.owner, c.target.Bucket)
+	if err != nil {
 		return err
 	}
 	if len(c.target.Key) > maxKeyBytes {
 		return errKeyTooLong
 	}
-
-	blob, size, sum, err := s.receive(c)
+	enc, err := s.encryptionFor(c, b)
 	if err != nil {
 		return err
 	}
-	obj := Object{Key: c.target.Key, Blob: blob, Size: size, ETag: sum, Modified: s.now().UTC()}
+	wrap, err := s.encrypter(c, b.Region, enc)
+	if err != nil {
+		return err
+	}
+
+	blob, size, sum, err := s.receive(c, wrap)
+	if err != nil {
+		return err
+	}
+	obj := Object{Key: c.target.Key, Blob: blob, Size: size, ETag: sum, Modified: s.now().UTC(), SSE: enc}
 	describe(&obj, c.r.Header)
 	if err := s.putObject(ctx, c.target.Bucket, obj); err != nil {
 		s.discard(ctx, blob)
 		return err
 	}
+	c.writeSSEHeaders(enc)
 	c.w.Header().Set("ETag", quote(obj.ETag))
 	c.w.WriteHeader(http.StatusOK)
 	return nil
@@ -177,8 +191,9 @@ func (s *Service) handlePutObject(c *call) error {
 // receive streams a request body into a new blob and returns the blob,
 // its size and hex MD5. It decodes aws-chunked bodies and checks the
 // body against Content-MD5, any declared decoded length and the size
-// limit. On any failure nothing is left on disk.
-func (s *Service) receive(c *call) (blob string, size int64, sum string, err error) {
+// limit. On any failure nothing is left on disk. wrap, when given,
+// encrypts what is stored.
+func (s *Service) receive(c *call, wrap func(io.Writer) io.Writer) (blob string, size int64, sum string, err error) {
 	// Validate what can be validated before reading the body.
 	var wantMD5 string
 	if raw := c.r.Header.Get("Content-MD5"); raw != "" {
@@ -212,7 +227,7 @@ func (s *Service) receive(c *call) (blob string, size int64, sum string, err err
 	body = io.LimitReader(body, s.maxObjectSize+1)
 
 	blob = s.ids.UUID()
-	size, sum, err = s.blobs.put(blob, body)
+	size, sum, err = s.blobs.putThrough(blob, body, wrap)
 	if err != nil {
 		if errors.Is(err, errBadChunk) || errors.Is(err, io.ErrUnexpectedEOF) {
 			return "", 0, "", errIncompleteBody
@@ -275,13 +290,18 @@ func (s *Service) handleCopyObject(c *call, source string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := s.bucketFor(ctx, c.owner, c.target.Bucket); err != nil {
+	b, err := s.bucketFor(ctx, c.owner, c.target.Bucket)
+	if err != nil {
 		return err
 	}
 	if len(c.target.Key) > maxKeyBytes {
 		return errKeyTooLong
 	}
 	src, err := s.getObject(ctx, c.owner, srcBucket, srcKey)
+	if err != nil {
+		return err
+	}
+	srcBucketRec, err := s.bucketFor(ctx, c.owner, srcBucket)
 	if err != nil {
 		return err
 	}
@@ -301,13 +321,21 @@ func (s *Service) handleCopyObject(c *call, source string) error {
 	if directive == "REPLACE" {
 		describe(&dst, c.r.Header)
 	}
-	if err := s.blobs.link(src.Blob, dst.Blob); err != nil {
+	// The copy is encrypted as the request or the target bucket says, not
+	// as its source was.
+	enc, err := s.encryptionFor(c, b)
+	if err != nil {
+		return err
+	}
+	dst.SSE = enc
+	if err := s.copyBody(c, srcBucketRec.Region, src, b.Region, dst); err != nil {
 		return err
 	}
 	if err := s.putObject(ctx, c.target.Bucket, dst); err != nil {
 		_ = s.blobs.remove(dst.Blob)
 		return err
 	}
+	c.writeSSEHeaders(enc)
 	return c.writeXML(copyObjectResult{
 		XMLNS: c.dialect.namespace(), LastModified: dst.Modified.Format(timeLayout), ETag: quote(dst.ETag),
 	})
@@ -458,19 +486,34 @@ func (s *Service) handleGetObject(c *call) error {
 		return err
 	}
 
-	// Open before writing any header, so a missing body is still a clean
-	// error response.
+	// Open before writing any header, so a missing body or an unusable
+	// key is still a clean error response.
 	var body *io.SectionReader
 	if c.r.Method != http.MethodHead {
+		var block cipher.Block
+		if obj.SSE.encrypted() {
+			b, err := s.bucketFor(c.r.Context(), c.owner, c.target.Bucket)
+			if err != nil {
+				return err
+			}
+			if block, err = s.readKey(c, b.Region, obj.SSE); err != nil {
+				return err
+			}
+		}
 		f, err := s.blobs.open(obj.Blob)
 		if err != nil {
 			return err
 		}
 		defer f.Close()
-		body = io.NewSectionReader(f, rng.start, rng.length)
+		var at io.ReaderAt = f
+		if block != nil {
+			at = decryptingReaderAt{r: f, block: block, iv: obj.SSE.IV}
+		}
+		body = io.NewSectionReader(at, rng.start, rng.length)
 	}
 
 	c.writeObjectHeaders(obj)
+	c.writeSSEHeaders(obj.SSE)
 	h := c.w.Header()
 	h.Set("Content-Length", strconv.FormatInt(rng.length, 10))
 	status := http.StatusOK
@@ -560,4 +603,29 @@ func (s *Service) handleDeleteObjects(c *call) error {
 		}
 	}
 	return c.writeXML(res)
+}
+
+// copyBody stores dst's body as a copy of src's: a link to the same
+// bytes when neither is encrypted, or else read in clear and written
+// under dst's encryption.
+func (s *Service) copyBody(c *call, srcRegion string, src Object, dstRegion string, dst Object) error {
+	if !src.SSE.encrypted() && !dst.SSE.encrypted() {
+		return s.blobs.link(src.Blob, dst.Blob)
+	}
+	if src.SSE.encrypted() {
+		if err := authz.Check(c.r, "kms:cmk:decryptDataKey", keyResource(src.SSE.KeyURN)); err != nil {
+			return err
+		}
+	}
+	in, err := s.plainReader(c, srcRegion, src.Blob, src.SSE)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	wrap, err := s.encrypter(c, dstRegion, dst.SSE)
+	if err != nil {
+		return err
+	}
+	_, _, err = s.blobs.putThrough(dst.Blob, in, wrap)
+	return err
 }

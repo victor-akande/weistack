@@ -33,6 +33,9 @@ type Deps struct {
 	IDs       *ids.Generator
 	Vault     *vault.Vault
 	Directory *identity.Directory
+	// DefaultRegion and DefaultProjectID are the emulator's, for the
+	// projects of services that name none (OBS).
+	DefaultRegion, DefaultProjectID string
 	// Now defaults to time.Now.
 	Now func() time.Time
 }
@@ -46,6 +49,8 @@ type Service struct {
 	dir   *identity.Directory
 	now   func() time.Time
 
+	defaultRegion, defaultProject string
+
 	// mu serialises changes that need unique aliases.
 	mu sync.Mutex
 }
@@ -58,7 +63,10 @@ func New(d Deps) (*Service, error) {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	return &Service{store: d.Store, log: d.Logger, ids: d.IDs, vault: d.Vault, dir: d.Directory, now: d.Now}, nil
+	return &Service{
+		store: d.Store, log: d.Logger, ids: d.IDs, vault: d.Vault, dir: d.Directory, now: d.Now,
+		defaultRegion: d.DefaultRegion, defaultProject: d.DefaultProjectID,
+	}, nil
 }
 
 // Name implements server.Service.

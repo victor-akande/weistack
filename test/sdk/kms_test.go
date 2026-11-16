@@ -7,8 +7,11 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"io"
 	"strings"
 	"testing"
+
+	"github.com/huaweicloud/huaweicloud-sdk-go-obs/obs"
 
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	v5 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v5/model"
@@ -258,4 +261,58 @@ func TestKMSGrants(t *testing.T) {
 	}
 	_, err = other.DecryptData(&kms.DecryptDataRequest{Body: &kms.DecryptDataRequestBody{CipherText: *enc.CipherText}})
 	wantError(t, err, 404, "KMS.0207")
+}
+
+// TestOBSWithKMS stores an object under SSE-KMS through the OBS SDK and
+// reads it back; once its key is disabled, the object cannot be read.
+func TestOBSWithKMS(t *testing.T) {
+	t.Parallel()
+	suffix := strings.ToLower(rand.Text()[:6])
+	keys := kmsAs(t, signingAK("AKKMSOBS000000000000"), signingSK())
+	k, err := keys.CreateKey(&kms.CreateKeyRequest{Body: &kms.CreateKeyRequestBody{KeyAlias: "sdk-obs-" + suffix}})
+	if err != nil {
+		t.Fatalf("CreateKey: %v", err)
+	}
+	id := *k.KeyInfo.KeyId
+	t.Cleanup(func() {
+		_, _ = keys.DeleteKey(&kms.DeleteKeyRequest{Body: &kms.ScheduleKeyDeletionRequestBody{KeyId: id, PendingDays: "7"}})
+	})
+
+	c := newOBS(t, "AKKMSOBS000000000000", obs.SignatureObs, false)
+	bucket := "sdk-kms-" + suffix
+	if _, err := c.CreateBucket(&obs.CreateBucketInput{Bucket: bucket}); err != nil {
+		t.Fatalf("CreateBucket: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = c.DeleteObject(&obs.DeleteObjectInput{Bucket: bucket, Key: "secret"})
+		_, _ = c.DeleteBucket(bucket)
+	})
+	in := &obs.PutObjectInput{Body: strings.NewReader("encrypted at rest")}
+	in.Bucket, in.Key = bucket, "secret"
+	in.SseHeader = obs.SseKmsHeader{Encryption: obs.DEFAULT_SSE_KMS_ENCRYPTION_OBS, Key: id}
+	put, err := c.PutObject(in)
+	if err != nil {
+		t.Fatalf("PutObject(SSE-KMS): %v", err)
+	}
+	if h, ok := put.SseHeader.(obs.SseKmsHeader); !ok || !strings.HasSuffix(h.Key, ":key/"+id) {
+		t.Errorf("PutObject SSE = %+v", put.SseHeader)
+	}
+	got, err := c.GetObject(&obs.GetObjectInput{GetObjectMetadataInput: obs.GetObjectMetadataInput{Bucket: bucket, Key: "secret"}})
+	if err != nil {
+		t.Fatalf("GetObject: %v", err)
+	}
+	body, _ := io.ReadAll(got.Body)
+	_ = got.Body.Close()
+	if string(body) != "encrypted at rest" {
+		t.Errorf("GetObject = %q", body)
+	}
+
+	if _, err := keys.DisableKey(&kms.DisableKeyRequest{Body: &kms.OperateKeyRequestBody{KeyId: id}}); err != nil {
+		t.Fatalf("DisableKey: %v", err)
+	}
+	_, err = c.GetObject(&obs.GetObjectInput{GetObjectMetadataInput: obs.GetObjectMetadataInput{Bucket: bucket, Key: "secret"}})
+	wantOBSError(t, err, 400, "KMS.DisabledException")
+	if _, err := keys.EnableKey(&kms.EnableKeyRequest{Body: &kms.OperateKeyRequestBody{KeyId: id}}); err != nil {
+		t.Fatalf("EnableKey: %v", err)
+	}
 }
