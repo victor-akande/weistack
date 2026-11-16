@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -29,6 +28,9 @@ type Upload struct {
 	Headers     map[string]string `json:"headers,omitempty"`
 	Meta        map[string]string `json:"meta,omitempty"`
 	Parts       map[int]Part      `json:"parts"`
+	// SSE is the encryption of the parts and the object: one data key,
+	// an IV per part.
+	SSE *sse `json:"sse,omitempty"`
 	// Completing is set while the parts are being assembled; no part can
 	// be added or the upload aborted meanwhile.
 	Completing bool `json:"completing,omitempty"`
@@ -40,6 +42,8 @@ type Part struct {
 	Size     int64     `json:"size"`
 	ETag     string    `json:"etag"`
 	Modified time.Time `json:"modified"`
+	// IV is the part's, when the upload is encrypted.
+	IV []byte `json:"iv,omitempty"`
 }
 
 const (
@@ -80,11 +84,16 @@ type initiateResult struct {
 
 func (s *Service) handleInitiateUpload(c *call) error {
 	ctx := c.r.Context()
-	if _, err := s.bucketFor(ctx, c.owner, c.target.Bucket); err != nil {
+	b, err := s.bucketFor(ctx, c.owner, c.target.Bucket)
+	if err != nil {
 		return err
 	}
 	if len(c.target.Key) > maxKeyBytes {
 		return errKeyTooLong
+	}
+	enc, err := s.encryptionFor(c, b)
+	if err != nil {
+		return err
 	}
 	// The object's description travels on the initiating request.
 	var desc Object
@@ -97,10 +106,12 @@ func (s *Service) handleInitiateUpload(c *call) error {
 		Headers:     desc.Headers,
 		Meta:        desc.Meta,
 		Parts:       map[int]Part{},
+		SSE:         enc,
 	}
 	if err := s.uploads(c.target.Bucket).Create(ctx, u.ID, u); err != nil {
 		return err
 	}
+	c.writeSSEHeaders(enc)
 	return c.writeXML(initiateResult{XMLNS: c.dialect.namespace(), Bucket: c.target.Bucket, Key: u.Key, UploadID: u.ID})
 }
 
@@ -114,17 +125,37 @@ func (s *Service) handleUploadPart(c *call) error {
 	id := q.Get("uploadId")
 	// Fail fast before reading the body; the record is checked again
 	// when the part is recorded.
-	if u, err := s.getUpload(c, id); err != nil {
+	u, err := s.getUpload(c, id)
+	if err != nil {
 		return err
 	} else if u.Completing {
 		return errNoSuchUpload
 	}
+	// Each part of an encrypted upload has its own IV under the upload's
+	// data key.
+	partSSE, err := u.SSE.withIV()
+	if err != nil {
+		return err
+	}
+	var wrap func(io.Writer) io.Writer
+	if partSSE.encrypted() {
+		b, err := s.bucketFor(ctx, c.owner, c.target.Bucket)
+		if err != nil {
+			return err
+		}
+		if wrap, err = s.encrypter(c, b.Region, partSSE); err != nil {
+			return err
+		}
+	}
 
-	blob, size, sum, err := s.receive(c)
+	blob, size, sum, err := s.receive(c, wrap)
 	if err != nil {
 		return err
 	}
 	part := Part{Blob: blob, Size: size, ETag: sum, Modified: s.now().UTC()}
+	if partSSE.encrypted() {
+		part.IV = partSSE.IV
+	}
 
 	s.uploadMu.Lock()
 	var replaced string
@@ -217,7 +248,8 @@ func (s *Service) handleCompleteUpload(c *call) error {
 	if err := xml.Unmarshal(raw, &req); err != nil {
 		return errMalformedXML
 	}
-	if _, err := s.bucketFor(ctx, c.owner, c.target.Bucket); err != nil {
+	b, err := s.bucketFor(ctx, c.owner, c.target.Bucket)
+	if err != nil {
 		return err
 	}
 
@@ -257,14 +289,30 @@ func (s *Service) handleCompleteUpload(c *call) error {
 		}
 	}
 
-	// Assemble the chosen parts into one new blob, streaming.
-	blobs := make([]string, len(chosen))
-	for i, p := range chosen {
-		blobs[i] = p.Blob
+	// Assemble the chosen parts into one new blob, streaming; an
+	// encrypted upload's parts are read in clear and the whole written
+	// under one IV.
+	objSSE, err := u.SSE.withIV()
+	if err != nil {
+		release()
+		return err
 	}
-	parts := &partsReader{store: s.blobs, blobs: blobs}
+	parts := &partsReader{open: func(p Part) (io.ReadCloser, error) {
+		e := u.SSE
+		if e.encrypted() {
+			pe := *e
+			pe.IV = p.IV
+			e = &pe
+		}
+		return s.plainReader(c, b.Region, p.Blob, e)
+	}, parts: chosen}
+	wrap, err := s.encrypter(c, b.Region, objSSE)
+	if err != nil {
+		release()
+		return err
+	}
 	blob := s.ids.UUID()
-	size, _, err := s.blobs.put(blob, parts)
+	size, _, err := s.blobs.putThrough(blob, parts, wrap)
 	_ = parts.Close()
 	if err != nil {
 		release()
@@ -273,7 +321,7 @@ func (s *Service) handleCompleteUpload(c *call) error {
 
 	obj := Object{
 		Key: u.Key, Blob: blob, Size: size, ETag: multipartETag(chosen), Modified: s.now().UTC(),
-		ContentType: u.ContentType, Headers: u.Headers, Meta: u.Meta,
+		ContentType: u.ContentType, Headers: u.Headers, Meta: u.Meta, SSE: objSSE,
 	}
 	if err := s.putObject(ctx, c.target.Bucket, obj); err != nil {
 		s.discard(ctx, blob)
@@ -294,6 +342,7 @@ func (s *Service) handleCompleteUpload(c *call) error {
 	}
 
 	location := fmt.Sprintf("%s://%s/%s/%s", scheme(c.r), c.r.Host, c.target.Bucket, c.target.Key)
+	c.writeSSEHeaders(objSSE)
 	return c.writeXML(completeResult{
 		XMLNS: c.dialect.namespace(), Location: location, Bucket: c.target.Bucket, Key: obj.Key, ETag: quote(obj.ETag),
 	})
@@ -306,26 +355,26 @@ func scheme(r *http.Request) string {
 	return "http"
 }
 
-// partsReader reads a sequence of blobs as one stream, opening one file
-// at a time so that an object of 10,000 parts does not need 10,000 open
+// partsReader reads a sequence of parts as one stream, opening one at a
+// time so that an object of 10,000 parts does not need 10,000 open
 // files.
 type partsReader struct {
-	store *blobStore
-	blobs []string
-	cur   *os.File
+	open  func(Part) (io.ReadCloser, error)
+	parts []Part
+	cur   io.ReadCloser
 }
 
 func (p *partsReader) Read(buf []byte) (int, error) {
 	for {
 		if p.cur == nil {
-			if len(p.blobs) == 0 {
+			if len(p.parts) == 0 {
 				return 0, io.EOF
 			}
-			f, err := p.store.open(p.blobs[0])
+			f, err := p.open(p.parts[0])
 			if err != nil {
 				return 0, err
 			}
-			p.cur, p.blobs = f, p.blobs[1:]
+			p.cur, p.parts = f, p.parts[1:]
 		}
 		n, err := p.cur.Read(buf)
 		if errors.Is(err, io.EOF) {

@@ -40,6 +40,8 @@ var opActions = map[string]struct {
 	"DeleteObject":            {"obs:object:deleteObject", true},
 	"AbortMultipartUpload":    {"obs:object:abortMultipartUpload", true},
 	"ListParts":               {"obs:object:listMultipartUploadParts", true},
+	"PutBucketEncryption":     {"obs:bucket:putEncryptionConfiguration", false},
+	"DeleteBucketEncryption":  {"obs:bucket:putEncryptionConfiguration", false},
 }
 
 // configActions are the reads of bucket configuration by subresource.

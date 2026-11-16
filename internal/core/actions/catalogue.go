@@ -94,6 +94,7 @@ var all = []Action{
 	{"obs:bucket:getBucketWebsite", nil, Read, "bucket"},
 	{"obs:bucket:getBucketLogging", nil, Read, "bucket"},
 	{"obs:bucket:getEncryptionConfiguration", nil, Read, "bucket"},
+	{"obs:bucket:putEncryptionConfiguration", nil, Write, "bucket"},
 	{"obs:bucket:getBucketQuota", nil, Read, "bucket"},
 	{"obs:bucket:getBucketStorage", nil, Read, "bucket"},
 	{"obs:bucket:getBucketStoragePolicy", nil, Read, "bucket"},
