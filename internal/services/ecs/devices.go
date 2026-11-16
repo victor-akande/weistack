@@ -31,6 +31,7 @@ func (s *Service) Volumes(ctx context.Context, region, projectID string) ([]evs.
 				ID: v.ID, Name: fmt.Sprintf("%s-volume-%04d", srv.Name, i), Type: v.Type, SizeGB: v.SizeGB,
 				Device: v.Device, Bootable: i == 0, ServerID: srv.ID, AvailabilityZone: srv.AvailabilityZone,
 				Created: srv.Created, Updated: srv.Updated, EnterpriseProjectID: srv.EnterpriseProjectID,
+				KMSKeyID: v.KMSKeyID,
 			}
 			if i == 0 {
 				vol.ImageID, vol.ImageName = srv.ImageID, srv.ImageName

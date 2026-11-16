@@ -104,6 +104,8 @@ type Volume struct {
 	Type   string `json:"type"`
 	SizeGB int    `json:"size"`
 	Device string `json:"device"`
+	// KMSKeyID is the key an encrypted disk is encrypted with.
+	KMSKeyID string `json:"kms_key_id,omitempty"`
 }
 
 // ServerDetail mirrors the SDK model ecs/v2 ServerDetail.
@@ -230,8 +232,17 @@ type CreateNIC struct {
 // CreateVolume mirrors the SDK models ecs/v2 PostPaidServerRootVolume
 // and PostPaidServerDataVolume.
 type CreateVolume struct {
-	VolumeType string `json:"volumetype"`
-	Size       *int   `json:"size"`
+	VolumeType string          `json:"volumetype"`
+	Size       *int            `json:"size"`
+	Metadata   *VolumeMetadata `json:"metadata"`
+}
+
+// VolumeMetadata mirrors the SDK models ecs/v2
+// PostPaidServerRootVolumeMetadata and PostPaidServerDataVolumeMetadata:
+// whether a disk is encrypted, and with which KMS key.
+type VolumeMetadata struct {
+	Encrypted string `json:"__system__encrypted"`
+	CMKID     string `json:"__system__cmkid"`
 }
 
 // CreateSecGroup mirrors the SDK model ecs/v2 PostPaidServerSecurityGroup.

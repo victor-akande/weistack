@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/victor-akande/weistack/internal/core/apierr"
+	"github.com/victor-akande/weistack/internal/core/cmk"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/core/zones"
@@ -62,6 +63,8 @@ type plan struct {
 	repl     string
 	start    string
 	keepDays int
+	// diskKey is the KMS key of encrypted storage.
+	diskKey string
 }
 
 func (s *Service) validate(ctx context.Context, t Tenant, opt CreateInstanceOption) (plan, error) {
@@ -208,6 +211,20 @@ func (s *Service) validate(ctx context.Context, t Tenant, opt CreateInstanceOpti
 	if _, err := s.network.GetSecurityGroup(ctx, t.vpc(), opt.SecurityGroupID); err != nil {
 		return p, notFoundAs(err, errSecurityGroupNotFound(opt.SecurityGroupID))
 	}
+	// Encrypted storage: the key must be a usable KMS key of the project.
+	if opt.DiskEncryptionID != nil && *opt.DiskEncryptionID != "" {
+		if s.keys == nil {
+			return p, errInvalid("disk_encryption_id needs KMS")
+		}
+		id, err := s.keys.Check(ctx, t.Region, t.ProjectID, *opt.DiskEncryptionID, "rds")
+		switch {
+		case errors.Is(err, cmk.ErrNotFound), errors.Is(err, cmk.ErrDisabled):
+			return p, errInvalid("The KMS key %s does not exist or is not enabled.", *opt.DiskEncryptionID)
+		case err != nil:
+			return p, err
+		}
+		p.diskKey = id
+	}
 	return p, nil
 }
 
@@ -288,6 +305,7 @@ func (s *Service) CreateInstance(ctx context.Context, t Tenant, opt CreateInstan
 	if opt.TimeZone != nil {
 		inst.TimeZone = *opt.TimeZone
 	}
+	inst.DiskEncryptionID = p.diskKey
 	for range p.zones {
 		inst.NodeIDs = append(inst.NodeIDs, s.ids.Hex32()+"no01")
 	}
@@ -533,6 +551,7 @@ func (inst Instance) view() InstanceResponse {
 		RelatedInstance:     []RelatedInstance{},
 		EnterpriseProjectID: inst.EnterpriseProj,
 		TimeZone:            inst.TimeZone,
+		DiskEncryptionID:    inst.DiskEncryptionID,
 		Tags:                append([]Tag{}, inst.Tags...),
 		PrivateIPs:          []string{},
 	}

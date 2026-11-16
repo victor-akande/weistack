@@ -62,6 +62,11 @@ func detail(v Volume, t tenant, r *http.Request) volumeDetail {
 		image["image_id"] = v.ImageID
 		image["image_name"] = v.ImageName
 	}
+	// An encrypted disk names its key in the system metadata.
+	metadata := map[string]string{"__system__encrypted": "0", "hw:passthrough": "false"}
+	if v.KMSKeyID != "" {
+		metadata["__system__encrypted"], metadata["__system__cmkid"] = "1", v.KMSKeyID
+	}
 	epid := v.EnterpriseProjectID
 	if epid == "" {
 		epid = "0"
@@ -83,7 +88,8 @@ func detail(v Volume, t tenant, r *http.Request) volumeDetail {
 		VolumeType:        v.Type,
 		Size:              v.SizeGB,
 		Bootable:          bootable,
-		Metadata:          map[string]string{"__system__encrypted": "0", "hw:passthrough": "false"},
+		Metadata:          metadata,
+		Encrypted:         v.KMSKeyID != "",
 		ReplicationStatus: "disabled",
 		Shareable:         "false",
 		ServiceType:       "EVS",
