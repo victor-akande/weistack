@@ -17,6 +17,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/server"
+	"github.com/victor-akande/weistack/internal/services/eip"
 	"github.com/victor-akande/weistack/internal/services/ims"
 	"github.com/victor-akande/weistack/internal/services/vpc"
 	"github.com/victor-akande/weistack/internal/testutil/golden"
@@ -26,6 +27,7 @@ const (
 	testProject = "0123456789abcdef0123456789abcdef"
 	testRegion  = "ap-southeast-1"
 	testHost    = "ecs." + testRegion + ".myhuaweicloud.com"
+	testVPCHost = "vpc." + testRegion + ".myhuaweicloud.com"
 	testDelay   = 2 * time.Second
 )
 
@@ -39,6 +41,7 @@ var (
 type env struct {
 	svc     *Service
 	network *vpc.Service
+	eips    *eip.Service
 	images  *ims.Service
 	store   store.Store
 	engine  *lifecycle.Engine
@@ -84,30 +87,36 @@ func newEnvOpts(t *testing.T, st store.Store, seedDir string, quota Quota, fault
 	if err != nil {
 		t.Fatalf("vpc.New: %v", err)
 	}
+	eips, err := eip.New(eip.Deps{Store: st, Engine: engine, IDs: gen, Logger: log, Ports: network, Now: clock.Now})
+	if err != nil {
+		t.Fatalf("eip.New: %v", err)
+	}
+	network.Extend(eips)
 	images, err := ims.New(ims.Deps{Store: st, Engine: engine, IDs: gen, Logger: log, Now: clock.Now, DefaultProjectID: testProject})
 	if err != nil {
 		t.Fatalf("ims.New: %v", err)
 	}
 	svc, err := New(Deps{
 		Store: st, Engine: engine, IDs: gen, Logger: log, Now: clock.Now, SeedDir: seedDir,
-		Network: network, Images: images, Quota: quota,
+		Network: network, EIPs: eips, Images: images, Quota: quota,
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	images.SetServers(svc)
+	network.SetPorts(svc)
 	cfg, err := config.Load(nil, func(string) string { return "" }, io.Discard)
 	if err != nil {
 		t.Fatalf("config: %v", err)
 	}
 	srv, err := server.New(server.Options{
 		Config: cfg, ProjectID: testProject, Logger: log, Store: st, Engine: engine, IDs: gen,
-		Services: []server.Service{svc},
+		Services: []server.Service{network, svc},
 	})
 	if err != nil {
 		t.Fatalf("server.New: %v", err)
 	}
-	return &env{svc: svc, network: network, images: images, store: st, engine: engine, clock: clock, handler: srv.Handler()}
+	return &env{svc: svc, network: network, eips: eips, images: images, store: st, engine: engine, clock: clock, handler: srv.Handler()}
 }
 
 // call sends a request to the ECS endpoint host. path starts at the API
@@ -115,12 +124,22 @@ func newEnvOpts(t *testing.T, st store.Store, seedDir string, quota Quota, fault
 // {project} is replaced by the test project.
 func (e *env) call(t *testing.T, method, path, body string) (int, []byte) {
 	t.Helper()
+	return e.callHost(t, testHost, method, path, body)
+}
+
+func (e *env) callVPC(t *testing.T, method, path, body string) (int, []byte) {
+	t.Helper()
+	return e.callHost(t, testVPCHost, method, path, body)
+}
+
+func (e *env) callHost(t *testing.T, host, method, path, body string) (int, []byte) {
+	t.Helper()
 	var rd io.Reader
 	if body != "" {
 		rd = strings.NewReader(body)
 	}
 	r := httptest.NewRequest(method, strings.ReplaceAll(path, "{project}", testProject), rd)
-	r.Host = testHost
+	r.Host = host
 	w := httptest.NewRecorder()
 	e.handler.ServeHTTP(w, r)
 	res := w.Result()

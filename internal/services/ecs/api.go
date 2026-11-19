@@ -241,7 +241,7 @@ func (s *Service) handleDeleteServers(w http.ResponseWriter, r *http.Request, t 
 	if err := authz.Check(r, "ecs:cloudServers:deleteServers", instances(ids)...); err != nil {
 		return err
 	}
-	job, err := s.DeleteServers(r.Context(), t, ids)
+	job, err := s.deleteServers(r.Context(), t, ids, req.DeletePublicIP)
 	if err != nil {
 		return err
 	}

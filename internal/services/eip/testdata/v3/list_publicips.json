@@ -1,0 +1,43 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "request_id": "<hex32>",
+    "publicips": [
+      {
+        "id": "<uuid>",
+        "project_id": "<hex32>",
+        "ip_version": 4,
+        "public_ip_address": "192.0.2.1",
+        "network_type": "5_bgp",
+        "status": "DOWN",
+        "description": "",
+        "public_border_group": "center",
+        "created_at": "<time-z>",
+        "updated_at": "<time-z>",
+        "type": "EIP",
+        "vnic": null,
+        "bandwidth": {
+          "id": "<uuid>",
+          "size": 10,
+          "share_type": "PER",
+          "charge_mode": "bandwidth",
+          "name": "bw-v3"
+        },
+        "enterprise_project_id": "0",
+        "billing_info": null,
+        "lock_status": "",
+        "associate_instance_type": null,
+        "associate_instance_id": null,
+        "publicip_pool_id": null,
+        "publicip_pool_name": "5_bgp",
+        "alias": "eip-v3"
+      }
+    ],
+    "page_info": {
+      "previous_marker": "<uuid>",
+      "current_count": 1
+    },
+    "total_count": 1
+  }
+}
