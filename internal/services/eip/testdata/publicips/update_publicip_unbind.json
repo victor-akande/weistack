@@ -1,0 +1,21 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "publicip": {
+      "bandwidth_id": "<uuid>",
+      "bandwidth_name": "bw-1",
+      "bandwidth_share_type": "PER",
+      "bandwidth_size": 10,
+      "create_time": "2026-11-10 09:30:00",
+      "enterprise_project_id": "0",
+      "id": "<uuid>",
+      "public_ip_address": "192.0.2.1",
+      "status": "DOWN",
+      "tenant_id": "<hex32>",
+      "type": "5_bgp",
+      "ip_version": 4,
+      "alias": "eip-1"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "publicip": {
+      "id": "<uuid>",
+      "status": "PENDING_CREATE",
+      "type": "5_bgp",
+      "public_ip_address": "192.0.2.1",
+      "tenant_id": "<hex32>",
+      "ip_version": 4,
+      "create_time": "2026-11-10 09:30:00",
+      "bandwidth_size": 0,
+      "enterprise_project_id": "0",
+      "public_border_group": "center",
+      "alias": "eip-1"
+    }
+  }
+}

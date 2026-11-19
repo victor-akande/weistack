@@ -34,6 +34,7 @@ func TestLoadDefaults(t *testing.T) {
 		IAM:              IAMAccept,
 		ECSMaxServers:    20,
 		ECSMaxVCPUs:      80,
+		EIPMaxPerProject: 50,
 		RDSMaxInstances:  20,
 		LifecycleDelay:   2 * time.Second,
 		LogLevel:         slog.LevelInfo,
@@ -146,6 +147,7 @@ func TestLoadErrors(t *testing.T) {
 		{"persist without a data dir", []string{"-persist", "-data-dir", ""}, nil, "data directory"},
 		{"negative delay", []string{"-lifecycle-delay", "-1s"}, nil, "negative"},
 		{"zero server quota", []string{"-ecs-max-servers", "0"}, nil, "ECS quotas"},
+		{"zero eip quota", []string{"-eip-max-per-project", "0"}, nil, "EIP quota"},
 		{"zero rds quota", []string{"-rds-max-instances", "0"}, nil, "RDS instance quota"},
 		{"zero vcpu quota", nil, map[string]string{"WEISTACK_ECS_MAX_VCPUS": "0"}, "ECS quotas"},
 		{"bad log level", []string{"-log-level", "loud"}, nil, "log level"},
@@ -196,7 +198,7 @@ func TestLoadHelp(t *testing.T) {
 func TestValidateReportsEveryProblem(t *testing.T) {
 	t.Parallel()
 
-	err := Config{Port: -1, Region: "x", LogFormat: "yaml", ECSMaxServers: 1, ECSMaxVCPUs: 1, RDSMaxInstances: 1, ProxyPassthrough: "none", Persist: true}.Validate()
+	err := Config{Port: -1, Region: "x", LogFormat: "yaml", ECSMaxServers: 1, ECSMaxVCPUs: 1, EIPMaxPerProject: 1, RDSMaxInstances: 1, ProxyPassthrough: "none", Persist: true}.Validate()
 	if err == nil {
 		t.Fatal("Validate succeeded, want error")
 	}

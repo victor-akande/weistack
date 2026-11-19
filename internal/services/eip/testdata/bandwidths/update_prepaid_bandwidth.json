@@ -1,0 +1,25 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "bandwidth": {
+      "bandwidth_type": "share",
+      "billing_info": "",
+      "charge_mode": "bandwidth",
+      "id": "<uuid>",
+      "name": "bw-shared-updated",
+      "publicip_info": [],
+      "share_type": "WHOLE",
+      "size": 50,
+      "tenant_id": "<hex32>",
+      "enterprise_project_id": "0",
+      "status": "NORMAL",
+      "enable_bandwidth_rules": false,
+      "rule_quota": 0,
+      "bandwidth_rules": [],
+      "created_at": "<time-z>",
+      "updated_at": "<time-z>",
+      "public_border_group": "center"
+    }
+  }
+}

@@ -30,6 +30,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/vault"
 	"github.com/victor-akande/weistack/internal/server"
 	"github.com/victor-akande/weistack/internal/services/ecs"
+	"github.com/victor-akande/weistack/internal/services/eip"
 	"github.com/victor-akande/weistack/internal/services/eps"
 	"github.com/victor-akande/weistack/internal/services/evs"
 	"github.com/victor-akande/weistack/internal/services/iam"
@@ -333,6 +334,12 @@ func buildServices(
 	if err := vpcSvc.Resume(ctx); err != nil {
 		return nil, err
 	}
+
+	eipSvc, err := eip.New(eip.Deps{Store: st, Engine: engine, IDs: gen, Logger: log, Ports: vpcSvc, MaxPerProject: cfg.EIPMaxPerProject})
+	if err != nil {
+		return nil, err
+	}
+	vpcSvc.Extend(eipSvc)
 
 	imsSvc, err := ims.New(ims.Deps{
 		Store: st, Engine: engine, IDs: gen, Logger: log,

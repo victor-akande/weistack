@@ -31,12 +31,13 @@ const (
 	DefaultRegion         = "ap-southeast-1"
 	DefaultLifecycleDelay = 2 * time.Second
 	// DefaultLogFormat picks text at a terminal and JSON otherwise.
-	DefaultLogFormat       = "auto"
-	DefaultMaxBodyBytes    = 10 << 20 // 10 MiB; services that stream (OBS) opt out per route.
-	DefaultShutdownTimeout = 10 * time.Second
-	DefaultECSMaxServers   = 20
-	DefaultECSMaxVCPUs     = 80
-	DefaultRDSMaxInstances = 20
+	DefaultLogFormat        = "auto"
+	DefaultMaxBodyBytes     = 10 << 20 // 10 MiB; services that stream (OBS) opt out per route.
+	DefaultShutdownTimeout  = 10 * time.Second
+	DefaultECSMaxServers    = 20
+	DefaultECSMaxVCPUs      = 80
+	DefaultEIPMaxPerProject = 50
+	DefaultRDSMaxInstances  = 20
 )
 
 // Config is the fully resolved runtime configuration.
@@ -60,6 +61,8 @@ type Config struct {
 	// ECSMaxServers and ECSMaxVCPUs are the per-project ECS quotas.
 	ECSMaxServers int
 	ECSMaxVCPUs   int
+	// EIPMaxPerProject is the per-project elastic IP quota.
+	EIPMaxPerProject int
 	// RDSMaxInstances is the per-project RDS instance quota.
 	RDSMaxInstances int
 	// LifecycleDelay is how long asynchronous transitions take. 0 is instant.
@@ -137,6 +140,7 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 	fs.StringVar(&cfg.SeedDir, "seed-dir", env.str("SEED_DIR", ""), "directory of YAML files that extend the built-in seed data")
 	fs.IntVar(&cfg.ECSMaxServers, "ecs-max-servers", env.int("ECS_MAX_SERVERS", DefaultECSMaxServers), "per-project quota of ECS servers")
 	fs.IntVar(&cfg.ECSMaxVCPUs, "ecs-max-vcpus", env.int("ECS_MAX_VCPUS", DefaultECSMaxVCPUs), "per-project quota of ECS vCPUs")
+	fs.IntVar(&cfg.EIPMaxPerProject, "eip-max-per-project", env.int("EIP_MAX_PER_PROJECT", DefaultEIPMaxPerProject), "per-project quota of elastic IPs")
 	fs.IntVar(&cfg.RDSMaxInstances, "rds-max-instances", env.int("RDS_MAX_INSTANCES", DefaultRDSMaxInstances), "per-project quota of RDS instances")
 	fs.DurationVar(&cfg.LifecycleDelay, "lifecycle-delay", env.duration("LIFECYCLE_DELAY", DefaultLifecycleDelay), "duration of asynchronous state transitions (0 is instant)")
 	fs.StringVar(&logLevel, "log-level", env.str("LOG_LEVEL", "info"), "log level: debug, info, warn or error")
@@ -223,6 +227,9 @@ func (c Config) Validate() error {
 	}
 	if c.ECSMaxServers < 1 || c.ECSMaxVCPUs < 1 {
 		errs = append(errs, fmt.Errorf("ECS quotas must be positive (servers %d, vCPUs %d)", c.ECSMaxServers, c.ECSMaxVCPUs))
+	}
+	if c.EIPMaxPerProject < 1 {
+		errs = append(errs, fmt.Errorf("EIP quota %d must be positive", c.EIPMaxPerProject))
 	}
 	if c.LifecycleDelay < 0 {
 		errs = append(errs, fmt.Errorf("lifecycle delay %s must not be negative", c.LifecycleDelay))
