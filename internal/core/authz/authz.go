@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -91,6 +92,7 @@ type Gate struct {
 	mu        sync.Mutex
 	grants    map[Scope]Grants
 	consulted bool
+	checked   []string
 }
 
 // GateOptions configure a Gate.
@@ -134,6 +136,20 @@ func (g *Gate) Consulted() bool {
 func (g *Gate) markConsulted() {
 	g.mu.Lock()
 	g.consulted = true
+	g.mu.Unlock()
+}
+
+// Checked returns the actions the request was checked for, in order.
+func (g *Gate) Checked() []string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return slices.Clone(g.checked)
+}
+
+func (g *Gate) markChecked(name string) {
+	g.mu.Lock()
+	g.consulted = true
+	g.checked = append(g.checked, name)
 	g.mu.Unlock()
 }
 
@@ -338,7 +354,7 @@ func write(w http.ResponseWriter, r *http.Request, err error) {
 func check(r *http.Request, a actions.Action, res []Resource) error {
 	ctx := r.Context()
 	g := GateFrom(ctx)
-	g.markConsulted()
+	g.markChecked(a.Name)
 	o := serviceFrom(ctx)
 	if o == nil {
 		// A route outside any declared service: refuse rather than guess.
@@ -397,7 +413,7 @@ func Refuse(r *http.Request, name, reason string, resources ...Resource) error {
 	if g == nil {
 		return nil
 	}
-	g.markConsulted()
+	g.markChecked(name)
 	o := serviceFrom(ctx)
 	a := actions.MustLookup(name)
 	if o == nil {
