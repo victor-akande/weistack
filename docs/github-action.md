@@ -30,7 +30,8 @@ From a branch it runs the latest release, unless `version` says otherwise.
 With the proxy set, clients keep Huawei Cloud's real endpoints and WeiStack
 answers them; requests to other hosts are relayed unchanged. Clients either
 skip TLS verification (Terraform's `insecure = true`) or trust
-`WEISTACK_CA_FILE` (`curl --cacert`, Python's `REQUESTS_CA_BUNDLE`).
+`WEISTACK_CA_FILE` (`curl --cacert`, with `--ssl-no-revoke` on Windows; Python's
+`REQUESTS_CA_BUNDLE`).
 See [clients](clients.md) for each client's set-up, including the Go
 SDK, which does not read `HTTPS_PROXY`.
 
