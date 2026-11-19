@@ -24,6 +24,7 @@ From a branch it runs the latest release, unless `version` says otherwise.
 | `HUAWEICLOUD_SDK_AK`, `HUAWEICLOUD_SDK_SK` | The same keys, for the SDKs |
 | `HW_REGION_NAME`, `HW_PROJECT_ID` | The default region and project |
 | `HTTPS_PROXY`, `HTTP_PROXY` | WeiStack's proxy, unless `proxy: false` |
+| `NO_PROXY` | With the proxy: `127.0.0.1,localhost` added, so WeiStack's own address is reached directly |
 | `WEISTACK_ENDPOINT` | WeiStack's address, `http://127.0.0.1:8780` |
 | `WEISTACK_CA_FILE` | The local CA's certificate, to verify TLS through the proxy |
 

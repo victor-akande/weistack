@@ -250,6 +250,15 @@ runs:
           if [[ $INPUT_PROXY == true ]]; then
             echo "HTTPS_PROXY=$endpoint"
             echo "HTTP_PROXY=$endpoint"
+            # WeiStack's own address, the admin API included, is reached
+            # directly: clients that proxy loopback addresses (Python's,
+            # and any on Windows, where HTTP_PROXY is also http_proxy)
+            # would otherwise send it to the proxy.
+            no_proxy_list="127.0.0.1,localhost"
+            existing="${NO_PROXY:-${no_proxy:-}}"
+            [[ -n $existing ]] && no_proxy_list="$existing,$no_proxy_list"
+            echo "NO_PROXY=$no_proxy_list"
+            echo "no_proxy=$no_proxy_list"
           fi
         } >>"$GITHUB_ENV"
         {
