@@ -22,8 +22,8 @@ discovery (so clients need no project or domain ID), users and groups,
 access keys, classic permissions with their assignments (including the
 default [enterprise project](docs/services/eps.md)), IAM 5.0 identity
 policies, agencies, and temporary credentials (IAM's securitytokens and
-STS's AssumeAgency), and [KMS](docs/services/kms.md) keys with real
-cryptography.
+STS's AssumeAgency), [KMS](docs/services/kms.md) keys with real
+cryptography, and [EIP](docs/services/eip.md) elastic IPs and bandwidths.
 
 | Milestone | Scope | State |
 | --- | --- | --- |
@@ -213,6 +213,7 @@ defaults. Run `weistack -h` for the full list.
 | `-seed-dir` | `WEISTACK_SEED_DIR` | none | Directory of YAML files extending built-in seed data ([images](docs/services/ims.md#adding-your-own), [flavors](docs/services/ecs.md#adding-your-own)) |
 | `-ecs-max-servers` | `WEISTACK_ECS_MAX_SERVERS` | `20` | ECS server quota per project |
 | `-ecs-max-vcpus` | `WEISTACK_ECS_MAX_VCPUS` | `80` | ECS vCPU quota per project |
+| `-eip-max-per-project` | `WEISTACK_EIP_MAX_PER_PROJECT` | `50` | EIP quota per project |
 | `-rds-max-instances` | `WEISTACK_RDS_MAX_INSTANCES` | `20` | RDS instance quota per project |
 | `-lifecycle-delay` | `WEISTACK_LIFECYCLE_DELAY` | `2s` | Duration of async transitions; `0` is instant |
 | `-log-level` | `WEISTACK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
