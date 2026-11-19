@@ -1,0 +1,12 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "request_id": "<hex32>",
+    "publicips": [],
+    "page_info": {
+      "current_count": 0
+    },
+    "total_count": 0
+  }
+}

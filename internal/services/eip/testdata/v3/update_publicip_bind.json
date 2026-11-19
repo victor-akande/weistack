@@ -1,0 +1,42 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "request_id": "<hex32>",
+    "publicip": {
+      "id": "<uuid>",
+      "project_id": "<hex32>",
+      "ip_version": 4,
+      "public_ip_address": "192.0.2.1",
+      "status": "ACTIVE",
+      "description": "web frontend",
+      "public_border_group": "center",
+      "created_at": "<time-z>",
+      "updated_at": "<time-z>",
+      "type": "EIP",
+      "vnic": {
+        "private_ip_address": "192.168.0.10",
+        "device_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "device_owner": "compute:ap-southeast-1a",
+        "vpc_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "port_id": "11111111-1111-4111-8111-111111111111",
+        "mac": "fa:16:3e:00:00:01"
+      },
+      "bandwidth": {
+        "id": "<uuid>",
+        "size": 10,
+        "share_type": "PER",
+        "charge_mode": "bandwidth",
+        "name": "bw-v3"
+      },
+      "enterprise_project_id": "0",
+      "billing_info": null,
+      "lock_status": "",
+      "associate_instance_type": "PORT",
+      "associate_instance_id": "11111111-1111-4111-8111-111111111111",
+      "publicip_pool_id": null,
+      "publicip_pool_name": "5_bgp",
+      "alias": "eip-renamed"
+    }
+  }
+}

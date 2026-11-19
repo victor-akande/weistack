@@ -383,3 +383,74 @@ type publicIPSingleShowResp struct {
 	Alias                 string                 `json:"alias"`
 	Tags                  []string               `json:"tags,omitempty"`
 }
+
+// pageInfoOption mirrors eip/v3 PageInfoOption.
+type pageInfoOption struct {
+	PreviousMarker string  `json:"previous_marker,omitempty"`
+	NextMarker     *string `json:"next_marker,omitempty"`
+	CurrentCount   int     `json:"current_count"`
+}
+
+// listPublicIPsV3Response mirrors eip/v3 ListPublicipsResponse.
+type listPublicIPsV3Response struct {
+	RequestID  string                   `json:"request_id"`
+	PublicIPs  []publicIPSingleShowResp `json:"publicips"`
+	PageInfo   pageInfoOption           `json:"page_info"`
+	TotalCount int                      `json:"total_count"`
+}
+
+// showPublicIPV3Response mirrors eip/v3 ShowPublicipResponse.
+type showPublicIPV3Response struct {
+	RequestID string                 `json:"request_id"`
+	PublicIP  publicIPSingleShowResp `json:"publicip"`
+}
+
+// publicIPInstanceResp mirrors eip/v3 PublicipUpdateResp and PublicipInstanceResp.
+type publicIPInstanceResp struct {
+	ID                    string                 `json:"id"`
+	ProjectID             string                 `json:"project_id"`
+	IPVersion             int                    `json:"ip_version"`
+	PublicIPAddress       string                 `json:"public_ip_address"`
+	Status                string                 `json:"status"`
+	Description           string                 `json:"description"`
+	PublicBorderGroup     string                 `json:"public_border_group"`
+	CreatedAt             string                 `json:"created_at"`
+	UpdatedAt             string                 `json:"updated_at"`
+	Type                  string                 `json:"type"`
+	Vnic                  *vnicInfo              `json:"vnic"`
+	Bandwidth             *publicIPBandwidthInfo `json:"bandwidth"`
+	EnterpriseProjectID   string                 `json:"enterprise_project_id"`
+	BillingInfo           *string                `json:"billing_info"`
+	LockStatus            string                 `json:"lock_status"`
+	AssociateInstanceType *string                `json:"associate_instance_type"`
+	AssociateInstanceID   *string                `json:"associate_instance_id"`
+	PublicIPPoolID        *string                `json:"publicip_pool_id"`
+	PublicIPPoolName      string                 `json:"publicip_pool_name"`
+	Alias                 string                 `json:"alias"`
+}
+
+// publicIPInstanceV3Response mirrors eip/v3 UpdatePublicipResponse,
+// AssociatePublicipsResponse and DisassociatePublicipsResponse.
+type publicIPInstanceV3Response struct {
+	RequestID string               `json:"request_id"`
+	PublicIP  publicIPInstanceResp `json:"publicip"`
+}
+
+// updatePublicIPOptionV3 mirrors eip/v3 UpdatePublicipOption.
+type updatePublicIPOptionV3 struct {
+	Alias                 *string `json:"alias,omitempty"`
+	Description           *string `json:"description,omitempty"`
+	AssociateInstanceType *string `json:"associate_instance_type,omitempty"`
+	AssociateInstanceID   *string `json:"associate_instance_id,omitempty"`
+}
+
+// associatePublicIPsOption mirrors eip/v3 AssociatePublicipsOption.
+type associatePublicIPsOption struct {
+	AssociateInstanceType string `json:"associate_instance_type"`
+	AssociateInstanceID   string `json:"associate_instance_id"`
+}
+
+// associatePublicIPsRequest mirrors eip/v3 AssociatePublicipsRequestBody.
+type associatePublicIPsRequest struct {
+	PublicIP *associatePublicIPsOption `json:"publicip"`
+}
