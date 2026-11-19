@@ -36,6 +36,12 @@ func (s *Server) newAdmin() http.Handler {
 			r.Get("/accounts", s.adminOp("ListAccounts", s.handleListAccounts))
 			r.Post("/accounts", s.adminOp("NewAccount", s.handleNewAccount))
 		}
+		if s.faults != nil {
+			r.Get("/faults", s.adminOp("ListFaults", s.handleListFaults))
+			r.Post("/faults", s.adminOp("AddFault", s.handleAddFault))
+			r.Delete("/faults", s.adminOp("ClearFaults", s.handleClearFaults))
+			r.Delete("/faults/{id}", s.adminOp("RemoveFault", s.handleRemoveFault))
+		}
 		if s.cfg.Metrics {
 			r.Get("/metrics", s.adminOp("Metrics", s.handleMetrics))
 		}
@@ -144,6 +150,9 @@ type resetResponse struct {
 // transitions are dropped, the store is wiped and services re-seed.
 func (s *Server) handleReset(w http.ResponseWriter, r *http.Request) error {
 	cancelled := s.engine.CancelAll()
+	if s.faults != nil {
+		s.faults.Clear()
+	}
 	if err := s.store.Reset(r.Context()); err != nil {
 		return apierr.Internal(err)
 	}

@@ -75,6 +75,9 @@ func hostRegion(hostport string) string {
 // received is the URL as the client sent it, before any /{service}
 // prefix was stripped, for enforcement: signatures may cover either.
 func (s *Server) dispatch(m *mounted, w http.ResponseWriter, r *http.Request, received *url.URL) {
+	if s.injectFault(m, w, r) {
+		return
+	}
 	if m.maxBody > 0 {
 		r.Body = http.MaxBytesReader(w, r.Body, m.maxBody)
 	}

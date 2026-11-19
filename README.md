@@ -236,11 +236,12 @@ defaults. Run `weistack -h` for the full list.
 | `GET /_weistack/health` | Liveness and version |
 | `GET /_weistack/services` | Enabled services, default region, project ID and account |
 | `GET /_weistack/state` | Dump of every stored resource as JSON |
-| `POST /_weistack/reset` | Wipe all state and pending transitions |
+| `POST /_weistack/reset` | Wipe all state, pending transitions and injected faults |
 | `GET /_weistack/ca` | The proxy's CA certificate, as PEM |
 | `GET /_weistack/accounts` | Every account: the primary one and those added |
 | `POST /_weistack/accounts` | Add an account, `{"name": "partner"}`; returns its root user's keys |
 | `GET /_weistack/metrics` | Prometheus metrics (only with `-metrics`) |
+| `GET`, `POST`, `DELETE /_weistack/faults` | List, add and clear injected faults; `DELETE /_weistack/faults/{id}` removes one (see [Injecting faults](docs/faults.md)) |
 
 ## Authentication
 
