@@ -1,6 +1,7 @@
 # VPC coverage
 
 Endpoint: `vpc.{region}.myhuaweicloud.com`, or the `/vpc` path prefix.
+Elastic IPs and bandwidths share this endpoint; see [EIP coverage](eip.md).
 
 Legend: **Yes** implemented, **Partial** implemented with the listed gaps,
 **No** returns `501 WeiStack.0501`.

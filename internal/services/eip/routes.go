@@ -1,8 +1,6 @@
 package eip
 
 import (
-	"net/http"
-
 	"github.com/go-chi/chi/v5"
 
 	"github.com/victor-akande/weistack/internal/core/apierr"
@@ -70,24 +68,4 @@ func (s *Service) Routes(r chi.Router) {
 			r.With(act("eip:publicIps:disassociateInstance", pip)).Post("/publicips/{publicip_id}/disassociate-instance", s.v3("DisassociatePublicips", s.handleDisassociatePublicIPs))
 		})
 	})
-}
-
-func (s *Service) handleListPublicIPsV3(_ http.ResponseWriter, _ *http.Request, _ Tenant) error {
-	return apierr.NotImplemented("eip", "ListPublicipsV3")
-}
-
-func (s *Service) handleShowPublicIPV3(_ http.ResponseWriter, _ *http.Request, _ Tenant) error {
-	return apierr.NotImplemented("eip", "ShowPublicipV3")
-}
-
-func (s *Service) handleUpdatePublicIPV3(_ http.ResponseWriter, _ *http.Request, _ Tenant) error {
-	return apierr.NotImplemented("eip", "UpdatePublicip")
-}
-
-func (s *Service) handleAssociatePublicIPs(_ http.ResponseWriter, _ *http.Request, _ Tenant) error {
-	return apierr.NotImplemented("eip", "AssociatePublicips")
-}
-
-func (s *Service) handleDisassociatePublicIPs(_ http.ResponseWriter, _ *http.Request, _ Tenant) error {
-	return apierr.NotImplemented("eip", "DisassociatePublicips")
 }

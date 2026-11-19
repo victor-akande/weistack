@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -13,7 +15,10 @@ import (
 	"time"
 
 	"github.com/victor-akande/weistack/internal/core/apierr"
+	"github.com/victor-akande/weistack/internal/core/ids"
+	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/store"
+	"github.com/victor-akande/weistack/internal/services/eip"
 	"github.com/victor-akande/weistack/internal/services/ims"
 	"github.com/victor-akande/weistack/internal/services/vpc"
 )
@@ -307,7 +312,8 @@ func TestCreateServerOptions(t *testing.T) {
 
 	addrs := d.Addresses[n.vpcID]
 	if len(addrs) != 2 || addrs[0].Addr != "192.168.1.50" || addrs[0].Type != "fixed" || !addrs[0].Primary ||
-		addrs[1].Type != "floating" || !strings.HasPrefix(addrs[1].Addr, "198.51.100.") || addrs[1].Primary {
+		addrs[1].Type != "floating" || addrs[1].Addr != "192.0.2.1" || addrs[1].Primary ||
+		addrs[1].PortID != addrs[0].PortID || addrs[1].MACAddr != addrs[0].MACAddr {
 		t.Errorf("addresses = %+v", addrs)
 	}
 	if !strings.HasPrefix(addrs[0].MACAddr, "fa:16:3e:") || len(addrs[0].MACAddr) != 17 {
@@ -800,5 +806,475 @@ func TestResumeContinuesInterruptedJobs(t *testing.T) {
 	}
 	if err := e.svc.Resume(t.Context()); err == nil {
 		t.Fatal("Resume ignored a corrupt job record")
+	}
+}
+
+func TestServerPublicIPEndToEnd(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t)
+	n := e.mustNetwork(t, testTenant, "192.168.1.0/24")
+
+	// 1. Create server with PER EIP (delete_on_termination: false).
+	_, ids := e.mustCreate(t, n.serverBody(
+		"name", `"web-eip"`,
+		"publicip", `{"eip": {"iptype": "5_bgp", "bandwidth": {"size": 5, "sharetype": "PER", "chargemode": "traffic"}}, "delete_on_termination": false}`,
+	))
+	e.settle(t)
+
+	status, out := e.call(t, http.MethodGet, serversPath+"/"+ids[0], "")
+	if status != http.StatusOK {
+		t.Fatalf("show server: %d %s", status, out)
+	}
+	detail := decodeInto[serverResponse](t, out).Server
+	addrs := detail.Addresses[n.vpcID]
+	if len(addrs) != 2 || addrs[1].Type != "floating" || addrs[1].Addr != "192.0.2.1" || addrs[1].PortID != addrs[0].PortID {
+		t.Fatalf("addresses = %+v, want floating 192.0.2.1 on primary port", addrs)
+	}
+
+	// Verify real EIP and PER bandwidth naming via the EIP v1 API.
+	type pipItem struct {
+		ID                 string `json:"id"`
+		Status             string `json:"status"`
+		PublicIPAddress    string `json:"public_ip_address"`
+		PortID             string `json:"port_id"`
+		PrivateIPAddress   string `json:"private_ip_address"`
+		BandwidthName      string `json:"bandwidth_name"`
+		BandwidthSize      int    `json:"bandwidth_size"`
+		BandwidthShareType string `json:"bandwidth_share_type"`
+	}
+	type pipListResp struct {
+		PublicIPs []pipItem `json:"publicips"`
+	}
+	status, out = e.callVPC(t, http.MethodGet, "/v1/{project}/publicips", "")
+	if status != http.StatusOK {
+		t.Fatalf("list publicips: %d %s", status, out)
+	}
+	pips := decodeInto[pipListResp](t, out).PublicIPs
+	if len(pips) != 1 {
+		t.Fatalf("publicips = %+v, want 1", pips)
+	}
+	eipID := pips[0].ID
+	wantBW := "web-eip-bandwidth-" + eipID[:4]
+	if pips[0].Status != "ACTIVE" || pips[0].PublicIPAddress != "192.0.2.1" ||
+		pips[0].PortID != addrs[0].PortID || pips[0].PrivateIPAddress != addrs[0].Addr ||
+		pips[0].BandwidthName != wantBW || pips[0].BandwidthSize != 5 || pips[0].BandwidthShareType != "PER" {
+		t.Fatalf("publicip = %+v, want ACTIVE with bandwidth %q", pips[0], wantBW)
+	}
+
+	// Delete server with delete_publicip: false -> EIP survives unbound as DOWN.
+	status, out = e.call(t, http.MethodPost, serversPath+"/delete", `{"servers": [{"id": "`+ids[0]+`"}], "delete_publicip": false}`)
+	if status != http.StatusOK {
+		t.Fatalf("delete server: %d %s", status, out)
+	}
+	e.settle(t)
+
+	status, out = e.callVPC(t, http.MethodGet, "/v1/{project}/publicips", "")
+	if status != http.StatusOK {
+		t.Fatalf("list publicips after unbind: %d %s", status, out)
+	}
+	pips = decodeInto[pipListResp](t, out).PublicIPs
+	if len(pips) != 1 || pips[0].ID != eipID || pips[0].Status != "DOWN" || pips[0].PortID != "" {
+		t.Fatalf("publicip after delete_publicip=false: %+v, want DOWN unbound", pips)
+	}
+
+	// 2. Bind that existing EIP to a new server via publicip.id, then delete with delete_publicip: true.
+	_, ids2 := e.mustCreate(t, n.serverBody("name", `"web-reuse"`, "publicip", `{"id": "`+eipID+`"}`))
+	e.settle(t)
+	status, out = e.call(t, http.MethodGet, serversPath+"/"+ids2[0], "")
+	if status != http.StatusOK {
+		t.Fatalf("show server 2: %d %s", status, out)
+	}
+	addrs2 := decodeInto[serverResponse](t, out).Server.Addresses[n.vpcID]
+	if len(addrs2) != 2 || addrs2[1].Type != "floating" || addrs2[1].Addr != "192.0.2.1" {
+		t.Fatalf("server 2 addresses = %+v", addrs2)
+	}
+	status, out = e.call(t, http.MethodPost, serversPath+"/delete", `{"servers": [{"id": "`+ids2[0]+`"}], "delete_publicip": true}`)
+	if status != http.StatusOK {
+		t.Fatalf("delete server 2: %d %s", status, out)
+	}
+	e.settle(t)
+	status, _ = e.callVPC(t, http.MethodGet, "/v1/{project}/publicips/"+eipID, "")
+	if status != http.StatusNotFound {
+		t.Fatalf("GET deleted EIP status = %d, want 404", status)
+	}
+
+	// 3. Create server with delete_on_termination: true -> reclaims 192.0.2.1 and releases even when delete_publicip is false.
+	_, ids3 := e.mustCreate(t, n.serverBody(
+		"name", `"web-dot"`,
+		"publicip", `{"eip": {"iptype": "5_bgp", "bandwidth": {"size": 5, "sharetype": "PER"}}, "delete_on_termination": true}`,
+	))
+	e.settle(t)
+	status, out = e.call(t, http.MethodGet, serversPath+"/"+ids3[0], "")
+	if status != http.StatusOK {
+		t.Fatalf("show server 3: %d %s", status, out)
+	}
+	addrs3 := decodeInto[serverResponse](t, out).Server.Addresses[n.vpcID]
+	if len(addrs3) != 2 || addrs3[1].Addr != "192.0.2.1" {
+		t.Fatalf("server 3 addresses = %+v, want reclaimed 192.0.2.1", addrs3)
+	}
+	status, out = e.call(t, http.MethodPost, serversPath+"/delete", `{"servers": [{"id": "`+ids3[0]+`"}], "delete_publicip": false}`)
+	if status != http.StatusOK {
+		t.Fatalf("delete server 3: %d %s", status, out)
+	}
+	e.settle(t)
+	status, out = e.callVPC(t, http.MethodGet, "/v1/{project}/publicips", "")
+	if status != http.StatusOK || len(decodeInto[pipListResp](t, out).PublicIPs) != 0 {
+		t.Fatalf("EIP with delete_on_termination survived delete: %d %s", status, out)
+	}
+
+	// 4. WHOLE shared bandwidth with ECS create and delete.
+	status, out = e.callVPC(t, http.MethodPost, "/v2.0/{project}/bandwidths", `{"bandwidth": {"name": "shared-ecs-bw", "size": 20}}`)
+	if status != http.StatusOK {
+		t.Fatalf("create shared bandwidth: %d %s", status, out)
+	}
+	type bwRespShape struct {
+		Bandwidth struct {
+			ID           string `json:"id"`
+			PublicIPInfo []any  `json:"publicip_info"`
+		} `json:"bandwidth"`
+	}
+	bwResp := decodeInto[bwRespShape](t, out)
+	sharedBWID := bwResp.Bandwidth.ID
+
+	_, ids4 := e.mustCreate(t, n.serverBody(
+		"name", `"web-whole"`,
+		"publicip", `{"eip": {"iptype": "5_bgp", "bandwidth": {"sharetype": "WHOLE", "id": "`+sharedBWID+`"}}}`,
+	))
+	e.settle(t)
+	status, out = e.call(t, http.MethodPost, serversPath+"/delete", `{"servers": [{"id": "`+ids4[0]+`"}], "delete_publicip": true}`)
+	if status != http.StatusOK {
+		t.Fatalf("delete server 4: %d %s", status, out)
+	}
+	e.settle(t)
+	status, out = e.callVPC(t, http.MethodGet, "/v1/{project}/bandwidths/"+sharedBWID, "")
+	if status != http.StatusOK {
+		t.Fatalf("shared bandwidth missing after server delete: %d %s", status, out)
+	}
+	bwResp = decodeInto[bwRespShape](t, out)
+	if len(bwResp.Bandwidth.PublicIPInfo) != 0 {
+		t.Fatalf("shared bandwidth publicip_info = %+v, want empty", bwResp.Bandwidth.PublicIPInfo)
+	}
+
+	// 5. EIPs bound after server creation (including on a second NIC) show up as floating addresses.
+	sn2, err := e.network.CreateSubnet(t.Context(), testTenant.vpc(), vpc.CreateSubnetOption{
+		Name: "subnet-2", CIDR: "192.168.2.0/24", GatewayIP: "192.168.2.1", VPCID: n.vpcID,
+	})
+	if err != nil {
+		t.Fatalf("CreateSubnet(2): %v", err)
+	}
+	e.settle(t)
+	_, ids5 := e.mustCreate(t, n.serverBody(
+		"name", `"web-late-bind"`,
+		"nics", `[{"subnet_id": "`+n.subnetID+`"}, {"subnet_id": "`+sn2.ID+`"}]`,
+	))
+	e.settle(t)
+	srv5 := e.server(t, ids5[0])
+
+	// Create two unbound EIPs, settle, then bind one to each NIC.
+	var lateIDs [2]string
+	for i := range 2 {
+		status, out = e.callVPC(t, http.MethodPost, "/v1/{project}/publicips",
+			fmt.Sprintf(`{"publicip": {"type": "5_bgp"}, "bandwidth": {"name": "late-%d", "size": 5, "share_type": "PER"}}`, i))
+		if status != http.StatusOK {
+			t.Fatalf("create late EIP %d: %d %s", i, status, out)
+		}
+		created := decodeInto[struct {
+			PublicIP struct {
+				ID string `json:"id"`
+			} `json:"publicip"`
+		}](t, out)
+		lateIDs[i] = created.PublicIP.ID
+	}
+	e.settle(t)
+	for i := range 2 {
+		status, out = e.callVPC(t, http.MethodPut, "/v1/{project}/publicips/"+lateIDs[i],
+			`{"publicip": {"port_id": "`+srv5.NICs[i].PortID+`"}}`)
+		if status != http.StatusOK {
+			t.Fatalf("bind late EIP %d: %d %s", i, status, out)
+		}
+	}
+
+	status, out = e.call(t, http.MethodGet, serversPath+"/"+ids5[0], "")
+	if status != http.StatusOK {
+		t.Fatalf("show server 5: %d %s", status, out)
+	}
+	addrs5 := decodeInto[serverResponse](t, out).Server.Addresses[n.vpcID]
+	if len(addrs5) != 4 ||
+		addrs5[0].Type != "fixed" || addrs5[1].Type != "fixed" ||
+		addrs5[2].Type != "floating" || addrs5[2].PortID != srv5.NICs[0].PortID || addrs5[2].Addr != "192.0.2.1" ||
+		addrs5[3].Type != "floating" || addrs5[3].PortID != srv5.NICs[1].PortID || addrs5[3].Addr != "192.0.2.2" {
+		t.Fatalf("server 5 addresses after late bind = %+v", addrs5)
+	}
+
+	// Unbind the second EIP -> only the first floating address remains.
+	status, out = e.callVPC(t, http.MethodPut, "/v1/{project}/publicips/"+lateIDs[1], `{"publicip": {}}`)
+	if status != http.StatusOK {
+		t.Fatalf("unbind late EIP: %d %s", status, out)
+	}
+	status, out = e.call(t, http.MethodGet, serversPath+"/"+ids5[0], "")
+	if status != http.StatusOK {
+		t.Fatalf("show server 5 after unbind: %d %s", status, out)
+	}
+	addrs5 = decodeInto[serverResponse](t, out).Server.Addresses[n.vpcID]
+	if len(addrs5) != 3 || addrs5[2].Addr != "192.0.2.1" {
+		t.Fatalf("server 5 addresses after unbind = %+v", addrs5)
+	}
+}
+
+func TestCreateServerPublicIPErrorRollsBack(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t)
+	n := e.mustNetwork(t, testTenant, "192.168.1.0/24")
+
+	// Create one existing DOWN EIP for rollback tests.
+	status, out := e.callVPC(t, http.MethodPost, "/v1/{project}/publicips",
+		`{"publicip": {"type": "5_bgp"}, "bandwidth": {"name": "existing-bw", "size": 5, "share_type": "PER"}}`)
+	if status != http.StatusOK {
+		t.Fatalf("create existing EIP: %d %s", status, out)
+	}
+	existingID := decodeInto[struct {
+		PublicIP struct {
+			ID string `json:"id"`
+		} `json:"publicip"`
+	}](t, out).PublicIP.ID
+	e.settle(t)
+
+	badCases := []struct {
+		name     string
+		publicip string
+		count    string
+	}{
+		{"invalid iptype", `{"eip": {"iptype": "bad_type", "bandwidth": {"size": 5, "sharetype": "PER"}}}`, `1`},
+		{"unknown existing id", `{"id": "` + unknownID + `"}`, `1`},
+		{"both id and eip", `{"id": "` + existingID + `", "eip": {"iptype": "5_bgp", "bandwidth": {"size": 5, "sharetype": "PER"}}}`, `1`},
+		{"empty publicip object", `{}`, `1`},
+		{"count 2 with existing id", `{"id": "` + existingID + `"}`, `2`},
+	}
+	for _, tc := range badCases {
+		t.Run(tc.name, func(t *testing.T) {
+			status, out := e.call(t, http.MethodPost, serversPath, n.serverBody("count", tc.count, "publicip", tc.publicip))
+			if status != http.StatusBadRequest {
+				t.Fatalf("status = %d %s, want 400", status, out)
+			}
+			errResp := decodeInto[struct {
+				Error struct {
+					Code    string `json:"code"`
+					Message string `json:"message"`
+				} `json:"error"`
+			}](t, out)
+			if errResp.Error.Code != "Ecs.0005" || errResp.Error.Message == "" {
+				t.Fatalf("error = %+v, want Ecs.0005 with message", errResp.Error)
+			}
+		})
+	}
+
+	// No servers were left behind and no private IPs were leaked.
+	if all, _ := e.svc.ListServers(t.Context(), testTenant, ListServersFilter{}); len(all) != 0 {
+		t.Fatalf("%d servers left after failed creates", len(all))
+	}
+	if free := e.subnetFree(t, n.subnetID); free != 251 {
+		t.Fatalf("subnet has %d free addresses, want 251", free)
+	}
+	// The existing EIP used in the failed count=2 create must still exist and be DOWN (unbound).
+	status, out = e.callVPC(t, http.MethodGet, "/v1/{project}/publicips/"+existingID, "")
+	if status != http.StatusOK {
+		t.Fatalf("existing EIP lost on rollback: %d %s", status, out)
+	}
+	gotExisting := decodeInto[struct {
+		PublicIP struct {
+			Status string `json:"status"`
+			PortID string `json:"port_id"`
+		} `json:"publicip"`
+	}](t, out).PublicIP
+	if gotExisting.Status != "DOWN" || gotExisting.PortID != "" {
+		t.Fatalf("existing EIP after count=2 rollback = %+v, want DOWN unbound", gotExisting)
+	}
+
+	// Multi-server create hitting EIP quota rolls back the newly created EIP of server 0 as well.
+	st := store.NewMemory()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	clock := lifecycle.NewFakeClock(testEpoch)
+	engine := lifecycle.New(lifecycle.Options{Delay: testDelay, Clock: clock, Logger: log})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); engine.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done; _ = st.Close() })
+
+	gen := ids.NewSeeded(99)
+	vpcSvc, err := vpc.New(vpc.Deps{Store: st, Engine: engine, IDs: gen, Logger: log, Now: clock.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eipSvc, err := eip.New(eip.Deps{Store: st, Engine: engine, IDs: gen, Logger: log, Ports: vpcSvc, MaxPerProject: 1, Now: clock.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	imsSvc, err := ims.New(ims.Deps{Store: st, Engine: engine, IDs: gen, Logger: log, Now: clock.Now, DefaultProjectID: testProject})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ecsSvc, err := New(Deps{
+		Store: st, Engine: engine, IDs: gen, Logger: log, Now: clock.Now,
+		Network: vpcSvc, EIPs: eipSvc, Images: imsSvc,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	vpcSvc.SetPorts(ecsSvc)
+
+	v, err := vpcSvc.CreateVPC(t.Context(), testTenant.vpc(), vpc.CreateVPCOption{CIDR: ptr("10.0.0.0/16")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sn, err := vpcSvc.CreateSubnet(t.Context(), testTenant.vpc(), vpc.CreateSubnetOption{
+		Name: "qsn", CIDR: "10.0.1.0/24", GatewayIP: "10.0.1.1", VPCID: v.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock.Advance(testDelay)
+	_ = engine.WaitIdle(t.Context())
+
+	_, _, err = ecsSvc.CreateServers(t.Context(), testTenant, CreateServerOption{
+		Name:       "quota-pair",
+		ImageRef:   ubuntuImage,
+		FlavorRef:  "s6.large.2",
+		VPCID:      v.ID,
+		NICs:       []CreateNIC{{SubnetID: sn.ID}},
+		RootVolume: &CreateVolume{VolumeType: "GPSSD"},
+		Count:      ptr(2),
+		PublicIP: &CreatePublicIP{
+			EIP: &CreateServerEIP{
+				IPType:    "5_bgp",
+				Bandwidth: &CreateServerBandwidth{Size: 5, ShareType: "PER"},
+			},
+		},
+	})
+	if codeOf(err) != "Ecs.0005" {
+		t.Fatalf("quota rollback err = %v, want Ecs.0005", err)
+	}
+	if all, _ := ecsSvc.ListServers(t.Context(), testTenant, ListServersFilter{}); len(all) != 0 {
+		t.Fatalf("%d servers left after EIP quota failure", len(all))
+	}
+	if addrsByPort, err := eipSvc.AddressesByPort(t.Context(), testTenant.vpc()); err != nil || len(addrsByPort) != 0 {
+		t.Fatalf("EIPs left bound after quota rollback: %v, %v", addrsByPort, err)
+	}
+	if gotSN, err := vpcSvc.GetSubnet(t.Context(), testTenant.vpc(), sn.ID); err != nil || gotSN.AvailableIPAddressCount != 251 {
+		t.Fatalf("subnet after quota rollback: %+v, %v", gotSN, err)
+	}
+}
+
+func TestCreateServerWithoutEIPServiceIgnoresPublicIP(t *testing.T) {
+	t.Parallel()
+	st := store.NewMemory()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	clock := lifecycle.NewFakeClock(testEpoch)
+	engine := lifecycle.New(lifecycle.Options{Delay: testDelay, Clock: clock, Logger: log})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); engine.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done; _ = st.Close() })
+
+	gen := ids.NewSeeded(21)
+	vpcSvc, err := vpc.New(vpc.Deps{Store: st, Engine: engine, IDs: gen, Logger: log, Now: clock.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	imsSvc, err := ims.New(ims.Deps{Store: st, Engine: engine, IDs: gen, Logger: log, Now: clock.Now, DefaultProjectID: testProject})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ecsSvc, err := New(Deps{
+		Store: st, Engine: engine, IDs: gen, Logger: log, Now: clock.Now,
+		Network: vpcSvc, Images: imsSvc, // EIPs intentionally nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := vpcSvc.CreateVPC(t.Context(), testTenant.vpc(), vpc.CreateVPCOption{CIDR: ptr("10.1.0.0/16")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sn, err := vpcSvc.CreateSubnet(t.Context(), testTenant.vpc(), vpc.CreateSubnetOption{
+		Name: "s1", CIDR: "10.1.1.0/24", GatewayIP: "10.1.1.1", VPCID: v.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock.Advance(testDelay)
+	_ = engine.WaitIdle(t.Context())
+
+	_, ids, err := ecsSvc.CreateServers(t.Context(), testTenant, CreateServerOption{
+		Name:       "no-eip",
+		ImageRef:   ubuntuImage,
+		FlavorRef:  "s6.large.2",
+		VPCID:      v.ID,
+		NICs:       []CreateNIC{{SubnetID: sn.ID}},
+		RootVolume: &CreateVolume{VolumeType: "GPSSD"},
+		PublicIP: &CreatePublicIP{
+			EIP: &CreateServerEIP{
+				IPType:    "5_bgp",
+				Bandwidth: &CreateServerBandwidth{Size: 5, ShareType: "PER"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateServers with nil EIPs: %v", err)
+	}
+	srv, err := ecsSvc.GetServer(t.Context(), testTenant, ids[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail := ecsSvc.detail(t.Context(), testTenant, srv)
+	addrs := detail.Addresses[v.ID]
+	if len(addrs) != 1 || addrs[0].Type != "fixed" {
+		t.Fatalf("addresses with nil EIPs = %+v, want only fixed address (no invented floating IP)", addrs)
+	}
+}
+
+func TestResumeDeleteHonoursDeletePublicIP(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "weistack.db")
+	st, err := store.OpenBolt(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := newEnvWith(t, st, "")
+	n := first.mustNetwork(t, testTenant, "192.168.1.0/24")
+
+	_, ids := first.mustCreate(t, n.serverBody(
+		"name", `"resumed-del"`,
+		"publicip", `{"eip": {"iptype": "5_bgp", "bandwidth": {"size": 5, "sharetype": "PER"}}, "delete_on_termination": false}`,
+	))
+	first.settle(t)
+
+	status, out := first.call(t, http.MethodPost, serversPath+"/delete", `{"servers": [{"id": "`+ids[0]+`"}], "delete_publicip": true}`)
+	if status != http.StatusOK {
+		t.Fatalf("delete: %d %s", status, out)
+	}
+	first.engine.CancelAll()
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err = store.OpenBolt(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened := newEnvWith(t, st, "")
+	if err := reopened.svc.Resume(t.Context()); err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+	reopened.settle(t)
+
+	status, out = reopened.callVPC(t, http.MethodGet, "/v1/{project}/publicips", "")
+	if status != http.StatusOK {
+		t.Fatalf("list publicips: %d %s", status, out)
+	}
+	got := decodeInto[struct {
+		PublicIPs []any `json:"publicips"`
+	}](t, out)
+	if len(got.PublicIPs) != 0 {
+		t.Fatalf("EIP survived resumed delete with delete_publicip=true: %s", out)
 	}
 }

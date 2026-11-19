@@ -359,7 +359,7 @@ func buildServices(
 
 	ecsSvc, err := ecs.New(ecs.Deps{
 		Store: st, Engine: engine, IDs: gen, Logger: log, SeedDir: cfg.SeedDir,
-		Network: vpcSvc, Images: imsSvc, Keys: kmsSvc,
+		Network: vpcSvc, EIPs: eipSvc, Images: imsSvc, Keys: kmsSvc,
 		Quota: ecs.Quota{Servers: cfg.ECSMaxServers, VCPUs: cfg.ECSMaxVCPUs},
 	})
 	if err != nil {

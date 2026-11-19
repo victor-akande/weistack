@@ -1,0 +1,1 @@
+{"source": "docs", "status": 404, "body": {"request_id": "<hex32>", "error_code": "VPC.0504", "error_msg": "Floating IP could not be found."}}

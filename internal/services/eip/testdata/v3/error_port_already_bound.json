@@ -1,0 +1,1 @@
+{"source": "docs", "status": 409, "body": {"request_id": "<hex32>", "error_code": "VPC.0511", "error_msg": "The port has already been bound with an EIP."}}

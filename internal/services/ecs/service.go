@@ -7,6 +7,7 @@
 package ecs
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"sync"
@@ -17,9 +18,18 @@ import (
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/core/zones"
+	"github.com/victor-akande/weistack/internal/services/eip"
 	"github.com/victor-akande/weistack/internal/services/ims"
 	"github.com/victor-akande/weistack/internal/services/vpc"
 )
+
+// EIPs attaches, releases and looks up elastic IPs for server NICs.
+// eip.Service implements it.
+type EIPs interface {
+	AttachToServer(ctx context.Context, t vpc.Tenant, portID, serverName string, ip eip.ServerIP) (string, error)
+	PortsRemoved(ctx context.Context, t vpc.Tenant, portIDs []string, release bool)
+	AddressesByPort(ctx context.Context, t vpc.Tenant) (map[string]string, error)
+}
 
 // Tenant identifies whose resources a call operates on.
 type Tenant struct {
@@ -36,6 +46,9 @@ type Deps struct {
 	// Network resolves VPCs, subnets and security groups and hands out
 	// private IP addresses.
 	Network *vpc.Service
+	// EIPs attaches and releases elastic IPs for servers. Nil ignores
+	// publicip requests.
+	EIPs EIPs
 	// Images resolves imageRef.
 	Images *ims.Service
 	// Keys checks the KMS keys of encrypted disks. Nil refuses them.
@@ -71,6 +84,7 @@ type Service struct {
 	now    func() time.Time
 
 	network *vpc.Service
+	eips    EIPs
 	images  *ims.Service
 	keys    cmk.Keys
 	quota   Quota
@@ -103,7 +117,7 @@ func New(d Deps) (*Service, error) {
 	}
 	s := &Service{
 		store: d.Store, engine: d.Engine, ids: d.IDs, log: d.Logger, now: d.Now,
-		network: d.Network, images: d.Images, keys: d.Keys, quota: d.Quota,
+		network: d.Network, eips: d.EIPs, images: d.Images, keys: d.Keys, quota: d.Quota,
 		flavors:      flavors,
 		flavorByName: make(map[string]FlavorSpec, len(flavors)),
 	}
