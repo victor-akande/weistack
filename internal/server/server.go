@@ -21,6 +21,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/auth"
 	"github.com/victor-akande/weistack/internal/core/authz"
 	"github.com/victor-akande/weistack/internal/core/config"
+	"github.com/victor-akande/weistack/internal/core/faults"
 	"github.com/victor-akande/weistack/internal/core/identity"
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
@@ -87,6 +88,9 @@ type Options struct {
 	// Temporary resolves temporary credentials (IAM). Nil treats them
 	// as unknown keys.
 	Temporary auth.TemporaryResolver
+	// Faults are the failures injected through /_weistack/faults; the
+	// lifecycle engine should share them. Nil leaves the API out.
+	Faults *faults.Registry
 	// Now defaults to time.Now; enforcement checks signing times with it.
 	Now func() time.Time
 }
@@ -114,6 +118,7 @@ type Server struct {
 	sealer    authz.Sealer
 	accounts  Accounts
 	temporary auth.TemporaryResolver
+	faults    *faults.Registry
 	now       func() time.Time
 }
 
@@ -174,6 +179,7 @@ func New(opts Options) (*Server, error) {
 	s.perms, s.sealer = opts.Permissions, opts.Sealer
 	s.accounts = opts.Accounts
 	s.temporary = opts.Temporary
+	s.faults = opts.Faults
 	s.now = opts.Now
 	if s.now == nil {
 		s.now = time.Now

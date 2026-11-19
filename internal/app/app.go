@@ -22,6 +22,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/auth"
 	"github.com/victor-akande/weistack/internal/core/authz"
 	"github.com/victor-akande/weistack/internal/core/config"
+	"github.com/victor-akande/weistack/internal/core/faults"
 	"github.com/victor-akande/weistack/internal/core/hostpattern"
 	"github.com/victor-akande/weistack/internal/core/identity"
 	"github.com/victor-akande/weistack/internal/core/ids"
@@ -109,7 +110,10 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		return err
 	}
 
-	engine := lifecycle.New(lifecycle.Options{Delay: cfg.LifecycleDelay, Logger: log})
+	// Faults injected through the admin API reach the lifecycle engine
+	// and the server alike.
+	injected := faults.New(nil)
+	engine := lifecycle.New(lifecycle.Options{Delay: cfg.LifecycleDelay, Logger: log, Faults: injected})
 	engineCtx, stopEngine := context.WithCancel(context.Background())
 	engineDone := make(chan struct{})
 	go func() {
@@ -173,6 +177,7 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		Permissions: permissions(services),
 		Accounts:    accounts(services),
 		Temporary:   temporary(services),
+		Faults:      injected,
 		Sealer:      vlt,
 		Proxy: server.ProxyOptions{
 			CA: ca, Domains: cfg.ProxyDomains, Bypass: bypass, Passthrough: cfg.ProxyPassthrough,
