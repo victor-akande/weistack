@@ -1,7 +1,5 @@
 package ecs
 
-import "encoding/json"
-
 // Wire timestamp formats.
 const (
 	// timeLayout is used by created and updated ("2019-05-22T03:19:19Z").
@@ -48,9 +46,9 @@ type Server struct {
 	NICs             []NIC  `json:"nics"`
 	// SecurityGroups are the IDs of the server's security groups.
 	SecurityGroups []string `json:"security_groups"`
-	// PublicIP is the elastic IP requested at creation, if any. It is
-	// data only: no EIP service stands behind it.
-	PublicIP string `json:"public_ip"`
+	// DeletePublicIP records delete_publicip from a delete request in
+	// flight, so a resumed delete honours it.
+	DeletePublicIP bool `json:"delete_publicip,omitempty"`
 
 	RootVolume  Volume   `json:"root_volume"`
 	DataVolumes []Volume `json:"data_volumes"`
@@ -219,8 +217,29 @@ type CreateServerOption struct {
 	Metadata         map[string]string `json:"metadata"`
 	ServerTags       []CreateTag       `json:"server_tags"`
 	Tags             []string          `json:"tags"`
-	PublicIP         json.RawMessage   `json:"publicip"`
+	PublicIP         *CreatePublicIP   `json:"publicip"`
 	ExtendParam      *CreateExtend     `json:"extendparam"`
+}
+
+// CreatePublicIP mirrors the SDK model ecs/v2 PostPaidServerPublicip.
+type CreatePublicIP struct {
+	ID                  string           `json:"id"`
+	EIP                 *CreateServerEIP `json:"eip"`
+	DeleteOnTermination bool             `json:"delete_on_termination"`
+}
+
+// CreateServerEIP mirrors the SDK model ecs/v2 PostPaidServerEip.
+type CreateServerEIP struct {
+	IPType    string                 `json:"iptype"`
+	Bandwidth *CreateServerBandwidth `json:"bandwidth"`
+}
+
+// CreateServerBandwidth mirrors the SDK model ecs/v2 PostPaidServerEipBandwidth.
+type CreateServerBandwidth struct {
+	Size       int    `json:"size"`
+	ShareType  string `json:"sharetype"`
+	ChargeMode string `json:"chargemode"`
+	ID         string `json:"id"`
 }
 
 // CreateNIC mirrors the SDK model ecs/v2 PostPaidServerNic.

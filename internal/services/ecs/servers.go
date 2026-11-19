@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"hash/fnv"
 	"regexp"
 	"slices"
 	"strconv"
@@ -17,6 +16,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/core/zones"
+	"github.com/victor-akande/weistack/internal/services/eip"
 	"github.com/victor-akande/weistack/internal/services/ims"
 	"github.com/victor-akande/weistack/internal/services/vpc"
 )
@@ -82,6 +82,8 @@ type plan struct {
 	// rootKey and dataKeys are the KMS keys of encrypted disks.
 	rootKey  string
 	dataKeys []string
+	// publicIP is the elastic IP to attach to each server's first NIC.
+	publicIP *eip.ServerIP
 }
 
 func checkServerName(name string) error {
@@ -327,6 +329,25 @@ func (s *Service) validate(ctx context.Context, t Tenant, opt CreateServerOption
 	if p.tags, err = buildTags(opt); err != nil {
 		return p, err
 	}
+	if opt.PublicIP != nil && s.eips != nil {
+		if opt.PublicIP.ID != "" && opt.PublicIP.EIP != nil {
+			return p, errInvalidRequest("publicip.id and publicip.eip cannot be set at the same time")
+		}
+		sip := eip.ServerIP{
+			ID:                opt.PublicIP.ID,
+			ReleaseWithServer: opt.PublicIP.DeleteOnTermination,
+		}
+		if opt.PublicIP.EIP != nil {
+			sip.Type = opt.PublicIP.EIP.IPType
+			if opt.PublicIP.EIP.Bandwidth != nil {
+				sip.Size = opt.PublicIP.EIP.Bandwidth.Size
+				sip.ShareType = opt.PublicIP.EIP.Bandwidth.ShareType
+				sip.ChargeMode = opt.PublicIP.EIP.Bandwidth.ChargeMode
+				sip.BandwidthID = opt.PublicIP.EIP.Bandwidth.ID
+			}
+		}
+		p.publicIP = &sip
+	}
 	return p, nil
 }
 
@@ -382,9 +403,20 @@ func (s *Service) CreateServers(ctx context.Context, t Tenant, opt CreateServerO
 	now := s.now().UTC().Format(timeLayout)
 	reservation := "r-" + s.ids.Hex32()[:8]
 	servers := make([]Server, 0, p.count)
+	var (
+		savedIDs      []string
+		attachedPorts []string
+	)
+	releaseEIPOnRollback := p.publicIP != nil && p.publicIP.ID == ""
 
-	// On any failure, give back every address taken so far.
+	// On any failure, give back every EIP, server record and private address taken so far.
 	rollback := func() {
+		if s.eips != nil && len(attachedPorts) > 0 {
+			s.eips.PortsRemoved(ctx, t.vpc(), attachedPorts, releaseEIPOnRollback)
+		}
+		for _, id := range savedIDs {
+			_ = s.servers(t).Delete(ctx, id)
+		}
 		for _, srv := range servers {
 			s.releaseAddresses(ctx, t, srv)
 		}
@@ -430,9 +462,6 @@ func (s *Service) CreateServers(ctx context.Context, t Tenant, opt CreateServerO
 				KMSKeyID: p.dataKeys[n],
 			})
 		}
-		if len(opt.PublicIP) > 0 && string(opt.PublicIP) != "null" {
-			srv.PublicIP = pseudoPublicIP(srv.ID)
-		}
 		servers = append(servers, srv)
 		cur := &servers[len(servers)-1]
 
@@ -456,10 +485,22 @@ func (s *Service) CreateServers(ctx context.Context, t Tenant, opt CreateServerO
 			rollback()
 			return Job{}, nil, err
 		}
+		savedIDs = append(savedIDs, srv.ID)
 		ids = append(ids, srv.ID)
+	}
+	if s.eips != nil && p.publicIP != nil {
+		for _, srv := range servers {
+			portID := srv.NICs[0].PortID
+			if _, err := s.eips.AttachToServer(ctx, t.vpc(), portID, srv.Name, *p.publicIP); err != nil {
+				rollback()
+				return Job{}, nil, mapEIPError(err)
+			}
+			attachedPorts = append(attachedPorts, portID)
+		}
 	}
 	job, err := s.newJob(ctx, t, jobCreateServer, jobCreateSingleServer, ids)
 	if err != nil {
+		rollback()
 		return Job{}, nil, err
 	}
 	for _, id := range ids {
@@ -483,12 +524,24 @@ func mapIPError(err error, ip, subnet string) error {
 	return err
 }
 
-// pseudoPublicIP derives a stable address from the documentation range
-// 198.51.100.0/24 for a server that asked for an elastic IP.
-func pseudoPublicIP(serverID string) string {
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(serverID))
-	return "198.51.100." + strconv.Itoa(int(h.Sum32()%254)+1)
+// mapEIPError turns an EIP API error into Ecs.0005 keeping its message.
+func mapEIPError(err error) error {
+	var apiErr *apierr.Error
+	if errors.As(err, &apiErr) {
+		return errInvalidRequest("%s", apiErr.Message)
+	}
+	return err
+}
+
+func serverPortIDs(srv Server) []string {
+	if len(srv.NICs) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(srv.NICs))
+	for _, nic := range srv.NICs {
+		out = append(out, nic.PortID)
+	}
+	return out
 }
 
 func (s *Service) releaseAddresses(ctx context.Context, t Tenant, srv Server) {
@@ -597,6 +650,10 @@ func hasTag(tags []string, want string) bool {
 // DeleteServers starts deleting the given servers and returns the job
 // that tracks it. Every server must exist; none is touched otherwise.
 func (s *Service) DeleteServers(ctx context.Context, t Tenant, ids []string) (Job, error) {
+	return s.deleteServers(ctx, t, ids, false)
+}
+
+func (s *Service) deleteServers(ctx context.Context, t Tenant, ids []string, deletePublicIP bool) (Job, error) {
 	if len(ids) == 0 {
 		return Job{}, errInvalidRequest("servers must contain at least one ECS")
 	}
@@ -627,6 +684,7 @@ func (s *Service) DeleteServers(ctx context.Context, t Tenant, ids []string) (Jo
 		s.closeOtherSubJobs(ctx, t, id, job.JobID)
 		if _, err := s.servers(t).Update(ctx, id, func(srv *Server) error {
 			srv.TaskState = "deleting"
+			srv.DeletePublicIP = deletePublicIP
 			srv.Updated = now
 			return nil
 		}); err != nil && !errors.Is(err, store.ErrNotFound) {
@@ -664,6 +722,7 @@ func (s *Service) scheduleDelete(t Tenant, serverID, jobID string) {
 			if fault != nil {
 				_, err := s.servers(t).Update(ctx, serverID, func(srv *Server) error {
 					srv.TaskState = ""
+					srv.DeletePublicIP = false
 					srv.Status = StatusError
 					return nil
 				})
@@ -675,6 +734,9 @@ func (s *Service) scheduleDelete(t Tenant, serverID, jobID string) {
 			}
 			srv, err := s.servers(t).Get(ctx, serverID)
 			if err == nil {
+				if s.eips != nil {
+					s.eips.PortsRemoved(ctx, t.vpc(), serverPortIDs(srv), srv.DeletePublicIP)
+				}
 				s.releaseAddresses(ctx, t, srv)
 				err = s.servers(t).Delete(ctx, serverID)
 			}
@@ -738,16 +800,26 @@ func (s *Service) detail(ctx context.Context, t Tenant, srv Server) ServerDetail
 	}
 
 	// Addresses are keyed by VPC ID; the first NIC is the primary one.
-	addrs := make([]ServerAddress, 0, len(srv.NICs)+1)
+	var floating map[string]string
+	if s.eips != nil && len(srv.NICs) > 0 {
+		var err error
+		floating, err = s.eips.AddressesByPort(ctx, t.vpc())
+		if err != nil {
+			s.log.ErrorContext(ctx, "listing EIP addresses failed", "server_id", srv.ID, "error", err)
+		}
+	}
+	addrs := make([]ServerAddress, 0, len(srv.NICs)+len(floating))
 	for i, nic := range srv.NICs {
 		addrs = append(addrs, ServerAddress{
 			Version: "4", Addr: nic.IP, Type: "fixed", MACAddr: nic.MAC, PortID: nic.PortID, Primary: i == 0,
 		})
 	}
-	if srv.PublicIP != "" && len(srv.NICs) > 0 {
-		addrs = append(addrs, ServerAddress{
-			Version: "4", Addr: srv.PublicIP, Type: "floating", MACAddr: srv.NICs[0].MAC, PortID: srv.NICs[0].PortID,
-		})
+	for _, nic := range srv.NICs {
+		if addr := floating[nic.PortID]; addr != "" {
+			addrs = append(addrs, ServerAddress{
+				Version: "4", Addr: addr, Type: "floating", MACAddr: nic.MAC, PortID: nic.PortID,
+			})
+		}
 	}
 	d.Addresses[srv.VPCID] = addrs
 
