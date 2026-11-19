@@ -62,10 +62,13 @@ jobs:
           # Huawei Cloud's real endpoint, answered by WeiStack and verified
           # with its CA. Windows' curl would also ask the CA for revocations,
           # which a local CA does not publish.
-          revoke=()
-          [[ $RUNNER_OS == Windows ]] && revoke=(--ssl-no-revoke)
-          curl -fsS "${revoke[@]}" --cacert "$CA_FILE" -x "$HTTPS_PROXY" \
-            "https://vpc.ap-southeast-1.myhuaweicloud.com/v1/$PROJECT_ID/vpcs" | tee /dev/stderr | grep -q '"vpcs"'
+          revoke=""
+          [[ $RUNNER_OS == Windows ]] && revoke="--ssl-no-revoke"
+          # shellcheck disable=SC2086 # revoke is one flag or none
+          body="$(curl -fsS $revoke --cacert "$CA_FILE" -x "$HTTPS_PROXY" \
+            "https://vpc.ap-southeast-1.myhuaweicloud.com/v1/$PROJECT_ID/vpcs")"
+          echo "$body"
+          grep -q '"vpcs"' <<<"$body"
           curl -fsS "$ENDPOINT/_weistack/health"
 
   sdk-enforce:
