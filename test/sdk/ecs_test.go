@@ -1,10 +1,12 @@
 package sdk
 
 import (
+	"strings"
 	"testing"
 
 	ecsv2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2"
 	ecs "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2/model"
+	eip "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/eip/v2/model"
 	ims "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ims/v2/model"
 	v2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2/model"
 	v3 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v3/model"
@@ -486,4 +488,359 @@ func TestServerOperations(t *testing.T) {
 	if _, err := net2.DeleteVpc(&v2.DeleteVpcRequest{VpcId: vpcID}); err != nil {
 		t.Fatalf("DeleteVpc: %v", err)
 	}
+}
+
+func isPoolAddress(addr string) bool {
+	return strings.HasPrefix(addr, "192.0.2.") ||
+		strings.HasPrefix(addr, "198.51.100.") ||
+		strings.HasPrefix(addr, "203.0.113.")
+}
+
+func floatingAddrs(srv *ecs.ServerDetail, vpcID string) []string {
+	var out []string
+	for _, a := range srv.Addresses[vpcID] {
+		if a.OSEXTIPStype != nil && a.OSEXTIPStype.Value() == "floating" {
+			out = append(out, a.Addr)
+		}
+	}
+	return out
+}
+
+// TestServerEIPIntegration exercises the ECS-EIP link (§6) through the
+// official ECS and EIP SDK clients:
+//   - creating a server with a new EIP (delete_on_termination true and false);
+//   - creating a server with an existing EIP ID;
+//   - verifying ECS floating addresses match real pool EIPs;
+//   - binding and unbinding an EIP after server creation and observing it in ECS;
+//   - deleting servers with delete_publicip true vs false and delete_on_termination.
+func TestServerEIPIntegration(t *testing.T) {
+	net2 := newV2(t, realEndpoint)
+	compute := newECS(t)
+	images := newIMS(t)
+	eips := newEIP(t)
+
+	// --- Network & image setup ----------------------------------------
+	vc, err := net2.CreateVpc(&v2.CreateVpcRequest{Body: &v2.CreateVpcRequestBody{Vpc: &v2.CreateVpcOption{
+		Name: ptr("ecs-eip-vpc"), Cidr: ptr("10.62.0.0/16"),
+	}}})
+	if err != nil {
+		t.Fatalf("CreateVpc: %v", err)
+	}
+	vpcID := vc.Vpc.Id
+	t.Cleanup(func() {
+		eventually(t, "ecs-eip VPC to be deletable", func() bool {
+			_, err := net2.DeleteVpc(&v2.DeleteVpcRequest{VpcId: vpcID})
+			return err == nil
+		})
+	})
+	eventually(t, "ecs-eip VPC to become OK", func() bool {
+		s, err := net2.ShowVpc(&v2.ShowVpcRequest{VpcId: vpcID})
+		return err == nil && s.Vpc.Status.Value() == "OK"
+	})
+
+	sc, err := net2.CreateSubnet(&v2.CreateSubnetRequest{Body: &v2.CreateSubnetRequestBody{Subnet: &v2.CreateSubnetOption{
+		Name: "ecs-eip-subnet", Cidr: "10.62.1.0/24", GatewayIp: "10.62.1.1", VpcId: vpcID,
+	}}})
+	if err != nil {
+		t.Fatalf("CreateSubnet: %v", err)
+	}
+	subnetID := sc.Subnet.Id
+	t.Cleanup(func() {
+		eventually(t, "ecs-eip subnet to be deletable", func() bool {
+			_, err := net2.DeleteSubnet(&v2.DeleteSubnetRequest{VpcId: vpcID, SubnetId: subnetID})
+			return err == nil
+		})
+	})
+	eventually(t, "ecs-eip subnet to become ACTIVE", func() bool {
+		s, err := net2.ShowSubnet(&v2.ShowSubnetRequest{SubnetId: subnetID})
+		return err == nil && s.Subnet.Status.Value() == "ACTIVE"
+	})
+
+	listedImg, err := images.ListImages(&ims.ListImagesRequest{Name: ptr("Ubuntu 22.04 server 64bit")})
+	if err != nil || listedImg.Images == nil || len(*listedImg.Images) != 1 {
+		t.Fatalf("ListImages: %+v, %v", listedImg, err)
+	}
+	imageID := (*listedImg.Images)[0].Id
+
+	waitJob := func(what string, jobID *string, err error) {
+		t.Helper()
+		if err != nil || jobID == nil {
+			t.Fatalf("%s: job %v, error %v", what, jobID, err)
+		}
+		eventually(t, what+" to finish", func() bool {
+			job, err := compute.ShowJob(&ecs.ShowJobRequest{JobId: *jobID})
+			if err != nil {
+				t.Fatalf("ShowJob: %v", err)
+			}
+			if job.Status.Value() == "FAIL" {
+				t.Fatalf("%s failed: %v", what, job.FailReason)
+			}
+			return job.Status.Value() == "SUCCESS"
+		})
+	}
+
+	deleteServer := func(srvID string, deletePublicIP bool) {
+		t.Helper()
+		del, err := compute.DeleteServers(&ecs.DeleteServersRequest{Body: &ecs.DeleteServersRequestBody{
+			DeletePublicip: ptr(deletePublicIP),
+			Servers:        []ecs.ServerId{{Id: srvID}},
+		}})
+		waitJob("delete server "+srvID, del.JobId, err)
+	}
+
+	findEIPByAddr := func(addr string) eip.PublicipShowResp {
+		t.Helper()
+		res, err := eips.ListPublicips(&eip.ListPublicipsRequest{PublicIpAddress: &[]string{addr}})
+		if err != nil || res.Publicips == nil || len(*res.Publicips) != 1 {
+			t.Fatalf("ListPublicips(addr=%s) = %+v, %v", addr, res, err)
+		}
+		return (*res.Publicips)[0]
+	}
+
+	// --- Case 1: New EIP with delete_on_termination=true --------------
+	// Even when DeleteServers passes delete_publicip=false, the EIP must be
+	// released because ReleaseWithPort was stored as true.
+	ecsPer := ecs.GetPostPaidServerEipBandwidthSharetypeEnum().PER
+	c1, err := compute.CreatePostPaidServers(&ecs.CreatePostPaidServersRequest{Body: &ecs.CreatePostPaidServersRequestBody{
+		Server: &ecs.PostPaidServer{
+			Name:       "ecs-eip-auto-del",
+			ImageRef:   imageID,
+			FlavorRef:  "s6.large.2",
+			Vpcid:      vpcID,
+			Nics:       []ecs.PostPaidServerNic{{SubnetId: &subnetID}},
+			RootVolume: &ecs.PostPaidServerRootVolume{Volumetype: ecs.GetPostPaidServerRootVolumeVolumetypeEnum().SSD},
+			Publicip: &ecs.PostPaidServerPublicip{
+				Eip: &ecs.PostPaidServerEip{
+					Iptype: "5_bgp",
+					Bandwidth: &ecs.PostPaidServerEipBandwidth{
+						Sharetype:  ecsPer,
+						Size:       ptr(int32(5)),
+						Chargemode: ptr("bandwidth"),
+					},
+				},
+				DeleteOnTermination: ptr(true),
+			},
+		},
+	}})
+	waitJob("create server with auto-delete EIP", c1.JobId, err)
+	srv1ID := (*c1.ServerIds)[0]
+
+	s1, err := compute.ShowServer(&ecs.ShowServerRequest{ServerId: srv1ID})
+	if err != nil {
+		t.Fatalf("ShowServer(1): %v", err)
+	}
+	floats1 := floatingAddrs(s1.Server, vpcID)
+	if len(floats1) != 1 || !isPoolAddress(floats1[0]) {
+		t.Fatalf("server 1 floating addresses = %v, want 1 pool IP", floats1)
+	}
+	pip1 := findEIPByAddr(floats1[0])
+	pip1ID := *pip1.Id
+	t.Cleanup(func() {
+		_, _ = eips.UpdatePublicip(&eip.UpdatePublicipRequest{PublicipId: pip1ID, Body: &eip.UpdatePublicipsRequestBody{Publicip: &eip.UpdatePublicipOption{}}})
+		_, _ = eips.DeletePublicip(&eip.DeletePublicipRequest{PublicipId: pip1ID})
+	})
+	eventually(t, "server 1 EIP to become ACTIVE", func() bool {
+		got, err := eips.ShowPublicip(&eip.ShowPublicipRequest{PublicipId: pip1ID})
+		return err == nil && got.Publicip.Status.Value() == "ACTIVE"
+	})
+	wantBWPrefix := "ecs-eip-auto-del-bandwidth-" + pip1ID[:4]
+	if pip1.BandwidthName == nil || *pip1.BandwidthName != wantBWPrefix ||
+		pip1.BandwidthSize == nil || *pip1.BandwidthSize != 5 ||
+		pip1.BandwidthShareType == nil || pip1.BandwidthShareType.Value() != "PER" {
+		t.Errorf("server 1 EIP bandwidth = name:%v size:%v share:%v, want %q 5 PER",
+			pip1.BandwidthName, pip1.BandwidthSize, pip1.BandwidthShareType, wantBWPrefix)
+	}
+
+	// Delete with delete_publicip=false: delete_on_termination=true still releases the EIP.
+	deleteServer(srv1ID, false)
+	_, err = eips.ShowPublicip(&eip.ShowPublicipRequest{PublicipId: pip1ID})
+	wantError(t, err, 404, "VPC.0504")
+
+	// --- Case 2: New EIP with delete_on_termination=false, kept on delete ---
+	c2, err := compute.CreatePostPaidServers(&ecs.CreatePostPaidServersRequest{Body: &ecs.CreatePostPaidServersRequestBody{
+		Server: &ecs.PostPaidServer{
+			Name:       "ecs-eip-keep",
+			ImageRef:   imageID,
+			FlavorRef:  "s6.large.2",
+			Vpcid:      vpcID,
+			Nics:       []ecs.PostPaidServerNic{{SubnetId: &subnetID}},
+			RootVolume: &ecs.PostPaidServerRootVolume{Volumetype: ecs.GetPostPaidServerRootVolumeVolumetypeEnum().SSD},
+			Publicip: &ecs.PostPaidServerPublicip{
+				Eip: &ecs.PostPaidServerEip{
+					Iptype: "5_bgp",
+					Bandwidth: &ecs.PostPaidServerEipBandwidth{
+						Sharetype: ecsPer,
+						Size:      ptr(int32(6)),
+					},
+				},
+				DeleteOnTermination: ptr(false),
+			},
+		},
+	}})
+	waitJob("create server with kept EIP", c2.JobId, err)
+	srv2ID := (*c2.ServerIds)[0]
+
+	s2, err := compute.ShowServer(&ecs.ShowServerRequest{ServerId: srv2ID})
+	if err != nil {
+		t.Fatalf("ShowServer(2): %v", err)
+	}
+	floats2 := floatingAddrs(s2.Server, vpcID)
+	if len(floats2) != 1 || !isPoolAddress(floats2[0]) {
+		t.Fatalf("server 2 floating addresses = %v, want 1 pool IP", floats2)
+	}
+	pip2 := findEIPByAddr(floats2[0])
+	pip2ID := *pip2.Id
+	pip2Addr := *pip2.PublicIpAddress
+	t.Cleanup(func() {
+		_, _ = eips.UpdatePublicip(&eip.UpdatePublicipRequest{PublicipId: pip2ID, Body: &eip.UpdatePublicipsRequestBody{Publicip: &eip.UpdatePublicipOption{}}})
+		_, _ = eips.DeletePublicip(&eip.DeletePublicipRequest{PublicipId: pip2ID})
+	})
+	eventually(t, "server 2 EIP to become ACTIVE", func() bool {
+		got, err := eips.ShowPublicip(&eip.ShowPublicipRequest{PublicipId: pip2ID})
+		return err == nil && got.Publicip.Status.Value() == "ACTIVE"
+	})
+
+	// Delete with delete_publicip=false: EIP survives and is unbound (DOWN).
+	deleteServer(srv2ID, false)
+	keptPIP, err := eips.ShowPublicip(&eip.ShowPublicipRequest{PublicipId: pip2ID})
+	if err != nil || keptPIP.Publicip == nil ||
+		keptPIP.Publicip.Status.Value() != "DOWN" || keptPIP.Publicip.PortId != nil {
+		t.Fatalf("EIP after delete(delete_publicip=false) = %+v, %v; want DOWN and unbound", keptPIP, err)
+	}
+
+	// --- Case 3: Create server with existing EIP ID, delete with delete_publicip=true ---
+	c3, err := compute.CreatePostPaidServers(&ecs.CreatePostPaidServersRequest{Body: &ecs.CreatePostPaidServersRequestBody{
+		Server: &ecs.PostPaidServer{
+			Name:       "ecs-eip-existing",
+			ImageRef:   imageID,
+			FlavorRef:  "s6.large.2",
+			Vpcid:      vpcID,
+			Nics:       []ecs.PostPaidServerNic{{SubnetId: &subnetID}},
+			RootVolume: &ecs.PostPaidServerRootVolume{Volumetype: ecs.GetPostPaidServerRootVolumeVolumetypeEnum().SSD},
+			Publicip:   &ecs.PostPaidServerPublicip{Id: &pip2ID},
+		},
+	}})
+	waitJob("create server with existing EIP", c3.JobId, err)
+	srv3ID := (*c3.ServerIds)[0]
+
+	s3, err := compute.ShowServer(&ecs.ShowServerRequest{ServerId: srv3ID})
+	if err != nil {
+		t.Fatalf("ShowServer(3): %v", err)
+	}
+	floats3 := floatingAddrs(s3.Server, vpcID)
+	if len(floats3) != 1 || floats3[0] != pip2Addr {
+		t.Fatalf("server 3 floating addresses = %v, want [%s]", floats3, pip2Addr)
+	}
+	boundPIP, err := eips.ShowPublicip(&eip.ShowPublicipRequest{PublicipId: pip2ID})
+	if err != nil || boundPIP.Publicip == nil ||
+		boundPIP.Publicip.Status.Value() != "ACTIVE" || boundPIP.Publicip.PortId == nil {
+		t.Fatalf("existing EIP after attach = %+v, %v; want ACTIVE and bound", boundPIP, err)
+	}
+
+	// Delete with delete_publicip=true: releases the existing EIP too.
+	deleteServer(srv3ID, true)
+	_, err = eips.ShowPublicip(&eip.ShowPublicipRequest{PublicipId: pip2ID})
+	wantError(t, err, 404, "VPC.0504")
+
+	// --- Case 4: Bind an EIP after server creation, observe in ECS ----
+	c4, err := compute.CreatePostPaidServers(&ecs.CreatePostPaidServersRequest{Body: &ecs.CreatePostPaidServersRequestBody{
+		Server: &ecs.PostPaidServer{
+			Name:       "ecs-eip-post-bind",
+			ImageRef:   imageID,
+			FlavorRef:  "s6.large.2",
+			Vpcid:      vpcID,
+			Nics:       []ecs.PostPaidServerNic{{SubnetId: &subnetID}},
+			RootVolume: &ecs.PostPaidServerRootVolume{Volumetype: ecs.GetPostPaidServerRootVolumeVolumetypeEnum().SSD},
+		},
+	}})
+	waitJob("create server without EIP", c4.JobId, err)
+	srv4ID := (*c4.ServerIds)[0]
+	t.Cleanup(func() {
+		del, err := compute.DeleteServers(&ecs.DeleteServersRequest{Body: &ecs.DeleteServersRequestBody{
+			Servers: []ecs.ServerId{{Id: srv4ID}},
+		}})
+		if err == nil && del.JobId != nil {
+			eventually(t, "cleanup server 4", func() bool {
+				job, err := compute.ShowJob(&ecs.ShowJobRequest{JobId: *del.JobId})
+				return err == nil && job.Status != nil && job.Status.Value() == "SUCCESS"
+			})
+		}
+	})
+
+	s4Before, err := compute.ShowServer(&ecs.ShowServerRequest{ServerId: srv4ID})
+	if err != nil {
+		t.Fatalf("ShowServer(4 before bind): %v", err)
+	}
+	if got := floatingAddrs(s4Before.Server, vpcID); len(got) != 0 {
+		t.Fatalf("server 4 floating addresses before bind = %v, want empty", got)
+	}
+
+	ports4, err := net2.ListPorts(&v2.ListPortsRequest{DeviceId: &srv4ID})
+	if err != nil || ports4.Ports == nil || len(*ports4.Ports) != 1 {
+		t.Fatalf("ListPorts(4) = %+v, %v", ports4, err)
+	}
+	port4ID := (*ports4.Ports)[0].Id
+
+	perShare := eip.GetCreatePublicipBandwidthOptionShareTypeEnum().PER
+	createdPIP, err := eips.CreatePublicip(&eip.CreatePublicipRequest{Body: &eip.CreatePublicipRequestBody{
+		Publicip:  &eip.CreatePublicipOption{Type: "5_bgp", Alias: ptr("ecs-post-bind-eip")},
+		Bandwidth: &eip.CreatePublicipBandwidthOption{Name: ptr("ecs-post-bind-bw"), ShareType: perShare, Size: ptr(int32(5))},
+	}})
+	if err != nil || createdPIP.Publicip == nil || createdPIP.Publicip.Id == nil {
+		t.Fatalf("CreatePublicip(post-bind): %+v, %v", createdPIP, err)
+	}
+	pip4ID := *createdPIP.Publicip.Id
+	pip4Addr := *createdPIP.Publicip.PublicIpAddress
+	t.Cleanup(func() {
+		_, _ = eips.UpdatePublicip(&eip.UpdatePublicipRequest{PublicipId: pip4ID, Body: &eip.UpdatePublicipsRequestBody{Publicip: &eip.UpdatePublicipOption{}}})
+		_, _ = eips.DeletePublicip(&eip.DeletePublicipRequest{PublicipId: pip4ID})
+	})
+	eventually(t, "post-bind EIP to become DOWN", func() bool {
+		got, err := eips.ShowPublicip(&eip.ShowPublicipRequest{PublicipId: pip4ID})
+		return err == nil && got.Publicip.Status.Value() == "DOWN"
+	})
+
+	if _, err := eips.UpdatePublicip(&eip.UpdatePublicipRequest{
+		PublicipId: pip4ID,
+		Body:       &eip.UpdatePublicipsRequestBody{Publicip: &eip.UpdatePublicipOption{PortId: &port4ID}},
+	}); err != nil {
+		t.Fatalf("UpdatePublicip(bind to server 4): %v", err)
+	}
+
+	s4Bound, err := compute.ShowServer(&ecs.ShowServerRequest{ServerId: srv4ID})
+	if err != nil {
+		t.Fatalf("ShowServer(4 after bind): %v", err)
+	}
+	if got := floatingAddrs(s4Bound.Server, vpcID); len(got) != 1 || got[0] != pip4Addr {
+		t.Fatalf("server 4 floating addresses after bind = %v, want [%s]", got, pip4Addr)
+	}
+
+	if _, err := eips.UpdatePublicip(&eip.UpdatePublicipRequest{
+		PublicipId: pip4ID,
+		Body:       &eip.UpdatePublicipsRequestBody{Publicip: &eip.UpdatePublicipOption{PortId: ptr("")}},
+	}); err != nil {
+		t.Fatalf("UpdatePublicip(unbind from server 4): %v", err)
+	}
+
+	s4Unbound, err := compute.ShowServer(&ecs.ShowServerRequest{ServerId: srv4ID})
+	if err != nil {
+		t.Fatalf("ShowServer(4 after unbind): %v", err)
+	}
+	if got := floatingAddrs(s4Unbound.Server, vpcID); len(got) != 0 {
+		t.Fatalf("server 4 floating addresses after unbind = %v, want empty", got)
+	}
+
+	// --- Case 5: Error path - unknown existing EIP ID fails create ----
+	_, err = compute.CreatePostPaidServers(&ecs.CreatePostPaidServersRequest{Body: &ecs.CreatePostPaidServersRequestBody{
+		Server: &ecs.PostPaidServer{
+			Name:       "ecs-eip-bad-id",
+			ImageRef:   imageID,
+			FlavorRef:  "s6.large.2",
+			Vpcid:      vpcID,
+			Nics:       []ecs.PostPaidServerNic{{SubnetId: &subnetID}},
+			RootVolume: &ecs.PostPaidServerRootVolume{Volumetype: ecs.GetPostPaidServerRootVolumeVolumetypeEnum().SSD},
+			Publicip:   &ecs.PostPaidServerPublicip{Id: ptr(unknownID)},
+		},
+	}})
+	wantError(t, err, 400, "Ecs.0005")
 }
