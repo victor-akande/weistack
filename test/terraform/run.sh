@@ -11,7 +11,8 @@
 #
 # With WEISTACK_TF_IAM=enforce the emulator runs with -iam=enforce and
 # Terraform signs with the administrator's keys, which it gets as a user
-# would, from `weistack credentials`.
+# would, from `weistack credentials`; the scenario's IAM 5.0 user, signing
+# with its own key, must then be denied what its policy does not allow.
 #
 # Needs terraform, go (unless WEISTACK_BIN names a built binary), curl
 # and python3. Run from anywhere: make test-terraform.
@@ -67,6 +68,8 @@ curl -fsS "$admin/health" >/dev/null
 cp "$here"/*.tf "$here/.terraform.lock.hcl" "$work/"
 mkdir "$work/assume"
 cp "$here"/assume/*.tf "$here/.terraform.lock.hcl" "$work/assume/"
+mkdir "$work/restricted"
+cp "$here"/restricted/*.tf "$here/.terraform.lock.hcl" "$work/restricted/"
 cd "$work"
 export TF_IN_AUTOMATION=1 TF_INPUT=0 TF_VAR_project_id="$project"
 TF_VAR_account_id="$(curl -fsS "$admin/services" | python3 -c 'import json, sys; print(json.load(sys.stdin)["account_id"])')"
@@ -94,6 +97,7 @@ step "terraform init"
 # Without the proxy: the provider comes from the public registry.
 terraform init -no-color >/dev/null
 terraform -chdir=assume init -no-color >/dev/null
+terraform -chdir=restricted init -no-color >/dev/null
 
 # From here on every request goes through WeiStack.
 export HTTPS_PROXY="http://127.0.0.1:$port" HTTP_PROXY="http://127.0.0.1:$port"
@@ -134,6 +138,47 @@ vpcs = json.load(sys.stdin)
 if vpcs != {"classic": 1, "sts": 1}:
     sys.exit(f"the assumed agencies see these VPCs: {vpcs}")
 print("Both agencies read the VPC.")'
+
+step "Signing as the restricted IAM 5.0 user"
+# tf-ops's identity policy allows OBS and VPC reads only.
+ops_key="$(terraform output -json ops_key)"
+ops_field() { python3 -c 'import json, sys; print(json.load(sys.stdin)[sys.argv[1]])' "$1" <<<"$ops_key"; }
+restricted() {
+	TF_VAR_access_key="$(ops_field access_key)" TF_VAR_secret_key="$(ops_field secret_key)" \
+		terraform -chdir=restricted "$@" -auto-approve -no-color >"$work/restricted.txt" 2>&1
+}
+restricted apply || {
+	cat "$work/restricted.txt"
+	exit 1
+}
+vpcs="$(terraform -chdir=restricted output -raw vpcs)"
+if [[ $vpcs != 1 ]]; then
+	echo "tf-ops sees $vpcs VPCs, not the scenario's one" >&2
+	exit 1
+fi
+echo "tf-ops reads the VPC."
+if [[ $iam == enforce ]]; then
+	# What the policy does not allow is denied, with the action named.
+	denied() {
+		local var="$1" action="$2"
+		if restricted apply -var "$var=true"; then
+			echo "tf-ops was allowed $action" >&2
+			exit 1
+		fi
+		if ! grep -q "Policy doesn't allow $action to be performed" "$work/restricted.txt"; then
+			cat "$work/restricted.txt"
+			echo "tf-ops's $action failed, but not with a denial" >&2
+			exit 1
+		fi
+		echo "tf-ops is denied $action."
+	}
+	denied create_vpc vpc:vpcs:create
+	denied read_ecs ecs:cloudServers:listServersDetails
+fi
+restricted destroy || {
+	cat "$work/restricted.txt"
+	exit 1
+}
 
 step "terraform plan (must show no changes)"
 set +e

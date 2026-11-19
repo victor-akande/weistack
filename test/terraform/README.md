@@ -28,9 +28,13 @@ the real cloud.
    (`assume/main.tf`): once through classic IAM (`domain_name`), once
    through STS (`domain_id`), and reads the scenario's VPC with each set
    of temporary credentials.
-3. A second `terraform plan` must find no changes. This catches every read
+3. The IAM 5.0 user signs with its own key (`restricted/main.tf`). Its
+   policy allows OBS and VPC reads, and it reads the scenario's VPC. With
+   `-iam=enforce`, creating a VPC and listing ECS servers must both be
+   denied with `Policy doesn't allow <action> to be performed.`
+4. A second `terraform plan` must find no changes. This catches every read
    that disagrees with what was written.
-4. `terraform destroy` deletes everything, and the emulator must hold
+5. `terraform destroy` deletes everything, and the emulator must hold
    nothing but what outlives a project's resources in the cloud: job
    history, public images, the default security group, and the accounts'
    projects and root users.
