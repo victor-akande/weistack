@@ -1,0 +1,98 @@
+name: Action
+
+# Tests the GitHub Action (action.yml at the repository root) on every
+# runner OS, with a binary built from this commit.
+
+on:
+  pull_request:
+    paths:
+      - action.yml
+      - .github/workflows/action.yml
+      - cmd/**
+      - internal/app/**
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: action-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  GO_VERSION: "1.27.x"
+
+jobs:
+  smoke:
+    name: smoke (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Build WeiStack
+        shell: bash
+        run: go build -o "bin/weistack$([[ $RUNNER_OS == Windows ]] && echo .exe)" ./cmd/weistack
+      - name: Start it with the action
+        id: weistack
+        uses: ./
+        with:
+          binary: ${{ runner.os == 'Windows' && 'bin/weistack.exe' || 'bin/weistack' }}
+          lifecycle-delay: 0s
+      - name: Call VPC through the proxy, and check the exports
+        shell: bash
+        env:
+          ENDPOINT: ${{ steps.weistack.outputs.endpoint }}
+          PROJECT_ID: ${{ steps.weistack.outputs.project-id }}
+          CA_FILE: ${{ steps.weistack.outputs.ca-file }}
+        run: |
+          set -euo pipefail
+          for v in HW_ACCESS_KEY HW_SECRET_KEY HUAWEICLOUD_SDK_AK HUAWEICLOUD_SDK_SK HW_REGION_NAME HW_PROJECT_ID HTTPS_PROXY WEISTACK_CA_FILE; do
+            [[ -n ${!v:-} ]] || { echo "::error::$v is not set"; exit 1; }
+          done
+          [[ $HW_PROJECT_ID == "$PROJECT_ID" && ${#PROJECT_ID} -eq 32 ]]
+          # Huawei Cloud's real endpoint, answered by WeiStack and verified
+          # with its CA.
+          curl -fsS --cacert "$CA_FILE" -x "$HTTPS_PROXY" \
+            "https://vpc.ap-southeast-1.myhuaweicloud.com/v1/$PROJECT_ID/vpcs" | tee /dev/stderr | grep -q '"vpcs"'
+          curl -fsS "$ENDPOINT/_weistack/health"
+
+  sdk-enforce:
+    name: sdk (enforce, through the action)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: |
+            go.sum
+            test/sdk/go.sum
+      - name: Build WeiStack
+        run: go build -o bin/weistack ./cmd/weistack
+      - name: Start it with the action, credentials enforced
+        id: weistack
+        uses: ./
+        with:
+          binary: bin/weistack
+          iam: enforce
+      - name: The SDK suite, signed with the keys the action exported
+        working-directory: test/sdk
+        env:
+          WEISTACK_ADDR: 127.0.0.1:8780
+          WEISTACK_SDK_IAM: enforce
+        run: |
+          WEISTACK_PROJECT_ID="$HW_PROJECT_ID" WEISTACK_SDK_AK="$HW_ACCESS_KEY" WEISTACK_SDK_SK="$HW_SECRET_KEY" \
+            go test -count=1 ./...
+      - name: WeiStack's log
+        if: failure()
+        run: tail -n 100 "${{ steps.weistack.outputs.log-file }}"
