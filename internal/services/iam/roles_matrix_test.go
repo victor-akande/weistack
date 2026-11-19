@@ -1,6 +1,7 @@
 package iam
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/victor-akande/weistack/internal/core/actions"
@@ -106,9 +107,26 @@ func TestSystemRolesOBSMatrix(t *testing.T) {
 	})
 }
 
+// ofService reports whether a classic permission of svc covers an action:
+// its name is the service's, or one of its classic aliases is. EIP's
+// actions (eip:publicIps:*) keep the classic names vpc:publicIps:*, so
+// VPC's system permissions grant them, as on Huawei Cloud.
+func ofService(a actions.Action, svc string) bool {
+	if strings.HasPrefix(a.Name, svc+":") {
+		return true
+	}
+	for _, alias := range a.Aliases {
+		if strings.HasPrefix(alias, svc+":") {
+			return true
+		}
+	}
+	return false
+}
+
 // ReadOnlyAccess permissions allow exactly the documented list and read
 // actions of their service; FullAccess allows every action of it and no
-// other service's.
+// other service's. An action of another service whose classic alias is
+// this service's counts as this service's.
 func TestSystemRolesByAccessLevel(t *testing.T) {
 	t.Parallel()
 	for svc, names := range map[string][2]string{
@@ -119,7 +137,7 @@ func TestSystemRolesByAccessLevel(t *testing.T) {
 		"rds": {"RDS ReadOnlyAccess", "RDS FullAccess"},
 	} {
 		for _, a := range actions.All() {
-			inService := a.Name[:len(svc)+1] == svc+":"
+			inService := ofService(a, svc)
 			read := a.Level == actions.List || a.Level == actions.Read
 			if got := systemAllows(t, names[0], a.Name); got != (inService && read) {
 				t.Errorf("%s allows %s (%s) = %v", names[0], a.Name, a.Level, got)
