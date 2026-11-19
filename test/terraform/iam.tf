@@ -147,3 +147,13 @@ output "iam" {
     v5_key_status     = huaweicloud_identityv5_access_key.ops.status
   }
 }
+
+# The IAM 5.0 user's key, for restricted/main.tf: its policy allows OBS
+# and VPC reads only.
+output "ops_key" {
+  sensitive = true
+  value = {
+    access_key = huaweicloud_identityv5_access_key.ops.access_key_id
+    secret_key = huaweicloud_identityv5_access_key.ops.secret_access_key
+  }
+}
