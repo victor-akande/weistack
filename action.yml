@@ -194,7 +194,8 @@ runs:
         if ($env:INPUT_SERVICES) { $flags += @('-services', $env:INPUT_SERVICES) }
         if ($env:INPUT_DELAY) { $flags += @('-lifecycle-delay', $env:INPUT_DELAY) }
         if ($env:INPUT_ARGS) { $flags += $env:INPUT_ARGS -split '\s+' }
-        $p = Start-Process -FilePath $env:BIN -ArgumentList $flags -NoNewWindow -PassThru `
+        # A hidden window of its own, so that it outlives this step.
+        $p = Start-Process -FilePath $env:BIN -ArgumentList $flags -WindowStyle Hidden -PassThru `
           -RedirectStandardOutput "$env:HOME_DIR/weistack.out.log" -RedirectStandardError "$env:HOME_DIR/weistack.log"
         Set-Content -Path "$env:HOME_DIR/weistack.pid" -Value $p.Id
 
@@ -218,6 +219,10 @@ runs:
         if ! curl -fsS "$endpoint/_weistack/health" >/dev/null 2>&1; then
           echo "::error::WeiStack did not start"
           cat "$HOME_DIR"/weistack*.log || true
+          if [[ $RUNNER_OS == Windows ]]; then
+            tasklist //FI "IMAGENAME eq weistack.exe" || true
+            netstat -ano | grep ":$INPUT_PORT " || true
+          fi
           exit 1
         fi
         exports="$("$BIN" credentials -tls-dir "$HOME_DIR/tls" 2>/dev/null)"
