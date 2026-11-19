@@ -110,6 +110,9 @@ out = {k: v["value"] for k, v in json.loads(sys.argv[1]).items()}
 want = {"server_status": "ACTIVE", "rds_status": "ACTIVE",
         "bucket_domain": "tf-assets-bucket.obs.ap-southeast-1.myhuaweicloud.com",
         "kms": {"key_state": "2", "rotation": True, "data_key_chars": 128, "grant_creator": True},
+        "eip": {"attached_port_match": True, "eips_count": 2,
+                "shared_bw_type": "WHOLE", "shared_bw_size": 5, "shared_bw_eips": 1,
+                "edge_status": "ACTIVE", "edge_has_public_ip": True},
         "iam": {"v5_policy_type": "custom", "access_key_status": "active",
                 "v5_policy_version": "v1", "v5_key_status": "active"}}
 bad = {k: out.get(k) for k, v in want.items() if out.get(k) != v}
