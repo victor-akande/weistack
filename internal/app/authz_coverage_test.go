@@ -69,7 +69,20 @@ func init() {
 
 var paramRE = regexp.MustCompile(`\{[^}]+\}`)
 
-func TestEveryRouteIsAuthorized(t *testing.T) {
+// probe is one route called by a principal that holds nothing.
+type probe struct {
+	service, version string
+	method, route    string
+	gate             *authz.Gate
+	res              *httptest.ResponseRecorder
+}
+
+// probeRoutes calls every route of every service under -iam=enforce, as
+// a principal without permissions, with body as the request body, in
+// order of service and path. OBS's catch-all route is called once, with
+// GET.
+func probeRoutes(t *testing.T, body string, visit func(probe)) {
+	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	acct, err := identity.NewAccount()
 	if err != nil {
@@ -95,8 +108,8 @@ func TestEveryRouteIsAuthorized(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sort.Slice(services, func(i, j int) bool { return services[i].Name() < services[j].Name() })
 
-	seen := map[string]bool{}
 	for _, svc := range services {
 		r := chi.NewRouter()
 		svc.Routes(r)
@@ -111,34 +124,40 @@ func TestEveryRouteIsAuthorized(t *testing.T) {
 		for _, mr := range routes {
 			method, route := mr[0], mr[1]
 			if svc.Name() == "obs" && method != http.MethodGet {
-				continue // one catch-all route; checked below by operation
+				continue // one catch-all route
 			}
-			name := svc.Name() + " " + method + " " + route
-			seen[name] = true
 			path := paramRE.ReplaceAllString(strings.ReplaceAll(route, "/*", "/bucket/key"), "p1")
 			gate := authz.NewGate(authz.GateOptions{
 				Principal: identity.Principal{AccountID: acct.ID, UserID: "u1", UserName: "nobody"},
 				Account:   acct.ID, Provider: noGrants{}, Sealer: vlt, Log: log,
 			})
-			req := httptest.NewRequest(method, path, strings.NewReader("{}"))
+			req := httptest.NewRequest(method, path, strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			ctx := reqctx.With(req.Context(), &reqctx.Info{RequestID: "r", Service: svc.Name(), Region: cfg.Region})
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req.WithContext(authz.WithGate(ctx, gate)))
-
-			if !gate.Consulted() {
-				t.Errorf("%s: no action declared", name)
-				continue
-			}
-			_, open := openRoutes[name]
-			switch {
-			case w.Code == http.StatusForbidden && open:
-				t.Errorf("%s: listed as open but refused", name)
-			case w.Code != http.StatusForbidden && !open:
-				t.Errorf("%s: a principal without permissions got %d %s", name, w.Code, w.Body)
-			}
+			visit(probe{service: svc.Name(), version: svc.Version(), method: method, route: route, gate: gate, res: w})
 		}
 	}
+}
+
+func TestEveryRouteIsAuthorized(t *testing.T) {
+	seen := map[string]bool{}
+	probeRoutes(t, "{}", func(p probe) {
+		name := p.service + " " + p.method + " " + p.route
+		seen[name] = true
+		if !p.gate.Consulted() {
+			t.Errorf("%s: no action declared", name)
+			return
+		}
+		_, open := openRoutes[name]
+		switch {
+		case p.res.Code == http.StatusForbidden && open:
+			t.Errorf("%s: listed as open but refused", name)
+		case p.res.Code != http.StatusForbidden && !open:
+			t.Errorf("%s: a principal without permissions got %d %s", name, p.res.Code, p.res.Body)
+		}
+	})
 	for name := range openRoutes {
 		if !seen[name] {
 			t.Errorf("open route %q does not exist", name)

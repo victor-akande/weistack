@@ -6,7 +6,7 @@
 *.out
 
 # Coverage and profiling
-coverage.*
+/coverage.*
 *.prof
 
 # Local emulator state

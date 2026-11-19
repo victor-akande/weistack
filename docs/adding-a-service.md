@@ -85,6 +85,9 @@ Rules that keep the emulator correct under load:
 3. Service rules have table-driven unit tests.
 4. An SDK integration test exercises it through the official client.
 5. The operation is listed in the service's coverage table under `docs/`.
+6. [`docs/coverage.md`](coverage.md) is regenerated with
+   `go test ./internal/app -run TestCoverageDoc -update`. The test fails
+   while the page is out of date.
 
 Anything not implemented must fall through to the default handler, which
 returns `501 WeiStack.0501` naming the operation.
