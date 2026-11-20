@@ -1,0 +1,1 @@
+{"source": "docs", "status": 404, "body": {"request_id": "<hex32>", "error_code": "NAT.1002", "error_msg": "TransitIp 00000000-0000-4000-8000-000000000000 could not be found."}}

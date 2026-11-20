@@ -1,0 +1,8 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "request_id": "<hex32>",
+    "tags": []
+  }
+}

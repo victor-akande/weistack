@@ -1,0 +1,17 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "request_id": "<hex32>",
+    "tags": [
+      {
+        "key": "key1",
+        "values": ["value1", "value2"]
+      },
+      {
+        "key": "key2",
+        "values": ["value1", "value2"]
+      }
+    ]
+  }
+}

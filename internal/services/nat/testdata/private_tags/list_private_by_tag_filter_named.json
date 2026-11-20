@@ -1,0 +1,19 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "resources": [
+      {
+        "resource_detail": null,
+        "resource_id": "<uuid>",
+        "resource_name": "res-1",
+        "tags": [
+          {"key": "key1", "value": "value1"},
+          {"key": "key2", "value": "value1"}
+        ]
+      }
+    ],
+    "request_id": "<hex32>",
+    "total_count": 1
+  }
+}
