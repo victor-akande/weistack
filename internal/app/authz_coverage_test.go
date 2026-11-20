@@ -50,6 +50,8 @@ var openRoutes = map[string]string{
 	"rds POST /v3/{project_id}/instances/{instance_id}/action":       "checked once the body names the action",
 	"sts GET /v5/caller-identity":                                    "documented: no permission needed",
 	"sts POST /v5/agencies/assume":                                   "checked once the body names the agency",
+	"nat GET /v2/{project_id}/nat_gateway_specs":                     "documented: no permission needed",
+	"nat GET /v3/{project_id}/private-nat/specs":                     "documented: no permission needed",
 }
 
 // KMS names the key in the body of most operations, and checks the

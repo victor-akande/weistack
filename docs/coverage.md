@@ -16,6 +16,7 @@ A request for anything else answers `501 WeiStack.0501`. The pages under
 | [IAM](#iam) | v3, v3.0, v5 (users, groups, tokens, access keys, roles, custom policies, role assignments, identity policies) | 131 |
 | [IMS](#ims) | v1, v2 | 6 |
 | [KMS](#kms) | v1.0 (keys, encryption, data keys, rotation, tags) | 38 |
+| [NAT](#nat) | v2 (public), v3 (private, tags) | 72 |
 | [OBS](#obs) | S3-compatible | 31 |
 | [RDS](#rds) | v3 | 11 |
 | [STS](#sts) | v5 (caller identity, authorization messages, assuming agencies) | 3 |
@@ -256,6 +257,85 @@ Endpoint: `kms.{region}.myhuaweicloud.com`. Details: [KMS](services/kms.md).
 | `DELETE` | `/v1.0/{project_id}/kms/{key_id}/tags/{key}` | `kms:cmk:deleteTag` |
 | `GET` | `/v1.0/{project_id}/kms/{key_id}/tags` | `kms:cmk:getTags` |
 | `POST` | `/v1.0/{project_id}/kms/{key_id}/tags` | `kms:cmk:createTag` |
+
+## NAT
+
+Endpoint: `nat.{region}.myhuaweicloud.com`.
+
+| Method | Path | IAM action |
+| --- | --- | --- |
+| `POST` | `/v2.0/{project_id}/nat_gateways/resource_instances/action` | `nat:natGateways:listTags` |
+| `GET` | `/v2.0/{project_id}/nat_gateways/tags` | `nat:natGateways:listTags` |
+| `POST` | `/v2.0/{project_id}/nat_gateways/{nat_gateway_id}/tags/action` | `nat:natGateways:createTags` |
+| `DELETE` | `/v2.0/{project_id}/nat_gateways/{nat_gateway_id}/tags/{key}` | `nat:natGateways:deleteTags` |
+| `GET` | `/v2.0/{project_id}/nat_gateways/{nat_gateway_id}/tags` | `nat:natGateways:listTags` |
+| `POST` | `/v2.0/{project_id}/nat_gateways/{nat_gateway_id}/tags` | `nat:natGateways:createTags` |
+| `POST` | `/v2/{project_id}/dnat_rules/batch` | `nat:dnatRules:create` |
+| `GET` | `/v2/{project_id}/dnat_rules/{dnat_rule_id}` | `nat:dnatRules:get` |
+| `PUT` | `/v2/{project_id}/dnat_rules/{dnat_rule_id}` | `nat:dnatRules:update` |
+| `GET` | `/v2/{project_id}/dnat_rules` | `nat:dnatRules:list` |
+| `POST` | `/v2/{project_id}/dnat_rules` | `nat:dnatRules:create` |
+| `GET` | `/v2/{project_id}/nat_gateway_specs` | None needed |
+| `DELETE` | `/v2/{project_id}/nat_gateways/{nat_gateway_id}/dnat_rules/{dnat_rule_id}` | `nat:dnatRules:delete` |
+| `DELETE` | `/v2/{project_id}/nat_gateways/{nat_gateway_id}/snat_rules/{snat_rule_id}` | `nat:snatRules:delete` |
+| `DELETE` | `/v2/{project_id}/nat_gateways/{nat_gateway_id}` | `nat:natGateways:delete` |
+| `GET` | `/v2/{project_id}/nat_gateways/{nat_gateway_id}` | `nat:natGateways:get` |
+| `PUT` | `/v2/{project_id}/nat_gateways/{nat_gateway_id}` | `nat:natGateways:update` |
+| `GET` | `/v2/{project_id}/nat_gateways` | `nat:natGateways:list` |
+| `POST` | `/v2/{project_id}/nat_gateways` | `nat:natGateways:create` |
+| `GET` | `/v2/{project_id}/snat_rules/{snat_rule_id}` | `nat:snatRules:get` |
+| `PUT` | `/v2/{project_id}/snat_rules/{snat_rule_id}` | `nat:snatRules:update` |
+| `GET` | `/v2/{project_id}/snat_rules` | `nat:snatRules:list` |
+| `POST` | `/v2/{project_id}/snat_rules` | `nat:snatRules:create` |
+| `POST` | `/v3/{project_id}/nat_gateways/resource_instances/action` | `nat:natGateways:listTags` |
+| `GET` | `/v3/{project_id}/nat_gateways/tags` | `nat:natGateways:listTags` |
+| `POST` | `/v3/{project_id}/nat_gateways/{nat_gateway_id}/tags/action` | `nat:natGateways:createTags` |
+| `DELETE` | `/v3/{project_id}/nat_gateways/{nat_gateway_id}/tags/{key}` | `nat:natGateways:deleteTags` |
+| `GET` | `/v3/{project_id}/nat_gateways/{nat_gateway_id}/tags` | `nat:natGateways:listTags` |
+| `POST` | `/v3/{project_id}/nat_gateways/{nat_gateway_id}/tags` | `nat:natGateways:createTags` |
+| `POST` | `/v3/{project_id}/private-nat-gateways/resource_instances/action` | `nat:privateNatGateways:listTags` |
+| `GET` | `/v3/{project_id}/private-nat-gateways/tags` | `nat:privateNatGateways:listTags` |
+| `POST` | `/v3/{project_id}/private-nat-gateways/{resource_id}/tags/action` | `nat:privateNatGateways:createTags` |
+| `DELETE` | `/v3/{project_id}/private-nat-gateways/{resource_id}/tags/{key}` | `nat:privateNatGateways:deleteTags` |
+| `GET` | `/v3/{project_id}/private-nat-gateways/{resource_id}/tags` | `nat:privateNatGateways:listTags` |
+| `POST` | `/v3/{project_id}/private-nat-gateways/{resource_id}/tags` | `nat:privateNatGateways:createTags` |
+| `DELETE` | `/v3/{project_id}/private-nat/dnat-rules/{dnat_rule_id}` | `nat:privateNatDnatRules:delete` |
+| `GET` | `/v3/{project_id}/private-nat/dnat-rules/{dnat_rule_id}` | `nat:privateNatDnatRules:get` |
+| `PUT` | `/v3/{project_id}/private-nat/dnat-rules/{dnat_rule_id}` | `nat:privateNatDnatRules:update` |
+| `GET` | `/v3/{project_id}/private-nat/dnat-rules` | `nat:privateNatDnatRules:list` |
+| `POST` | `/v3/{project_id}/private-nat/dnat-rules` | `nat:privateNatDnatRules:create` |
+| `DELETE` | `/v3/{project_id}/private-nat/gateways/{gateway_id}` | `nat:privateNatGateways:delete` |
+| `GET` | `/v3/{project_id}/private-nat/gateways/{gateway_id}` | `nat:privateNatGateways:get` |
+| `PUT` | `/v3/{project_id}/private-nat/gateways/{gateway_id}` | `nat:privateNatGateways:update` |
+| `GET` | `/v3/{project_id}/private-nat/gateways` | `nat:privateNatGateways:list` |
+| `POST` | `/v3/{project_id}/private-nat/gateways` | `nat:privateNatGateways:create` |
+| `DELETE` | `/v3/{project_id}/private-nat/snat-rules/{snat_rule_id}` | `nat:privateNatSnatRules:delete` |
+| `GET` | `/v3/{project_id}/private-nat/snat-rules/{snat_rule_id}` | `nat:privateNatSnatRules:get` |
+| `PUT` | `/v3/{project_id}/private-nat/snat-rules/{snat_rule_id}` | `nat:privateNatSnatRules:update` |
+| `GET` | `/v3/{project_id}/private-nat/snat-rules` | `nat:privateNatSnatRules:list` |
+| `POST` | `/v3/{project_id}/private-nat/snat-rules` | `nat:privateNatSnatRules:create` |
+| `GET` | `/v3/{project_id}/private-nat/specs` | None needed |
+| `DELETE` | `/v3/{project_id}/private-nat/transit-ips/{transit_ip_id}` | `nat:privateNatTransitIps:delete` |
+| `GET` | `/v3/{project_id}/private-nat/transit-ips/{transit_ip_id}` | `nat:privateNatTransitIps:get` |
+| `GET` | `/v3/{project_id}/private-nat/transit-ips` | `nat:privateNatTransitIps:list` |
+| `POST` | `/v3/{project_id}/private-nat/transit-ips` | `nat:privateNatTransitIps:create` |
+| `DELETE` | `/v3/{project_id}/private-nat/transit-subnets/{transit_subnet_id}` | `nat:transitSubnets:delete` |
+| `GET` | `/v3/{project_id}/private-nat/transit-subnets/{transit_subnet_id}` | `nat:transitSubnets:get` |
+| `PUT` | `/v3/{project_id}/private-nat/transit-subnets/{transit_subnet_id}` | `nat:transitSubnets:update` |
+| `GET` | `/v3/{project_id}/private-nat/transit-subnets` | `nat:transitSubnets:list` |
+| `POST` | `/v3/{project_id}/private-nat/transit-subnets` | `nat:transitSubnets:create` |
+| `POST` | `/v3/{project_id}/transit-ips/resource_instances/action` | `nat:privateNatTransitIps:listTags` |
+| `GET` | `/v3/{project_id}/transit-ips/tags` | `nat:privateNatTransitIps:listTags` |
+| `POST` | `/v3/{project_id}/transit-ips/{resource_id}/tags/action` | `nat:privateNatTransitIps:createTags` |
+| `DELETE` | `/v3/{project_id}/transit-ips/{resource_id}/tags/{key}` | `nat:privateNatTransitIps:deleteTags` |
+| `GET` | `/v3/{project_id}/transit-ips/{resource_id}/tags` | `nat:privateNatTransitIps:listTags` |
+| `POST` | `/v3/{project_id}/transit-ips/{resource_id}/tags` | `nat:privateNatTransitIps:createTags` |
+| `POST` | `/v3/{project_id}/transit-subnets/resource_instances/action` | `nat:transitSubnets:listTags` |
+| `GET` | `/v3/{project_id}/transit-subnets/tags` | `nat:transitSubnets:listTags` |
+| `POST` | `/v3/{project_id}/transit-subnets/{resource_id}/tags/action` | `nat:transitSubnets:createTags` |
+| `DELETE` | `/v3/{project_id}/transit-subnets/{resource_id}/tags/{key}` | `nat:transitSubnets:deleteTags` |
+| `GET` | `/v3/{project_id}/transit-subnets/{resource_id}/tags` | `nat:transitSubnets:listTags` |
+| `POST` | `/v3/{project_id}/transit-subnets/{resource_id}/tags` | `nat:transitSubnets:createTags` |
 
 ## OBS
 

@@ -37,6 +37,7 @@ import (
 	"github.com/victor-akande/weistack/internal/services/iam"
 	"github.com/victor-akande/weistack/internal/services/ims"
 	"github.com/victor-akande/weistack/internal/services/kms"
+	"github.com/victor-akande/weistack/internal/services/nat"
 	"github.com/victor-akande/weistack/internal/services/obs"
 	"github.com/victor-akande/weistack/internal/services/rds"
 	"github.com/victor-akande/weistack/internal/services/sts"
@@ -374,6 +375,14 @@ func buildServices(
 	// VPC shows the NICs of ECS servers as ports.
 	vpcSvc.SetPorts(ecsSvc)
 
+	natSvc, err := nat.New(nat.Deps{Store: st, Engine: engine, IDs: gen, Logger: log, VPC: vpcSvc, EIPs: eipSvc})
+	if err != nil {
+		return nil, err
+	}
+	if err := natSvc.Resume(ctx); err != nil {
+		return nil, err
+	}
+
 	// EVS shows the disks of ECS servers.
 	evsSvc, err := evs.New(evs.Deps{Logger: log, Volumes: ecsSvc})
 	if err != nil {
@@ -412,7 +421,7 @@ func buildServices(
 	if err != nil {
 		return nil, err
 	}
-	return []server.Service{vpcSvc, imsSvc, ecsSvc, evsSvc, obsSvc, rdsSvc, iamSvc, stsSvc, epsSvc, kmsSvc}, nil
+	return []server.Service{vpcSvc, natSvc, imsSvc, ecsSvc, evsSvc, obsSvc, rdsSvc, iamSvc, stsSvc, epsSvc, kmsSvc}, nil
 }
 
 // objectDataDir returns the directory for OBS object bodies and a
