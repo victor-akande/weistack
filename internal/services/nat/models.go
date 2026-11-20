@@ -148,15 +148,15 @@ type privateSpec struct {
 	SessMax int    `json:"sess_max"`
 	BpsMax  int    `json:"bps_max"`
 	PpsMax  int    `json:"pps_max"`
-	QpsMax  int    `json:"qps_max"`
+	QPSMax  int    `json:"qps_max"`
 }
 
 var privateSpecs = []privateSpec{
-	{Name: "Small", Code: "1", CBCCode: "privatenat_small", RuleMax: 20, SessMax: 2000, BpsMax: 233, PpsMax: 20000, QpsMax: 6000},
-	{Name: "Medium", Code: "2", CBCCode: "privatenat_medium", RuleMax: 50, SessMax: 5000, BpsMax: 584, PpsMax: 50000, QpsMax: 9000},
-	{Name: "Large", Code: "3", CBCCode: "privatenat_large", RuleMax: 200, SessMax: 20000, BpsMax: 2336, PpsMax: 200000, QpsMax: 10000},
-	{Name: "Extra-large", Code: "4", CBCCode: "privatenat_xlarge", RuleMax: 500, SessMax: 50000, BpsMax: 5840, PpsMax: 500000, QpsMax: 10000},
-	{Name: "Extra-xlarge", Code: "5", CBCCode: "privatenat_xxlarge", RuleMax: 5000, SessMax: 500000, BpsMax: 58400, PpsMax: 5000000, QpsMax: 100000},
+	{Name: "Small", Code: "1", CBCCode: "privatenat_small", RuleMax: 20, SessMax: 2000, BpsMax: 233, PpsMax: 20000, QPSMax: 6000},
+	{Name: "Medium", Code: "2", CBCCode: "privatenat_medium", RuleMax: 50, SessMax: 5000, BpsMax: 584, PpsMax: 50000, QPSMax: 9000},
+	{Name: "Large", Code: "3", CBCCode: "privatenat_large", RuleMax: 200, SessMax: 20000, BpsMax: 2336, PpsMax: 200000, QPSMax: 10000},
+	{Name: "Extra-large", Code: "4", CBCCode: "privatenat_xlarge", RuleMax: 500, SessMax: 50000, BpsMax: 5840, PpsMax: 500000, QPSMax: 10000},
+	{Name: "Extra-xlarge", Code: "5", CBCCode: "privatenat_xxlarge", RuleMax: 5000, SessMax: 500000, BpsMax: 58400, PpsMax: 5000000, QPSMax: 100000},
 }
 
 // pageInfo mirrors the private NAT pagination response object (§3).
