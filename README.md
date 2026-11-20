@@ -23,7 +23,8 @@ access keys, classic permissions with their assignments (including the
 default [enterprise project](docs/services/eps.md)), IAM 5.0 identity
 policies, agencies, and temporary credentials (IAM's securitytokens and
 STS's AssumeAgency), [KMS](docs/services/kms.md) keys with real
-cryptography, and [EIP](docs/services/eip.md) elastic IPs and bandwidths.
+cryptography, [EIP](docs/services/eip.md) elastic IPs and bandwidths,
+and [NAT](docs/services/nat.md) public and private NAT gateways.
 [Coverage](docs/coverage.md) lists every operation served, with the IAM
 action that authorizes it.
 

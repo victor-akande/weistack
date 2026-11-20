@@ -36,6 +36,7 @@ The kinds of transition:
 | RDS | `rds.instance.create`, `rds.instance.delete`, `rds.instance.restart`, `rds.instance.resize`, `rds.instance.enlarge`, `rds.instance.backup` |
 | IMS | `ims.image.save`, `ims.image.activate` |
 | VPC | `vpc.vpc.create`, `vpc.subnet.create` |
+| NAT | `nat.gateway.create`, `nat.snat.create`, `nat.dnat.create` (leaves the gateway or rule `INACTIVE`) |
 
 ### Request faults
 

@@ -260,7 +260,7 @@ Endpoint: `kms.{region}.myhuaweicloud.com`. Details: [KMS](services/kms.md).
 
 ## NAT
 
-Endpoint: `nat.{region}.myhuaweicloud.com`.
+Endpoint: `nat.{region}.myhuaweicloud.com`. Details: [NAT](services/nat.md).
 
 | Method | Path | IAM action |
 | --- | --- | --- |
