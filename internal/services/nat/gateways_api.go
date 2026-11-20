@@ -9,7 +9,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/victor-akande/weistack/internal/core/apierr"
 	"github.com/victor-akande/weistack/internal/core/httpx"
 	"github.com/victor-akande/weistack/internal/core/pagination"
 )
@@ -105,6 +104,12 @@ type natGatewayEnvelope struct {
 type listNatGatewaysResponse struct {
 	NatGateways []natGatewayResponseBody `json:"nat_gateways"`
 }
+
+type listNatGatewaySpecsResponse struct {
+	Specs []string `json:"specs"`
+}
+
+var publicCreateableSpecs = []string{"1", "2", "3", "4"}
 
 func hasJSONValue(raw *json.RawMessage) bool {
 	if raw == nil {
@@ -268,6 +273,8 @@ func (s *Service) handleDeleteNatGateway(w http.ResponseWriter, r *http.Request,
 	return nil
 }
 
-func (s *Service) handleListNatGatewaySpecs(_ http.ResponseWriter, _ *http.Request, _ Tenant) error {
-	return apierr.NotImplemented("nat", "ListNatGatewaySpecs")
+func (s *Service) handleListNatGatewaySpecs(w http.ResponseWriter, _ *http.Request, _ Tenant) error {
+	return httpx.WriteJSON(w, http.StatusOK, listNatGatewaySpecsResponse{
+		Specs: publicCreateableSpecs,
+	})
 }

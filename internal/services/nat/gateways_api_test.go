@@ -8,6 +8,13 @@ import (
 	"testing"
 )
 
+func TestListNatGatewaySpecs(t *testing.T) {
+	t.Parallel()
+	e := newGWEnvWithDelay(t, 0)
+
+	e.expect(t, "list_specs", http.MethodGet, "/nat_gateway_specs", "")
+}
+
 func TestGatewayLifecycleMatchesGoldenFiles(t *testing.T) {
 	t.Parallel()
 	e := newGWEnv(t)

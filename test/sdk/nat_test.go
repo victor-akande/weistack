@@ -58,18 +58,30 @@ func v20TagDef(d *def.HttpRequestDef) *def.HttpRequestDef {
 }
 
 // TestPublicNatGatewayLifecycle drives §3.1 through the official NAT v2
-// SDK: creating public NAT gateways in a real VPC and subnet (with
-// automatic and explicit ngport_ip_address allocation, session_conf,
-// tags, and spec limits), PENDING_CREATE -> ACTIVE transitions, Show,
-// List with filters and marker/limit pagination, Update (name,
-// description, spec, session_conf), Delete (including subnet IP
-// release), and all §3.1 validation error cases.
-//
-// Note: ListNatGatewaySpecs is omitted pending resolution of the §3.1
-// response shape question on BOARD.md (#22/#23).
+// SDK: ListNatGatewaySpecs, creating public NAT gateways in a real VPC
+// and subnet (with automatic and explicit ngport_ip_address allocation,
+// session_conf, tags, and spec limits), PENDING_CREATE -> ACTIVE
+// transitions, Show, List with filters and marker/limit pagination,
+// Update (name, description, spec, session_conf), Delete (including
+// subnet IP release), and all §3.1 validation error cases.
 func TestPublicNatGatewayLifecycle(t *testing.T) {
 	c := newNAT(t)
 	net2 := newV2(t, realEndpoint)
+
+	// --- ListNatGatewaySpecs (§3.1) -----------------------------------
+	specsRes, err := c.ListNatGatewaySpecs(&nat.ListNatGatewaySpecsRequest{})
+	if err != nil || specsRes.Specs == nil {
+		t.Fatalf("ListNatGatewaySpecs: %+v, %v", specsRes, err)
+	}
+	wantSpecs := []string{"1", "2", "3", "4"}
+	if len(*specsRes.Specs) != len(wantSpecs) {
+		t.Fatalf("ListNatGatewaySpecs = %+v, want %v", *specsRes.Specs, wantSpecs)
+	}
+	for i, w := range wantSpecs {
+		if got := (*specsRes.Specs)[i].Value(); got != w {
+			t.Errorf("ListNatGatewaySpecs[%d] = %q, want %q", i, got, w)
+		}
+	}
 
 	// --- Set up two VPCs and subnets to test cross-VPC and IP allocation ---
 	vc1, err := net2.CreateVpc(&v2.CreateVpcRequest{Body: &v2.CreateVpcRequestBody{Vpc: &v2.CreateVpcOption{
