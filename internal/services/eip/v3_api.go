@@ -24,11 +24,12 @@ import (
 )
 
 const (
-	v3PublicIPTypeEIP         = "EIP"
-	associateInstanceTypePort = "PORT"
-	billingModePayPerUse      = "PAY_PER_USE"
-	maxDescriptionLen         = 255
-	maxV3Offset               = 99999
+	v3PublicIPTypeEIP          = "EIP"
+	associateInstanceTypePort  = "PORT"
+	associateInstanceTypeNATGW = "NATGW"
+	billingModePayPerUse       = "PAY_PER_USE"
+	maxDescriptionLen          = 255
+	maxV3Offset                = 99999
 )
 
 // v3ListLimits bounds "limit" on v3 list operations: 0 to 2000, 2000 when omitted.
@@ -235,7 +236,7 @@ func validateAssociateInstanceType(typ string) error {
 		return errInvalidV3Input("")
 	case associateInstanceTypePort:
 		return nil
-	case "NATGW", "ELB", "ELBV1", "VPN":
+	case associateInstanceTypeNATGW, "ELB", "ELBV1", "VPN":
 		return apierr.NotImplemented("eip", "associating EIP with "+typ)
 	default:
 		return errInvalidV3Input("")
@@ -262,7 +263,7 @@ func (s *Service) bindPublicIPLocked(ctx context.Context, t Tenant, pip *publicI
 			return errPortAlreadyBound()
 		}
 	}
-	if pip.PortID != "" && pip.PortID != portID {
+	if pip.NATGatewayID != "" || (pip.PortID != "" && pip.PortID != portID) {
 		return errPublicIPAlreadyBound()
 	}
 	if pip.PortID == "" {
@@ -277,9 +278,11 @@ func unbindPublicIPLocked(pip *publicIP) error {
 	if pip.Status == StatusPendingCreate {
 		return errPublicIPBusy()
 	}
-	pip.PortID = ""
-	pip.PrivateIP = ""
-	pip.Status = StatusDown
+	if pip.PortID != "" {
+		pip.PortID = ""
+		pip.PrivateIP = ""
+		pip.Status = StatusDown
+	}
 	return nil
 }
 
@@ -482,6 +485,11 @@ func (s *Service) toPublicIPSingleShowResp(ctx context.Context, t Tenant, p publ
 		pid := p.PortID
 		assocType = &typ
 		assocID = &pid
+	} else if p.NATGatewayID != "" {
+		typ := associateInstanceTypeNATGW
+		gwID := p.NATGatewayID
+		assocType = &typ
+		assocID = &gwID
 	}
 
 	poolName := p.Type
