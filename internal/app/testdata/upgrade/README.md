@@ -20,6 +20,11 @@ written too), and creates through the HTTP API:
 directory and is not committed: v0.1.0 kept it in the data directory, and
 its private key does not belong in the repository. Nothing secret is stored:
 the RDS password is random and WeiStack keeps no copy of it.
+From v0.2.0 the data directory also holds `vault-key.json`, the key that
+seals secrets in the store, and `account.json`, the account's ID and name.
+The key was generated for the fixture and seals nothing in it, since the
+fixture holds no access keys or KMS keys; it is kept because the fixture
+must stay exactly what the release wrote.
 
 **After every release**, add its fixture:
 

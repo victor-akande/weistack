@@ -1,0 +1,2 @@
+{"project": "d7c49167a11eaa6b5278b11a4f53eeda", "vpc": "a3d59d7c-582d-4f3f-9233-71acb51abec2", "subnet": "b538cb2a-69c4-4cff-b44b-112cb217af59", "security_group": "1fea640f-d058-4692-88c3-a2b82fd2643e", "server": "0e003443-fd07-41d8-8060-cf79a34d48f1",
+ "image_job": "667ebe6245a8cd320c3b8235b3437a5d", "bucket": "fixture-bucket", "object": "notes/hello.txt", "bucket_owner": "AKFIXTURE", "rds": "940458b04637eec0d590947d744e0647in01"}
