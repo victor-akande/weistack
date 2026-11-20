@@ -1,0 +1,59 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "specs": [
+      {
+        "name": "Small",
+        "code": "1",
+        "cbc_code": "privatenat_small",
+        "rule_max": 20,
+        "sess_max": 2000,
+        "bps_max": 233,
+        "pps_max": 20000,
+        "qps_max": 6000
+      },
+      {
+        "name": "Medium",
+        "code": "2",
+        "cbc_code": "privatenat_medium",
+        "rule_max": 50,
+        "sess_max": 5000,
+        "bps_max": 584,
+        "pps_max": 50000,
+        "qps_max": 9000
+      },
+      {
+        "name": "Large",
+        "code": "3",
+        "cbc_code": "privatenat_large",
+        "rule_max": 200,
+        "sess_max": 20000,
+        "bps_max": 2336,
+        "pps_max": 200000,
+        "qps_max": 10000
+      },
+      {
+        "name": "Extra-large",
+        "code": "4",
+        "cbc_code": "privatenat_xlarge",
+        "rule_max": 500,
+        "sess_max": 50000,
+        "bps_max": 5840,
+        "pps_max": 500000,
+        "qps_max": 10000
+      },
+      {
+        "name": "Extra-xlarge",
+        "code": "5",
+        "cbc_code": "privatenat_xxlarge",
+        "rule_max": 5000,
+        "sess_max": 500000,
+        "bps_max": 58400,
+        "pps_max": 5000000,
+        "qps_max": 100000
+      }
+    ],
+    "request_id": "<hex32>"
+  }
+}

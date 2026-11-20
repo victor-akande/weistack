@@ -86,7 +86,7 @@ func upsertGatewayTags(g *gateway, add []tag) error {
 		g.Tags = append(g.Tags, tg)
 	}
 	if len(g.Tags) > maxTags {
-		return errTooManyTags(maxTags)
+		return errTooManyTags()
 	}
 	return nil
 }

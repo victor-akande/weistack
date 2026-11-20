@@ -111,7 +111,7 @@ func applySessionConf(dst *sessionConf, in *sessionConfInput) {
 
 func parseCreateGatewayTags(raw []string) ([]tag, error) {
 	if len(raw) > maxTags {
-		return nil, errTooManyTags(maxTags)
+		return nil, errTooManyTags()
 	}
 	if len(raw) == 0 {
 		return nil, nil
