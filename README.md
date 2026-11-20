@@ -98,6 +98,16 @@ easily. Other things to know when running the image:
 
 Or build from source with `make build` (Go 1.26 or later).
 
+### In GitHub Actions
+
+The repository is also a GitHub Action. It starts WeiStack for the rest of
+the job and exports credentials for the SDKs and Terraform; see
+[In GitHub Actions](docs/github-action.md).
+
+```yaml
+- uses: victor-akande/weistack@v0.2.0
+```
+
 ## Releasing
 
 Pushing a version tag such as `v0.1.0` runs

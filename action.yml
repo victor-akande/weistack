@@ -1,0 +1,270 @@
+name: WeiStack
+description: Start WeiStack, a local Huawei Cloud emulator, for the rest of the job, with credentials for the SDKs and Terraform.
+author: victor-akande
+branding:
+  icon: cloud
+  color: red
+
+inputs:
+  version:
+    description: >-
+      The release to run, such as v0.2.0. Defaults to the action's own tag
+      (uses: victor-akande/weistack@v0.2.0 runs v0.2.0), or the latest
+      release when the action is used from a branch.
+    default: ""
+  binary:
+    description: A WeiStack binary already on the runner, used instead of downloading one.
+    default: ""
+  iam:
+    description: "accept (any credentials) or enforce (signatures and permissions are checked)."
+    default: accept
+  services:
+    description: Comma-separated services to enable; all when empty.
+    default: ""
+  region:
+    description: The default region.
+    default: ap-southeast-1
+  project-id:
+    description: The default project ID, 32 hex characters; generated when empty.
+    default: ""
+  port:
+    description: The port to listen on, on 127.0.0.1.
+    default: "8780"
+  lifecycle-delay:
+    description: How long asynchronous transitions take, such as 0s or 2s; WeiStack's default when empty.
+    default: ""
+  proxy:
+    description: >-
+      Export HTTPS_PROXY and HTTP_PROXY so that clients keep Huawei Cloud's
+      real endpoints and reach WeiStack through its proxy. Other hosts are
+      relayed unchanged.
+    default: "true"
+  args:
+    description: Further command-line flags for weistack, such as -persist.
+    default: ""
+  token:
+    description: The token used to download the release.
+    default: ${{ github.token }}
+
+outputs:
+  endpoint:
+    description: WeiStack's address, such as http://127.0.0.1:8780.
+    value: ${{ steps.ready.outputs.endpoint }}
+  region:
+    description: The default region.
+    value: ${{ inputs.region }}
+  project-id:
+    description: The default project ID.
+    value: ${{ steps.config.outputs.project-id }}
+  access-key:
+    description: The administrator's access key.
+    value: ${{ steps.ready.outputs.access-key }}
+  secret-key:
+    description: The administrator's secret key (masked in logs).
+    value: ${{ steps.ready.outputs.secret-key }}
+  ca-file:
+    description: The local CA's certificate (PEM), for clients that verify TLS through the proxy.
+    value: ${{ steps.ready.outputs.ca-file }}
+  log-file:
+    description: WeiStack's log.
+    value: ${{ steps.config.outputs.log-file }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve WeiStack
+      id: config
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_BINARY: ${{ inputs.binary }}
+        INPUT_PROJECT_ID: ${{ inputs.project-id }}
+        ACTION_REF: ${{ github.action_ref }}
+        REPO: victor-akande/weistack
+      run: |
+        set -euo pipefail
+        home="$RUNNER_TEMP/weistack"
+        mkdir -p "$home/bin"
+        case "$RUNNER_OS" in
+          Linux) os=linux ;;
+          macOS) os=darwin ;;
+          Windows) os=windows ;;
+          *) echo "::error::WeiStack has no build for $RUNNER_OS"; exit 1 ;;
+        esac
+        case "$RUNNER_ARCH" in
+          X64) arch=amd64 ;;
+          ARM64) arch=arm64 ;;
+          *) echo "::error::WeiStack has no build for $RUNNER_ARCH"; exit 1 ;;
+        esac
+        exe=""
+        [[ $os == windows ]] && exe=".exe"
+
+        if [[ -n $INPUT_BINARY ]]; then
+          bin="$INPUT_BINARY"
+        else
+          version="$INPUT_VERSION"
+          if [[ -z $version && $ACTION_REF =~ ^v[0-9] ]]; then
+            version="$ACTION_REF"
+          fi
+          if [[ -z $version ]]; then
+            version="$(gh release view --repo "$REPO" --json tagName --jq .tagName)"
+          fi
+          echo "Downloading WeiStack $version for $os/$arch"
+          ext="tar.gz"
+          [[ $os == windows ]] && ext="zip"
+          archive="weistack_${version#v}_${os}_${arch}.$ext"
+          dl="$home/download"
+          rm -rf "$dl" && mkdir -p "$dl"
+          gh release download "$version" --repo "$REPO" --dir "$dl" --pattern "$archive" --pattern checksums.txt
+          # The archive must match the release's checksum.
+          want="$(grep " $archive\$" "$dl/checksums.txt" | cut -d' ' -f1)"
+          if command -v sha256sum >/dev/null; then
+            got="$(sha256sum "$dl/$archive" | cut -d' ' -f1)"
+          else
+            got="$(shasum -a 256 "$dl/$archive" | cut -d' ' -f1)"
+          fi
+          if [[ -z $want || $want != "$got" ]]; then
+            echo "::error::$archive does not match the release's checksums.txt"
+            exit 1
+          fi
+          if [[ $ext == zip ]] && command -v unzip >/dev/null; then
+            unzip -q -o "$dl/$archive" -d "$dl/x"
+          elif [[ $ext == zip ]]; then
+            7z x -y -o"$dl/x" "$dl/$archive" >/dev/null
+          else
+            mkdir -p "$dl/x" && tar -xzf "$dl/$archive" -C "$dl/x"
+          fi
+          cp "$dl/x/weistack$exe" "$home/bin/weistack$exe"
+          chmod +x "$home/bin/weistack$exe"
+          bin="$home/bin/weistack$exe"
+        fi
+
+        project="$INPUT_PROJECT_ID"
+        if [[ -z $project ]]; then
+          project="$(openssl rand -hex 16)"
+        fi
+        {
+          echo "bin=$bin"
+          echo "home=$home"
+          echo "project-id=$project"
+          echo "log-file=$home/weistack.log"
+        } >>"$GITHUB_OUTPUT"
+
+    - name: Start WeiStack
+      if: runner.os != 'Windows'
+      shell: bash
+      env:
+        BIN: ${{ steps.config.outputs.bin }}
+        HOME_DIR: ${{ steps.config.outputs.home }}
+        PROJECT_ID: ${{ steps.config.outputs.project-id }}
+        INPUT_IAM: ${{ inputs.iam }}
+        INPUT_SERVICES: ${{ inputs.services }}
+        INPUT_REGION: ${{ inputs.region }}
+        INPUT_PORT: ${{ inputs.port }}
+        INPUT_DELAY: ${{ inputs.lifecycle-delay }}
+        INPUT_ARGS: ${{ inputs.args }}
+      run: |
+        set -euo pipefail
+        flags=(-host 127.0.0.1 -port "$INPUT_PORT" -region "$INPUT_REGION" -project-id "$PROJECT_ID"
+          -iam "$INPUT_IAM" -tls-dir "$HOME_DIR/tls" -log-format json)
+        [[ -n $INPUT_SERVICES ]] && flags+=(-services "$INPUT_SERVICES")
+        [[ -n $INPUT_DELAY ]] && flags+=(-lifecycle-delay "$INPUT_DELAY")
+        # shellcheck disable=SC2206 # extra flags are split as a shell would
+        [[ -n $INPUT_ARGS ]] && flags+=($INPUT_ARGS)
+        nohup "$BIN" "${flags[@]}" >"$HOME_DIR/weistack.log" 2>&1 &
+        echo "$!" >"$HOME_DIR/weistack.pid"
+
+    - name: Start WeiStack
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        BIN: ${{ steps.config.outputs.bin }}
+        HOME_DIR: ${{ steps.config.outputs.home }}
+        PROJECT_ID: ${{ steps.config.outputs.project-id }}
+        INPUT_IAM: ${{ inputs.iam }}
+        INPUT_SERVICES: ${{ inputs.services }}
+        INPUT_REGION: ${{ inputs.region }}
+        INPUT_PORT: ${{ inputs.port }}
+        INPUT_DELAY: ${{ inputs.lifecycle-delay }}
+        INPUT_ARGS: ${{ inputs.args }}
+      run: |
+        $flags = @('-host', '127.0.0.1', '-port', $env:INPUT_PORT, '-region', $env:INPUT_REGION,
+          '-project-id', $env:PROJECT_ID, '-iam', $env:INPUT_IAM, '-tls-dir', "$env:HOME_DIR/tls", '-log-format', 'json')
+        if ($env:INPUT_SERVICES) { $flags += @('-services', $env:INPUT_SERVICES) }
+        if ($env:INPUT_DELAY) { $flags += @('-lifecycle-delay', $env:INPUT_DELAY) }
+        if ($env:INPUT_ARGS) { $flags += $env:INPUT_ARGS -split '\s+' }
+        # The runner ends every process a step started when the step ends,
+        # so Windows starts WeiStack instead, through WMI: it then belongs
+        # to no step. GitHub-hosted runners are discarded after the job; on
+        # a self-hosted runner, stop it with the PID in weistack.pid.
+        $bin = (Resolve-Path $env:BIN).Path
+        $quoted = ($flags | ForEach-Object { '"' + ($_ -replace '"', '\"') + '"' }) -join ' '
+        $log = "$env:HOME_DIR\weistack.log"
+        $cmd = "cmd.exe /d /c `"`"$bin`" $quoted > `"$log`" 2>&1`""
+        $r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create `
+          -Arguments @{ CommandLine = $cmd; CurrentDirectory = (Get-Location).Path }
+        if ($r.ReturnValue -ne 0) { throw "starting WeiStack failed: $($r.ReturnValue)" }
+        Set-Content -Path "$env:HOME_DIR/weistack.pid" -Value $r.ProcessId
+
+    - name: Wait for WeiStack
+      id: ready
+      shell: bash
+      env:
+        BIN: ${{ steps.config.outputs.bin }}
+        HOME_DIR: ${{ steps.config.outputs.home }}
+        PROJECT_ID: ${{ steps.config.outputs.project-id }}
+        INPUT_REGION: ${{ inputs.region }}
+        INPUT_PORT: ${{ inputs.port }}
+        INPUT_PROXY: ${{ inputs.proxy }}
+      run: |
+        set -euo pipefail
+        endpoint="http://127.0.0.1:$INPUT_PORT"
+        for _ in $(seq 1 150); do
+          curl -fsS "$endpoint/_weistack/health" >/dev/null 2>&1 && break
+          sleep 0.2
+        done
+        if ! curl -fsS "$endpoint/_weistack/health" >/dev/null 2>&1; then
+          echo "::error::WeiStack did not start"
+          cat "$HOME_DIR"/weistack*.log || true
+          if [[ $RUNNER_OS == Windows ]]; then
+            tasklist //FI "IMAGENAME eq weistack.exe" || true
+            netstat -ano | grep ":$INPUT_PORT " || true
+          fi
+          exit 1
+        fi
+        exports="$("$BIN" credentials -tls-dir "$HOME_DIR/tls" 2>/dev/null)"
+        ak="$(sed -n 's/.*HW_ACCESS_KEY=\([^ ]*\).*/\1/p' <<<"$exports")"
+        sk="$(sed -n 's/.*HW_SECRET_KEY=\([^ ]*\).*/\1/p' <<<"$exports")"
+        echo "::add-mask::$sk"
+        curl -fsS -o "$HOME_DIR/ca.pem" "$endpoint/_weistack/ca"
+        {
+          echo "WEISTACK_ENDPOINT=$endpoint"
+          echo "WEISTACK_CA_FILE=$HOME_DIR/ca.pem"
+          echo "HUAWEICLOUD_SDK_AK=$ak"
+          echo "HUAWEICLOUD_SDK_SK=$sk"
+          echo "HW_ACCESS_KEY=$ak"
+          echo "HW_SECRET_KEY=$sk"
+          echo "HW_REGION_NAME=$INPUT_REGION"
+          echo "HW_PROJECT_ID=$PROJECT_ID"
+          if [[ $INPUT_PROXY == true ]]; then
+            echo "HTTPS_PROXY=$endpoint"
+            echo "HTTP_PROXY=$endpoint"
+            # WeiStack's own address, the admin API included, is reached
+            # directly: clients that proxy loopback addresses (Python's,
+            # and any on Windows, where HTTP_PROXY is also http_proxy)
+            # would otherwise send it to the proxy.
+            no_proxy_list="127.0.0.1,localhost"
+            existing="${NO_PROXY:-${no_proxy:-}}"
+            [[ -n $existing ]] && no_proxy_list="$existing,$no_proxy_list"
+            echo "NO_PROXY=$no_proxy_list"
+            echo "no_proxy=$no_proxy_list"
+          fi
+        } >>"$GITHUB_ENV"
+        {
+          echo "endpoint=$endpoint"
+          echo "access-key=$ak"
+          echo "secret-key=$sk"
+          echo "ca-file=$HOME_DIR/ca.pem"
+        } >>"$GITHUB_OUTPUT"
+        echo "WeiStack is running at $endpoint (project $PROJECT_ID, region $INPUT_REGION)."
