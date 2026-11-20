@@ -1,0 +1,7 @@
+{
+  "source": "sdk-model",
+  "status": 200,
+  "body": {
+    "specs": ["1", "2", "3", "4"]
+  }
+}

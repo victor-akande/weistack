@@ -43,6 +43,7 @@ type publicIP struct {
 	Status              string    `json:"status"`
 	PortID              string    `json:"port_id"`
 	PrivateIP           string    `json:"private_ip"`
+	NATGatewayID        string    `json:"nat_gateway_id,omitempty"`
 	BandwidthID         string    `json:"bandwidth_id"`
 	EnterpriseProjectID string    `json:"enterprise_project_id"`
 	Tags                []tag     `json:"tags"`

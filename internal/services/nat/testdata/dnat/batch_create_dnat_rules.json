@@ -1,0 +1,44 @@
+{
+  "source": "docs",
+  "status": 201,
+  "body": {
+    "dnat_rules": [
+      {
+        "id": "<uuid>",
+        "tenant_id": "0123456789abcdef0123456789abcdef",
+        "description": "batch 1",
+        "port_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "private_ip": "",
+        "internal_service_port": 443,
+        "nat_gateway_id": "66666666-6666-4666-8666-666666666666",
+        "floating_ip_id": "e1111111-1111-4111-8111-111111111111",
+        "floating_ip_address": "198.51.100.1",
+        "external_service_port": 8443,
+        "status": "PENDING_CREATE",
+        "admin_state_up": true,
+        "protocol": "tcp",
+        "created_at": "2026-11-20 09:30:00.000000",
+        "global_eip_id": "",
+        "global_eip_address": ""
+      },
+      {
+        "id": "<uuid>",
+        "tenant_id": "0123456789abcdef0123456789abcdef",
+        "description": "batch 2",
+        "port_id": "",
+        "private_ip": "192.168.100.20",
+        "internal_service_port": 0,
+        "nat_gateway_id": "66666666-6666-4666-8666-666666666666",
+        "floating_ip_id": "e3333333-3333-4333-8333-333333333333",
+        "floating_ip_address": "198.51.100.3",
+        "external_service_port": 0,
+        "status": "PENDING_CREATE",
+        "admin_state_up": true,
+        "protocol": "any",
+        "created_at": "2026-11-20 09:30:00.000000",
+        "global_eip_id": "",
+        "global_eip_address": ""
+      }
+    ]
+  }
+}
