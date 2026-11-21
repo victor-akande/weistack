@@ -109,14 +109,12 @@ func migrateFormat1To2(tx *bolt.Tx) error {
 		if key == metaBucket {
 			return nil
 		}
-		sc, err := ParseScope(key)
-		if err != nil || sc.Kind != "ecs.server" {
-			return nil
+		if sc, err := ParseScope(key); err == nil && sc.Kind == "ecs.server" {
+			serverBuckets = append(serverBuckets, struct {
+				key   string
+				scope Scope
+			}{key: key, scope: sc})
 		}
-		serverBuckets = append(serverBuckets, struct {
-			key   string
-			scope Scope
-		}{key: key, scope: sc})
 		return nil
 	})
 

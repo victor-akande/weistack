@@ -187,12 +187,13 @@ func (s *Service) finishExtend(ctx context.Context, t Tenant, volumeID, jobID st
 	defer s.mu.Unlock()
 
 	now := s.now().UTC()
+	failed := fault != nil
 	volNow := now.Format(volumeTimeLayout)
 	_, err := s.volumes(t).Update(ctx, volumeID, func(cur *volume) error {
 		if cur.Pending == nil || cur.Pending.Op != "extend" || cur.Pending.JobID != jobID {
 			return nil
 		}
-		if fault != nil {
+		if failed {
 			cur.Status = statusErrorExtending
 			cur.Pending = nil
 			cur.UpdatedAt = volNow
@@ -218,7 +219,7 @@ func (s *Service) finishExtend(ctx context.Context, t Tenant, volumeID, jobID st
 			return nil
 		}
 		j.EndTime = end
-		if fault != nil {
+		if failed {
 			j.Status = "FAIL"
 			j.ErrorCode = "EVS.2026"
 			j.FailReason = fault.Error()

@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/victor-akande/weistack/internal/core/store"
-	"github.com/victor-akande/weistack/internal/services/evs"
 )
 
 type attachFault struct {
@@ -22,38 +21,6 @@ func (f *attachFault) Fault(kind, _ string) error {
 		return f.err
 	}
 	return nil
-}
-
-func (e *env) createEVSVolume(t *testing.T, id, az string, sizeGB int, multiattach bool) {
-	t.Helper()
-	// Use CreateForServer? No, create a standalone available volume via store.Of.
-	// Since we're in package ecs, we can't access unexported evs.volume directly;
-	// instead create a temporary server and detach or use ServerDeleted? No, let's
-	// use CreateForServer with DeleteOnTermination=false, then delete the server!
-	// Even simpler: create a helper server, create 1 data volume with DeleteOnTermination=false,
-	// delete server without delete_volume -> leaves an available volume in EVS!
-	// Wait: for multiattach or custom AZ, let's check if we need a helper.
-	srvID := id + "-seed-srv"
-	err := e.volumes.CreateForServer(t.Context(), testTenant.evs(), evs.ServerDisks{
-		ServerID:         srvID,
-		ServerName:       "seed",
-		AvailabilityZone: az,
-		Created:          "2026-11-10T09:30:00.000000",
-		Root:             evs.NewDisk{Type: "GPSSD", SizeGB: 40},
-		Data:             []evs.NewDisk{{Type: "GPSSD", SizeGB: sizeGB, DeleteOnTermination: false}},
-	})
-	if err != nil {
-		t.Fatalf("CreateForServer seed: %v", err)
-	}
-	disks, err := e.volumes.DisksOf(t.Context(), testTenant.evs(), srvID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Delete the seed server in EVS: root is deleted, data disk becomes available!
-	if err := e.volumes.ServerDeleted(t.Context(), testTenant.evs(), srvID, false); err != nil {
-		t.Fatal(err)
-	}
-	_ = disks
 }
 
 // seedVolume creates a standalone available volume in EVS via store.Of[map[string]any].

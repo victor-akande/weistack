@@ -294,7 +294,7 @@ func (s *Service) BeginAttach(ctx context.Context, t Tenant, volumeID, serverID,
 	if v.AvailabilityZone != serverAZ {
 		return "", ErrOtherAZ
 	}
-	if v.Pending != nil || (v.Status != statusAvailable && !(v.Multiattach && v.Status == statusInUse)) {
+	if v.Pending != nil || (v.Status != statusAvailable && (!v.Multiattach || v.Status != statusInUse)) {
 		return "", ErrNotAvailable
 	}
 
@@ -399,11 +399,12 @@ func (s *Service) FinishAttach(ctx context.Context, t Tenant, volumeID, jobID st
 
 	attID := s.ids.UUID()
 	now := s.now().UTC().Format(volumeTimeLayout)
+	failed := fault != nil
 	_, err := s.volumes(t).Update(ctx, volumeID, func(cur *volume) error {
 		if cur.Pending == nil || cur.Pending.Op != "attach" || cur.Pending.JobID != jobID {
 			return nil
 		}
-		if fault != nil {
+		if failed {
 			cur.Pending = nil
 			if len(cur.Attachments) > 0 {
 				cur.Status = statusInUse
@@ -437,12 +438,13 @@ func (s *Service) FinishDetach(ctx context.Context, t Tenant, volumeID, jobID st
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	failed := fault != nil
 	now := s.now().UTC().Format(volumeTimeLayout)
 	_, err := s.volumes(t).Update(ctx, volumeID, func(cur *volume) error {
 		if cur.Pending == nil || cur.Pending.Op != "detach" || cur.Pending.JobID != jobID {
 			return nil
 		}
-		if fault != nil {
+		if failed {
 			cur.Pending = nil
 			cur.Status = statusInUse
 			cur.UpdatedAt = now

@@ -143,11 +143,12 @@ func (s *Service) resumeSubJob(ctx context.Context, t Tenant, job Job, sub SubJo
 		if err != nil {
 			return err
 		}
-		if !ok {
+		switch {
+		case !ok:
 			s.finishSubJob(ctx, t, job.JobID, id, nil)
-		} else if op == "attach" {
+		case op == "attach":
 			s.scheduleAttach(t, volID, id, job.JobID)
-		} else {
+		default:
 			s.scheduleDetach(t, volID, id, job.JobID)
 		}
 	case srv.Pending != nil && srv.Pending.JobID == job.JobID:
