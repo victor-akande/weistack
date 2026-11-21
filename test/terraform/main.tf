@@ -94,8 +94,9 @@ resource "huaweicloud_compute_instance" "web" {
   flavor_id          = "s6.small.1"
   security_group_ids = [huaweicloud_networking_secgroup.web.id]
   availability_zone  = data.huaweicloud_availability_zones.zones.names[0]
-  system_disk_type   = "SSD"
-  system_disk_size   = 40
+  system_disk_type            = "SSD"
+  system_disk_size            = 40
+  delete_disks_on_termination = true
 
   # An encrypted data disk, with the KMS key of kms.tf.
   data_disks {
