@@ -157,24 +157,27 @@ func (s *Service) poolListenerIDs(ctx context.Context, t Tenant, poolID string) 
 
 func collectPoolListenerIDs(poolID string, listeners []listener, policies []l7Policy) []string {
 	seen := make(map[string]struct{})
+	var ids []string
+	add := func(id string) {
+		if id == "" {
+			return
+		}
+		if _, ok := seen[id]; ok {
+			return
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
 	for _, l := range listeners {
 		if l.DefaultPoolID == poolID {
-			seen[l.ID] = struct{}{}
+			add(l.ID)
 		}
 	}
 	for _, pol := range policies {
-		if policyUsesPool(pol, poolID) && pol.ListenerID != "" {
-			seen[pol.ListenerID] = struct{}{}
+		if policyUsesPool(pol, poolID) {
+			add(pol.ListenerID)
 		}
 	}
-	if len(seen) == 0 {
-		return nil
-	}
-	ids := make([]string, 0, len(seen))
-	for id := range seen {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
 	return ids
 }
 
