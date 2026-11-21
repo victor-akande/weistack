@@ -1194,3 +1194,31 @@ func TestPoolAndHealthMonitorPaginationAndConcurrency(t *testing.T) {
 		t.Fatalf("hm race: wins=%d conflicts=%d, want 1 and 7", wins, conflicts)
 	}
 }
+
+func TestCollectPoolListenerIDsOrder(t *testing.T) {
+	const poolID = "pool-1"
+	listeners := []listener{
+		{ID: "ffff-default-lsn-2", DefaultPoolID: poolID},
+		{ID: "cccc-other-lsn", DefaultPoolID: "other-pool"},
+		{ID: "zzzz-default-lsn-1", DefaultPoolID: poolID},
+	}
+	// Policy listener IDs sort lexicographically before the default listener IDs.
+	policies := []l7Policy{
+		{ID: "pol-1", ListenerID: "0000-policy-lsn-1", RedirectPoolID: poolID},
+		{ID: "pol-dup-default", ListenerID: "ffff-default-lsn-2", RedirectPoolID: poolID},
+		{ID: "pol-2", ListenerID: "0001-policy-lsn-2", RedirectPoolsConfig: []redirectPoolsConfig{{PoolID: poolID}}},
+		{ID: "pol-dup-policy", ListenerID: "0000-policy-lsn-1", RedirectPoolID: poolID},
+		{ID: "pol-empty", ListenerID: "", RedirectPoolID: poolID},
+	}
+
+	got := collectPoolListenerIDs(poolID, listeners, policies)
+	want := []string{"ffff-default-lsn-2", "zzzz-default-lsn-1", "0000-policy-lsn-1", "0001-policy-lsn-2"}
+	if len(got) != len(want) {
+		t.Fatalf("collectPoolListenerIDs() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("collectPoolListenerIDs()[%d] = %q, want %q (full: %v)", i, got[i], want[i], got)
+		}
+	}
+}

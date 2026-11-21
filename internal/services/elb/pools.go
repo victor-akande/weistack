@@ -554,22 +554,7 @@ func (s *Service) buildPoolDetail(ctx context.Context, t Tenant, p pool) (poolDe
 		return poolDetail{}, err
 	}
 
-	lsnSet := make(map[string]struct{})
-	for _, l := range listeners {
-		if l.DefaultPoolID == p.ID {
-			lsnSet[l.ID] = struct{}{}
-		}
-	}
-	for _, pol := range policies {
-		if pol.ListenerID != "" && poolPolicyUsesPool(pol, p.ID) {
-			lsnSet[pol.ListenerID] = struct{}{}
-		}
-	}
-	lsnIDs := make([]string, 0, len(lsnSet))
-	for id := range lsnSet {
-		lsnIDs = append(lsnIDs, id)
-	}
-	sort.Strings(lsnIDs)
+	lsnIDs := collectPoolListenerIDs(p.ID, listeners, policies)
 
 	memIDs := make([]string, 0, len(members))
 	for _, m := range members {
@@ -613,15 +598,14 @@ func (s *Service) listPools(ctx context.Context, t Tenant, f listPoolsFilter) ([
 		return nil, pageInfo{}, err
 	}
 
-	lsnByPool := make(map[string]map[string]struct{})
+	lsnByPool := make(map[string][]string)
 	addLsn := func(poolID, lsnID string) {
 		if poolID == "" || lsnID == "" {
 			return
 		}
-		if lsnByPool[poolID] == nil {
-			lsnByPool[poolID] = make(map[string]struct{})
+		if !slices.Contains(lsnByPool[poolID], lsnID) {
+			lsnByPool[poolID] = append(lsnByPool[poolID], lsnID)
 		}
-		lsnByPool[poolID][lsnID] = struct{}{}
 	}
 	for _, l := range allListeners {
 		addLsn(l.DefaultPoolID, l.ID)
@@ -724,11 +708,11 @@ func (s *Service) listPools(ctx context.Context, t Tenant, f listPoolsFilter) ([
 			}
 		}
 
-		lsnSet := lsnByPool[p.ID]
+		lsnIDs := lsnByPool[p.ID]
 		if len(f.ListenerIDs) > 0 {
 			matched := false
 			for _, want := range f.ListenerIDs {
-				if _, ok := lsnSet[want]; ok {
+				if slices.Contains(lsnIDs, want) {
 					matched = true
 					break
 				}
@@ -767,12 +751,6 @@ func (s *Service) listPools(ctx context.Context, t Tenant, f listPoolsFilter) ([
 			// Member records do not carry ECS device IDs in this emulator.
 			continue
 		}
-
-		lsnIDs := make([]string, 0, len(lsnSet))
-		for id := range lsnSet {
-			lsnIDs = append(lsnIDs, id)
-		}
-		sort.Strings(lsnIDs)
 
 		memIDs := make([]string, 0, len(mems))
 		for _, m := range mems {
