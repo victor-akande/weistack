@@ -3,6 +3,7 @@ package evs
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -21,12 +22,12 @@ func (s *Service) Routes(r chi.Router) {
 	r.Use(authz.Service(authz.ServiceOptions{Name: "evs", Style: apierr.StyleNested}))
 
 	// Volumes (§3.1)
-	r.With(act("evs:volumes:create")).Post("/v2.1/{project_id}/cloudvolumes", s.notImplemented("CreateVolume"))
+	r.With(act("evs:volumes:create")).Post("/v2.1/{project_id}/cloudvolumes", s.handle("CreateVolume", s.handleCreateVolume))
 	r.With(act("evs:volumes:list")).Get("/v2/{project_id}/cloudvolumes/detail", s.handle("ListVolumes", s.handleListVolumes))
 	r.With(act("evs:volumes:get", vol)).Get("/v2/{project_id}/cloudvolumes/{volume_id}", s.handle("ShowVolume", s.handleShowVolume))
-	r.With(act("evs:volumes:update", vol)).Put("/v2/{project_id}/cloudvolumes/{volume_id}", s.notImplemented("UpdateVolume"))
-	r.With(act("evs:volumes:delete", vol)).Delete("/v2/{project_id}/cloudvolumes/{volume_id}", s.notImplemented("DeleteVolume"))
-	r.With(act("evs:volumes:resize", vol)).Post("/v2.1/{project_id}/cloudvolumes/{volume_id}/action", s.notImplemented("ResizeVolume"))
+	r.With(act("evs:volumes:update", vol)).Put("/v2/{project_id}/cloudvolumes/{volume_id}", s.handle("UpdateVolume", s.handleUpdateVolume))
+	r.With(act("evs:volumes:delete", vol)).Delete("/v2/{project_id}/cloudvolumes/{volume_id}", s.handle("DeleteVolume", s.handleDeleteVolume))
+	r.With(act("evs:volumes:resize", vol)).Post("/v2.1/{project_id}/cloudvolumes/{volume_id}/action", s.handle("ResizeVolume", s.handleResizeVolume))
 
 	// Snapshots (§3.2)
 	r.With(act("evs:snapshots:create")).Post("/v2/{project_id}/cloudsnapshots", s.notImplemented("CreateSnapshot"))
@@ -37,14 +38,14 @@ func (s *Service) Routes(r chi.Router) {
 	r.With(act("evs:snapshots:rollback")).Post("/v2/{project_id}/cloudsnapshots/{snapshot_id}/rollback", s.notImplemented("RollbackSnapshot"))
 
 	// Tags (§3.3)
-	r.With(authz.Defer()).Post("/v2/{project_id}/cloudvolumes/{volume_id}/tags/action", s.notImplemented("BatchVolumeTags"))
-	r.With(act("evs:volumes:listTagsForResource", vol)).Get("/v2/{project_id}/cloudvolumes/{volume_id}/tags", s.notImplemented("ShowVolumeTags"))
-	r.With(act("evs:volumes:listTags")).Get("/v2/{project_id}/cloudvolumes/tags", s.notImplemented("ListVolumeTags"))
+	r.With(authz.Defer()).Post("/v2/{project_id}/cloudvolumes/{volume_id}/tags/action", s.handle("BatchVolumeTags", s.handleBatchVolumeTags))
+	r.With(act("evs:volumes:listTagsForResource", vol)).Get("/v2/{project_id}/cloudvolumes/{volume_id}/tags", s.handle("ShowVolumeTags", s.handleShowVolumeTags))
+	r.With(act("evs:volumes:listTags")).Get("/v2/{project_id}/cloudvolumes/tags", s.handle("ListVolumeTags", s.handleListVolumeTags))
 
 	// Types, zones and jobs (§3.4)
-	r.With(act("evs:types:get")).Get("/v2/{project_id}/types", s.notImplemented("CinderListVolumeTypes"))
-	r.With(authz.Public()).Get("/v2/{project_id}/os-availability-zone", s.notImplemented("CinderListAvailabilityZones"))
-	r.With(authz.Public()).Get("/v1/{project_id}/jobs/{job_id}", s.notImplemented("ShowJob"))
+	r.With(act("evs:types:get")).Get("/v2/{project_id}/types", s.handle("CinderListVolumeTypes", s.handleListVolumeTypes))
+	r.With(authz.Public()).Get("/v2/{project_id}/os-availability-zone", s.handle("CinderListAvailabilityZones", s.handleListAvailabilityZones))
+	r.With(authz.Public()).Get("/v1/{project_id}/jobs/{job_id}", s.handle("ShowJob", s.handleShowJob))
 }
 
 func (s *Service) notImplemented(op string) http.HandlerFunc {
@@ -133,6 +134,25 @@ func (s *Service) handleListVolumes(w http.ResponseWriter, r *http.Request, t Te
 		}
 		if name := q.Get("name"); name != "" && !strings.Contains(v.Name, name) {
 			continue
+		}
+		if ma := q.Get("multiattach"); ma != "" {
+			if want, err := strconv.ParseBool(ma); err == nil && v.Multiattach != want {
+				continue
+			}
+		}
+		if vtID := q.Get("volume_type_id"); vtID != "" {
+			if vt, ok := volumeTypeByID[vtID]; !ok || v.VolumeType != vt {
+				continue
+			}
+		}
+		if ep := q.Get("enterprise_project_id"); ep != "" && ep != "all_granted_eps" {
+			volEP := v.EnterpriseProjectID
+			if volEP == "" {
+				volEP = "0"
+			}
+			if volEP != ep {
+				continue
+			}
 		}
 		matched = append(matched, v)
 	}

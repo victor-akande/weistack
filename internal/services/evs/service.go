@@ -137,9 +137,3 @@ func (s *Service) snapshots(t Tenant) store.Collection[snapshot] {
 func (s *Service) jobs(t Tenant) store.Collection[job] {
 	return store.Of[job](s.store, store.Scope{Region: t.Region, ProjectID: t.ProjectID, Kind: kindJob})
 }
-
-// Resume continues any asynchronous volume or snapshot operations that
-// were in flight when a persistent emulator last stopped.
-func (s *Service) Resume(_ context.Context) error {
-	return nil
-}
