@@ -20,7 +20,7 @@ A request for anything else answers `501 WeiStack.0501`. The pages under
 | [OBS](#obs) | S3-compatible | 31 |
 | [RDS](#rds) | v3 | 11 |
 | [STS](#sts) | v5 (caller identity, authorization messages, assuming agencies) | 3 |
-| [VPC](#vpc) | v1, v3 | 58 |
+| [VPC](#vpc) | v1, v3 | 64 |
 
 ## ECS
 
@@ -443,6 +443,12 @@ Endpoint: `vpc.{region}.myhuaweicloud.com`. Details: [VPC](services/vpc.md).
 | `DELETE` | `/v2.0/{project_id}/bandwidths/{bandwidth_id}` | `eip:bandwidths:delete` |
 | `PUT` | `/v2.0/{project_id}/bandwidths/{bandwidth_id}` | `eip:bandwidths:update` |
 | `POST` | `/v2.0/{project_id}/bandwidths` | `eip:bandwidths:create` |
+| `POST` | `/v2.0/{project_id}/nat_gateways/resource_instances/action` | `nat:natGateways:listTags` |
+| `GET` | `/v2.0/{project_id}/nat_gateways/tags` | `nat:natGateways:listTags` |
+| `POST` | `/v2.0/{project_id}/nat_gateways/{nat_gateway_id}/tags/action` | `nat:natGateways:createTags` |
+| `DELETE` | `/v2.0/{project_id}/nat_gateways/{nat_gateway_id}/tags/{key}` | `nat:natGateways:deleteTags` |
+| `GET` | `/v2.0/{project_id}/nat_gateways/{nat_gateway_id}/tags` | `nat:natGateways:listTags` |
+| `POST` | `/v2.0/{project_id}/nat_gateways/{nat_gateway_id}/tags` | `nat:natGateways:createTags` |
 | `POST` | `/v2.0/{project_id}/publicips/resource_instances/action` | `eip:publicIps:listTags` |
 | `GET` | `/v2.0/{project_id}/publicips/tags` | `eip:publicIps:listTags` |
 | `POST` | `/v2.0/{project_id}/publicips/{publicip_id}/tags/action` | `eip:publicIps:createTags` |

@@ -629,3 +629,159 @@ func TestTagConcurrentWrites(t *testing.T) {
 		}
 	}
 }
+
+func TestNatGatewayTagsViaVPCHost(t *testing.T) {
+	t.Parallel()
+	st := store.NewMemory()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	clock := lifecycle.NewFakeClock(tagTestEpoch)
+	engine := lifecycle.New(lifecycle.Options{Delay: tagTestDelay, Clock: clock, Logger: log})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); engine.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+		_ = st.Close()
+	})
+
+	gen := ids.NewSeeded(42)
+	vpcSvc, err := vpc.New(vpc.Deps{Store: st, Engine: engine, IDs: gen, Logger: log, Now: clock.Now})
+	if err != nil {
+		t.Fatalf("vpc.New: %v", err)
+	}
+	natSvc, err := New(Deps{
+		Store:  st,
+		Engine: engine,
+		IDs:    gen,
+		Logger: log,
+		VPC:    vpcSvc,
+		EIPs:   tagStubEIPs{},
+		Now:    clock.Now,
+	})
+	if err != nil {
+		t.Fatalf("nat.New: %v", err)
+	}
+	vpcSvc.Extend(natSvc.VPCExtension())
+
+	cfg, err := config.Load(nil, func(string) string { return "" }, io.Discard)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	srv, err := server.New(server.Options{
+		Config:    cfg,
+		ProjectID: tagTestProject,
+		Logger:    log,
+		Store:     st,
+		Engine:    engine,
+		IDs:       gen,
+		Services:  []server.Service{vpcSvc, natSvc},
+	})
+	if err != nil {
+		t.Fatalf("server.New: %v", err)
+	}
+	handler := srv.Handler()
+
+	gw := gateway{
+		ID:                  gen.UUID(),
+		Name:                "nat-via-vpc",
+		Spec:                "1",
+		Status:              StatusActive,
+		RouterID:            gen.UUID(),
+		InternalNetworkID:   gen.UUID(),
+		NgportIP:            "192.168.0.10",
+		EnterpriseProjectID: defaultEnterpriseProjectID,
+		Session:             defaultSessionConf,
+		CreatedAt:           natSvc.nowUTC(),
+	}
+	if err := natSvc.gateways(tagTestTenant).Create(t.Context(), gw.ID, gw); err != nil {
+		t.Fatalf("seed gateway: %v", err)
+	}
+
+	vpcHost := "vpc." + tagTestRegion + ".myhuaweicloud.com"
+	callHost := func(host, method, path, body string) (int, []byte) {
+		t.Helper()
+		var rd io.Reader
+		if body != "" {
+			rd = strings.NewReader(body)
+		}
+		r := httptest.NewRequest(method, path, rd)
+		r.Host = host
+		if body != "" {
+			r.Header.Set("Content-Type", "application/json")
+		}
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		res := w.Result()
+		defer res.Body.Close()
+		out, err := io.ReadAll(res.Body)
+		if err != nil {
+			t.Fatalf("reading response: %v", err)
+		}
+		return res.StatusCode, out
+	}
+
+	// Batch create tags through the VPC host (as Terraform's NetworkingV2Client does).
+	status, out := callHost(vpcHost, http.MethodPost, "/v2.0/"+tagTestProject+"/nat_gateways/"+gw.ID+"/tags/action",
+		`{"action": "create", "tags": [{"key": "env", "value": "test"}]}`)
+	if status != http.StatusNoContent {
+		t.Fatalf("vpc host batch create tags: %d %s", status, out)
+	}
+
+	// Single create tag through the VPC host.
+	status, out = callHost(vpcHost, http.MethodPost, "/v2.0/"+tagTestProject+"/nat_gateways/"+gw.ID+"/tags",
+		`{"tag": {"key": "owner", "value": "team"}}`)
+	if status != http.StatusNoContent {
+		t.Fatalf("vpc host create tag: %d %s", status, out)
+	}
+
+	// Show tags through the VPC host.
+	status, out = callHost(vpcHost, http.MethodGet, "/v2.0/"+tagTestProject+"/nat_gateways/"+gw.ID+"/tags", "")
+	if status != http.StatusOK {
+		t.Fatalf("vpc host show tags: %d %s", status, out)
+	}
+	showRes := tagDecodeInto[showNatGatewayTagsResponse](t, out)
+	if len(showRes.Tags) != 2 {
+		t.Fatalf("vpc host show tags = %+v, want 2 tags", showRes.Tags)
+	}
+
+	// List project tags and filter by tag through the VPC host.
+	status, out = callHost(vpcHost, http.MethodGet, "/v2.0/"+tagTestProject+"/nat_gateways/tags", "")
+	if status != http.StatusOK {
+		t.Fatalf("vpc host list project tags: %d %s", status, out)
+	}
+	status, out = callHost(vpcHost, http.MethodPost, "/v2.0/"+tagTestProject+"/nat_gateways/resource_instances/action",
+		`{"action": "filter", "tags": [{"key": "env", "values": ["test"]}]}`)
+	if status != http.StatusOK {
+		t.Fatalf("vpc host filter by tag: %d %s", status, out)
+	}
+	filterRes := tagDecodeInto[listNatGatewaysByTagResponse](t, out)
+	if filterRes.TotalCount != 1 || filterRes.Resources[0].ResourceID != gw.ID {
+		t.Fatalf("vpc host filter = %+v, want gateway %s", filterRes, gw.ID)
+	}
+
+	// Delete a tag through the VPC host.
+	status, out = callHost(vpcHost, http.MethodDelete, "/v2.0/"+tagTestProject+"/nat_gateways/"+gw.ID+"/tags/owner", "")
+	if status != http.StatusNoContent {
+		t.Fatalf("vpc host delete tag: %d %s", status, out)
+	}
+
+	// Verify the NAT host sees the exact remaining tag on both /v3 and /v2.0.
+	for _, prefix := range []string{"/v3", "/v2.0"} {
+		status, out = callHost(tagTestHost, http.MethodGet, prefix+"/"+tagTestProject+"/nat_gateways/"+gw.ID+"/tags", "")
+		if status != http.StatusOK {
+			t.Fatalf("nat host %s show tags: %d %s", prefix, status, out)
+		}
+		got := tagDecodeInto[showNatGatewayTagsResponse](t, out)
+		if len(got.Tags) != 1 || got.Tags[0].Key != "env" || got.Tags[0].Value != "test" {
+			t.Fatalf("nat host %s show tags = %+v, want [{env test}]", prefix, got.Tags)
+		}
+	}
+
+	// Non-tag NAT routes must not be mounted on the VPC host.
+	status, _ = callHost(vpcHost, http.MethodGet, "/v2/"+tagTestProject+"/nat_gateways", "")
+	if status != http.StatusNotImplemented {
+		t.Fatalf("vpc host GET /v2/.../nat_gateways = %d, want 501", status)
+	}
+}
