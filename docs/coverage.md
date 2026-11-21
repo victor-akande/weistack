@@ -11,6 +11,7 @@ A request for anything else answers `501 WeiStack.0501`. The pages under
 | Service | API versions | Operations |
 | --- | --- | --- |
 | [ECS](#ecs) | v1, v2.1 | 16 |
+| [ELB](#elb) | v3 (dedicated) | 80 |
 | [EPS](#eps) | v1.0 (the default enterprise project) | 1 |
 | [EVS](#evs) | v2 (read only) | 2 |
 | [IAM](#iam) | v3, v3.0, v5 (users, groups, tokens, access keys, roles, custom policies, role assignments, identity policies) | 131 |
@@ -44,6 +45,93 @@ Endpoint: `ecs.{region}.myhuaweicloud.com`. Details: [ECS](services/ecs.md).
 | `POST` | `/v1/{project_id}/cloudservers` | `ecs:cloudServers:createServers` |
 | `GET` | `/v1/{project_id}/jobs/{job_id}` | None needed |
 | `GET` | `/v2.1/{project_id}/os-availability-zone` | `ecs:cloudServers:listServersDetails` |
+
+## ELB
+
+Endpoint: `elb.{region}.myhuaweicloud.com`.
+
+| Method | Path | IAM action |
+| --- | --- | --- |
+| `POST` | `/v2.0/{project_id}/listeners/resource_instances/action` | `elb:listenerTags:get` |
+| `GET` | `/v2.0/{project_id}/listeners/tags` | `elb:listenerTags:get` |
+| `POST` | `/v2.0/{project_id}/listeners/{listener_id}/tags/action` | `elb:listenerTags:create` |
+| `DELETE` | `/v2.0/{project_id}/listeners/{listener_id}/tags/{key}` | `elb:listenerTags:delete` |
+| `GET` | `/v2.0/{project_id}/listeners/{listener_id}/tags` | `elb:listenerTags:get` |
+| `POST` | `/v2.0/{project_id}/listeners/{listener_id}/tags` | `elb:listenerTags:create` |
+| `POST` | `/v2.0/{project_id}/loadbalancers/resource_instances/action` | `elb:loadbalancerTags:get` |
+| `GET` | `/v2.0/{project_id}/loadbalancers/tags` | `elb:loadbalancerTags:get` |
+| `POST` | `/v2.0/{project_id}/loadbalancers/{loadbalancer_id}/tags/action` | `elb:loadbalancerTags:create` |
+| `DELETE` | `/v2.0/{project_id}/loadbalancers/{loadbalancer_id}/tags/{key}` | `elb:loadbalancerTags:delete` |
+| `GET` | `/v2.0/{project_id}/loadbalancers/{loadbalancer_id}/tags` | `elb:loadbalancerTags:get` |
+| `POST` | `/v2.0/{project_id}/loadbalancers/{loadbalancer_id}/tags` | `elb:loadbalancerTags:create` |
+| `GET` | `/v3/{project_id}/elb/availability-zones` | `elb:availability-zones:list` |
+| `DELETE` | `/v3/{project_id}/elb/certificates/{certificate_id}` | `elb:certificates:delete` |
+| `GET` | `/v3/{project_id}/elb/certificates/{certificate_id}` | `elb:certificates:show` |
+| `PUT` | `/v3/{project_id}/elb/certificates/{certificate_id}` | `elb:certificates:update` |
+| `GET` | `/v3/{project_id}/elb/certificates` | `elb:certificates:list` |
+| `POST` | `/v3/{project_id}/elb/certificates` | `elb:certificates:create` |
+| `GET` | `/v3/{project_id}/elb/flavors/{flavor_id}` | `elb:flavors:show` |
+| `GET` | `/v3/{project_id}/elb/flavors` | `elb:flavors:list` |
+| `DELETE` | `/v3/{project_id}/elb/healthmonitors/{healthmonitor_id}` | `elb:healthmonitors:delete` |
+| `GET` | `/v3/{project_id}/elb/healthmonitors/{healthmonitor_id}` | `elb:healthmonitors:show` |
+| `PUT` | `/v3/{project_id}/elb/healthmonitors/{healthmonitor_id}` | `elb:healthmonitors:update` |
+| `GET` | `/v3/{project_id}/elb/healthmonitors` | `elb:healthmonitors:list` |
+| `POST` | `/v3/{project_id}/elb/healthmonitors` | `elb:healthmonitors:create` |
+| `DELETE` | `/v3/{project_id}/elb/ipgroups/{ipgroup_id}` | `elb:ipgroups:delete` |
+| `GET` | `/v3/{project_id}/elb/ipgroups/{ipgroup_id}` | `elb:ipgroups:show` |
+| `PUT` | `/v3/{project_id}/elb/ipgroups/{ipgroup_id}` | `elb:ipgroups:update` |
+| `GET` | `/v3/{project_id}/elb/ipgroups` | `elb:ipgroups:list` |
+| `POST` | `/v3/{project_id}/elb/ipgroups` | `elb:ipgroups:create` |
+| `GET` | `/v3/{project_id}/elb/l7policies/rules` | `elb:l7rules:list` |
+| `DELETE` | `/v3/{project_id}/elb/l7policies/{l7policy_id}/rules/{l7rule_id}` | `elb:l7rules:delete` |
+| `GET` | `/v3/{project_id}/elb/l7policies/{l7policy_id}/rules/{l7rule_id}` | `elb:l7rules:show` |
+| `PUT` | `/v3/{project_id}/elb/l7policies/{l7policy_id}/rules/{l7rule_id}` | `elb:l7rules:update` |
+| `GET` | `/v3/{project_id}/elb/l7policies/{l7policy_id}/rules` | `elb:l7rules:list` |
+| `POST` | `/v3/{project_id}/elb/l7policies/{l7policy_id}/rules` | `elb:l7rules:create` |
+| `DELETE` | `/v3/{project_id}/elb/l7policies/{l7policy_id}` | `elb:l7policies:delete` |
+| `GET` | `/v3/{project_id}/elb/l7policies/{l7policy_id}` | `elb:l7policies:show` |
+| `PUT` | `/v3/{project_id}/elb/l7policies/{l7policy_id}` | `elb:l7policies:update` |
+| `GET` | `/v3/{project_id}/elb/l7policies` | `elb:l7policies:list` |
+| `POST` | `/v3/{project_id}/elb/l7policies` | `elb:l7policies:create` |
+| `DELETE` | `/v3/{project_id}/elb/listeners/{listener_id}/force` | `elb:listeners:delete` |
+| `DELETE` | `/v3/{project_id}/elb/listeners/{listener_id}` | `elb:listeners:delete` |
+| `GET` | `/v3/{project_id}/elb/listeners/{listener_id}` | `elb:listeners:show` |
+| `PUT` | `/v3/{project_id}/elb/listeners/{listener_id}` | `elb:listeners:update` |
+| `GET` | `/v3/{project_id}/elb/listeners` | `elb:listeners:list` |
+| `POST` | `/v3/{project_id}/elb/listeners` | `elb:listeners:create` |
+| `POST` | `/v3/{project_id}/elb/loadbalancers/{loadbalancer_id}/availability-zone/batch-add` | `elb:loadbalancers:update` |
+| `POST` | `/v3/{project_id}/elb/loadbalancers/{loadbalancer_id}/availability-zone/batch-remove` | `elb:loadbalancers:update` |
+| `DELETE` | `/v3/{project_id}/elb/loadbalancers/{loadbalancer_id}/force-elb` | `elb:loadbalancers:delete` |
+| `GET` | `/v3/{project_id}/elb/loadbalancers/{loadbalancer_id}/statuses` | `elb:loadbalancers:show` |
+| `DELETE` | `/v3/{project_id}/elb/loadbalancers/{loadbalancer_id}` | `elb:loadbalancers:delete` |
+| `GET` | `/v3/{project_id}/elb/loadbalancers/{loadbalancer_id}` | `elb:loadbalancers:show` |
+| `PUT` | `/v3/{project_id}/elb/loadbalancers/{loadbalancer_id}` | `elb:loadbalancers:update` |
+| `GET` | `/v3/{project_id}/elb/loadbalancers` | `elb:loadbalancers:list` |
+| `POST` | `/v3/{project_id}/elb/loadbalancers` | `elb:loadbalancers:create` |
+| `GET` | `/v3/{project_id}/elb/members` | `elb:members:list` |
+| `DELETE` | `/v3/{project_id}/elb/pools/{pool_id}/delete-cascade` | `elb:pools:delete` |
+| `DELETE` | `/v3/{project_id}/elb/pools/{pool_id}/members/{member_id}` | `elb:members:delete` |
+| `GET` | `/v3/{project_id}/elb/pools/{pool_id}/members/{member_id}` | `elb:members:show` |
+| `PUT` | `/v3/{project_id}/elb/pools/{pool_id}/members/{member_id}` | `elb:members:update` |
+| `GET` | `/v3/{project_id}/elb/pools/{pool_id}/members` | `elb:members:list` |
+| `POST` | `/v3/{project_id}/elb/pools/{pool_id}/members` | `elb:members:create` |
+| `DELETE` | `/v3/{project_id}/elb/pools/{pool_id}` | `elb:pools:delete` |
+| `GET` | `/v3/{project_id}/elb/pools/{pool_id}` | `elb:pools:show` |
+| `PUT` | `/v3/{project_id}/elb/pools/{pool_id}` | `elb:pools:update` |
+| `GET` | `/v3/{project_id}/elb/pools` | `elb:pools:list` |
+| `POST` | `/v3/{project_id}/elb/pools` | `elb:pools:create` |
+| `DELETE` | `/v3/{project_id}/elb/security-policies/{security_policy_id}` | `elb:security-policies:delete` |
+| `GET` | `/v3/{project_id}/elb/security-policies/{security_policy_id}` | `elb:security-policies:show` |
+| `PUT` | `/v3/{project_id}/elb/security-policies/{security_policy_id}` | `elb:security-policies:update` |
+| `GET` | `/v3/{project_id}/elb/security-policies` | `elb:security-policies:list` |
+| `POST` | `/v3/{project_id}/elb/security-policies` | `elb:security-policies:create` |
+| `GET` | `/v3/{project_id}/elb/system-security-policies` | `elb:security-policies:list` |
+| `GET` | `/v3/{project_id}/listeners/tags` | `elb:listenerTags:get` |
+| `POST` | `/v3/{project_id}/listeners/{listener_id}/tags/action` | `elb:listenerTags:create` |
+| `GET` | `/v3/{project_id}/listeners/{listener_id}/tags` | `elb:listenerTags:get` |
+| `GET` | `/v3/{project_id}/loadbalancers/tags` | `elb:loadbalancerTags:get` |
+| `POST` | `/v3/{project_id}/loadbalancers/{loadbalancer_id}/tags/action` | `elb:loadbalancerTags:create` |
+| `GET` | `/v3/{project_id}/loadbalancers/{loadbalancer_id}/tags` | `elb:loadbalancerTags:get` |
 
 ## EPS
 
