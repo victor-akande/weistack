@@ -1,0 +1,39 @@
+{
+  "source": "docs",
+  "status": 201,
+  "body": {
+    "request_id": "<hex32>",
+    "pool": {
+      "id": "<uuid>",
+      "name": "pool-ip-unbound",
+      "description": "",
+      "protocol": "TCP",
+      "lb_algorithm": "SOURCE_IP",
+      "admin_state_up": true,
+      "project_id": "<hex32>",
+      "enterprise_project_id": "0",
+      "healthmonitor_id": "",
+      "listeners": [],
+      "loadbalancers": [],
+      "members": [],
+      "session_persistence": null,
+      "slow_start": null,
+      "ip_version": "v4",
+      "member_deletion_protection_enable": false,
+      "vpc_id": "<uuid>",
+      "type": "ip",
+      "protection_status": "nonProtection",
+      "protection_reason": "",
+      "any_port_enable": false,
+      "connection_drain": null,
+      "pool_health": {
+        "minimum_healthy_member_count": 0
+      },
+      "az_affinity": null,
+      "quic_cid_hash_strategy": null,
+      "public_border_group": "center",
+      "created_at": "<time-z>",
+      "updated_at": "<time-z>"
+    }
+  }
+}
