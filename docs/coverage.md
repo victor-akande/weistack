@@ -48,7 +48,7 @@ Endpoint: `ecs.{region}.myhuaweicloud.com`. Details: [ECS](services/ecs.md).
 
 ## ELB
 
-Endpoint: `elb.{region}.myhuaweicloud.com`.
+Endpoint: `elb.{region}.myhuaweicloud.com`. Details: [ELB](services/elb.md).
 
 | Method | Path | IAM action |
 | --- | --- | --- |
