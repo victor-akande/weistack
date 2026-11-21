@@ -1,0 +1,34 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "transit_subnets": [
+      {
+        "id": "<uuid>",
+        "name": "transit-subnet-1",
+        "description": "primary transit subnet",
+        "virsubnet_project_id": "<hex32>",
+        "project_id": "<hex32>",
+        "vpc_id": "<uuid>",
+        "virsubnet_id": "<uuid>",
+        "cidr": "192.168.0.0/24",
+        "type": "VPC",
+        "status": "ACTIVE",
+        "ip_count": 0,
+        "created_at": "2026-11-10T09:30:00Z",
+        "updated_at": "2026-11-10T09:30:00Z",
+        "tags": [
+          {
+            "key": "env",
+            "value": "prod"
+          }
+        ]
+      }
+    ],
+    "request_id": "<hex32>",
+    "page_info": {
+      "previous_marker": "<uuid>",
+      "current_count": 1
+    }
+  }
+}

@@ -1,0 +1,1 @@
+{"source": "docs", "status": 400, "body": {"request_id": "<hex32>", "error_code": "VPC.0011", "error_msg": "EnterpriseProjectId is invalid"}}

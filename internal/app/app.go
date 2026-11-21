@@ -382,6 +382,7 @@ func buildServices(
 	if err := natSvc.Resume(ctx); err != nil {
 		return nil, err
 	}
+	vpcSvc.Extend(natSvc.VPCExtension())
 
 	// EVS shows the disks of ECS servers.
 	evsSvc, err := evs.New(evs.Deps{Logger: log, Volumes: ecsSvc})

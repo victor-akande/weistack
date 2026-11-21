@@ -1,0 +1,25 @@
+{
+  "source": "docs",
+  "status": 201,
+  "body": {
+    "transit_ip": {
+      "id": "<uuid>",
+      "project_id": "0123456789abcdef0123456789abcdef",
+      "network_interface_id": "<uuid>",
+      "ip_address": "172.16.1.68",
+      "created_at": "2026-11-20T10:00:00Z",
+      "updated_at": "2026-11-20T10:00:00Z",
+      "virsubnet_id": "77777777-7777-4777-8777-777777777777",
+      "tags": [
+        {
+          "key": "key1",
+          "value": "value1"
+        }
+      ],
+      "gateway_id": "",
+      "enterprise_project_id": "12345678-1234-4123-8123-123456789012",
+      "status": "ACTIVE"
+    },
+    "request_id": "<hex32>"
+  }
+}

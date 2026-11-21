@@ -1,0 +1,1 @@
+{"source": "docs", "status": 400, "body": {"request_id": "<hex32>", "error_code": "NAT.1201", "error_msg": "1 downlink vpc has been associated to this private nat gateway, no more is allowed."}}

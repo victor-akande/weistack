@@ -12,5 +12,7 @@ type Extension interface {
 
 // Extend adds e's routes. Call it before the server registers routes.
 func (s *Service) Extend(e Extension) {
-	s.ext = e
+	if e != nil {
+		s.exts = append(s.exts, e)
+	}
 }

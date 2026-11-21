@@ -281,8 +281,8 @@ func errInvalidTag() *apierr.Error {
 
 // errTooManyTags is NAT.1016 (CreateNatGateway, CreatePrivateNat, CreateTransitSubnet,
 // CreateTransitIp, all public and private tag write operations).
-func errTooManyTags(limit int) *apierr.Error {
-	return apierr.New(http.StatusBadRequest, "NAT.1016", "The number of tags exceeds the limit %d.", limit)
+func errTooManyTags() *apierr.Error {
+	return apierr.New(http.StatusBadRequest, "NAT.1016", "The number of tags exceeds the limit %d.", maxTags)
 }
 
 // errTransitSubnetUnavailable is NAT.1101 (CreateTransitSubnet, CreateTransitIp).

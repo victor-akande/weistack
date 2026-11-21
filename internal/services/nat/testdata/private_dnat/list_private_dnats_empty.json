@@ -1,0 +1,11 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "dnat_rules": [],
+    "page_info": {
+      "current_count": 0
+    },
+    "request_id": "<hex32>"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "resources": [],
+    "request_id": "<hex32>",
+    "total_count": 0
+  }
+}
