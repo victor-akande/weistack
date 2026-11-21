@@ -1,0 +1,62 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "request_id": "<hex32>",
+    "listener": {
+      "id": "<uuid>",
+      "name": "http-listener-updated",
+      "description": "updated description",
+      "protocol": "HTTP",
+      "protocol_port": 80,
+      "admin_state_up": true,
+      "loadbalancers": [
+        {
+          "id": "<uuid>"
+        }
+      ],
+      "default_pool_id": "<uuid>",
+      "default_tls_container_ref": "",
+      "client_ca_tls_container_ref": "",
+      "sni_container_refs": [],
+      "sni_match_algo": "wildcard",
+      "tls_ciphers_policy": "",
+      "security_policy_id": "",
+      "http2_enable": false,
+      "insert_headers": {
+        "X-Forwarded-ELB-IP": true,
+        "X-Forwarded-Host": true
+      },
+      "enable_member_retry": true,
+      "keepalive_timeout": 180,
+      "client_timeout": 45,
+      "member_timeout": 90,
+      "ipgroup": {
+        "ipgroup_id": "<uuid>",
+        "enable_ipgroup": false,
+        "type": "black"
+      },
+      "transparent_client_ip_enable": true,
+      "proxy_protocol_enable": false,
+      "enhance_l7policy_enable": true,
+      "protection_status": "consoleProtection",
+      "protection_reason": "locked by ops",
+      "gzip_enable": true,
+      "ssl_early_data_enable": false,
+      "cps": 1000,
+      "connection": 5000,
+      "connection_limit": -1,
+      "nat64_enable": false,
+      "project_id": "<hex32>",
+      "enterprise_project_id": "0",
+      "tags": [
+        {
+          "key": "env",
+          "value": "prod"
+        }
+      ],
+      "created_at": "2026-11-21T10:00:00Z",
+      "updated_at": "2026-11-21T10:00:00Z"
+    }
+  }
+}
