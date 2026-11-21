@@ -118,7 +118,14 @@ want = {"server_status": "ACTIVE", "rds_status": "ACTIVE",
                 "shared_bw_type": "WHOLE", "shared_bw_size": 5, "shared_bw_eips": 1,
                 "edge_status": "ACTIVE", "edge_has_public_ip": True},
         "iam": {"v5_policy_type": "custom", "access_key_status": "active",
-                "v5_policy_version": "v1", "v5_key_status": "active"}}
+                "v5_policy_version": "v1", "v5_key_status": "active"},
+        "nat": {"public_gw_status": "ACTIVE", "public_snat_status": "ACTIVE",
+                "public_dnat_status": "ACTIVE", "private_gw_status": "ACTIVE",
+                "transit_subnet_status": "ACTIVE", "transit_ip_snat_status": "ACTIVE",
+                "transit_ip_dnat_status": "ACTIVE", "private_dnat_type": "COMPUTE",
+                "public_gateways_count": 1, "snat_rules_count": 1,
+                "dnat_rules_count": 1, "private_gateways_count": 1,
+                "gateway_specs_count": 4, "private_snat_assoc_count": 1}}
 bad = {k: out.get(k) for k, v in want.items() if out.get(k) != v}
 if not out.get("server_ip", "").startswith("192.168.1."):
     bad["server_ip"] = out.get("server_ip")
@@ -138,9 +145,9 @@ TF_VAR_partner_access_key="$partner_ak" TF_VAR_partner_secret_key="$partner_sk" 
 terraform -chdir=assume output -json vpcs | python3 -c '
 import json, sys
 vpcs = json.load(sys.stdin)
-if vpcs != {"classic": 1, "sts": 1}:
+if vpcs != {"classic": 2, "sts": 2}:
     sys.exit(f"the assumed agencies see these VPCs: {vpcs}")
-print("Both agencies read the VPC.")'
+print("Both agencies read the VPCs.")'
 
 step "Signing as the restricted IAM 5.0 user"
 # tf-ops's identity policy allows OBS and VPC reads only.
@@ -155,11 +162,11 @@ restricted apply || {
 	exit 1
 }
 vpcs="$(terraform -chdir=restricted output -raw vpcs)"
-if [[ $vpcs != 1 ]]; then
-	echo "tf-ops sees $vpcs VPCs, not the scenario's one" >&2
+if [[ $vpcs != 2 ]]; then
+	echo "tf-ops sees $vpcs VPCs, not the scenario's 2" >&2
 	exit 1
 fi
-echo "tf-ops reads the VPC."
+echo "tf-ops reads the VPCs."
 if [[ $iam == enforce ]]; then
 	# What the policy does not allow is denied, with the action named.
 	denied() {
