@@ -24,7 +24,8 @@ default [enterprise project](docs/services/eps.md)), IAM 5.0 identity
 policies, agencies, and temporary credentials (IAM's securitytokens and
 STS's AssumeAgency), [KMS](docs/services/kms.md) keys with real
 cryptography, [EIP](docs/services/eip.md) elastic IPs and bandwidths,
-and [NAT](docs/services/nat.md) public and private NAT gateways.
+[NAT](docs/services/nat.md) public and private NAT gateways, and
+[ELB](docs/services/elb.md) dedicated load balancers.
 [Coverage](docs/coverage.md) lists every operation served, with the IAM
 action that authorizes it.
 

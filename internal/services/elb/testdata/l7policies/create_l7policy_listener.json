@@ -1,0 +1,28 @@
+{
+  "source": "docs",
+  "status": 201,
+  "body": {
+    "request_id": "<hex32>",
+    "l7policy": {
+      "id": "<uuid>",
+      "name": "policy-https-redirect",
+      "description": "",
+      "action": "REDIRECT_TO_LISTENER",
+      "admin_state_up": true,
+      "listener_id": "<uuid>",
+      "position": 100,
+      "project_id": "<hex32>",
+      "provisioning_status": "ACTIVE",
+      "redirect_pool_id": "",
+      "redirect_listener_id": "<uuid>",
+      "redirect_url": "",
+      "rules": [],
+      "redirect_url_config": null,
+      "redirect_pools_config": [],
+      "fixed_response_config": null,
+      "enterprise_project_id": "0",
+      "created_at": "<time-z>",
+      "updated_at": "<time-z>"
+    }
+  }
+}

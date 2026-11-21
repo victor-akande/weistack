@@ -1,0 +1,61 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "request_id": "<hex32>",
+    "certificates": [
+      {
+        "id": "<uuid>",
+        "name": "<string>",
+        "description": "<string>",
+        "type": "<string>",
+        "domain": "<string>",
+        "certificate": "<string>",
+        "private_key": "",
+        "admin_state_up": true,
+        "project_id": "<hex32>",
+        "enc_certificate": "",
+        "enc_private_key": "",
+        "scm_certificate_id": "",
+        "common_name": "<string>",
+        "fingerprint": "<string>",
+        "subject_alternative_names": "<any>",
+        "source": "",
+        "protection_status": "nonProtection",
+        "protection_reason": "",
+        "enterprise_project_id": "0",
+        "expire_time": "<time-z>",
+        "created_at": "2026-11-21T10:00:00Z",
+        "updated_at": "2026-11-21T10:00:00Z"
+      },
+      {
+        "id": "<uuid>",
+        "name": "<string>",
+        "description": "<string>",
+        "type": "<string>",
+        "domain": "<string>",
+        "certificate": "<string>",
+        "private_key": "",
+        "admin_state_up": true,
+        "project_id": "<hex32>",
+        "enc_certificate": "",
+        "enc_private_key": "",
+        "scm_certificate_id": "",
+        "common_name": "<string>",
+        "fingerprint": "<string>",
+        "subject_alternative_names": "<any>",
+        "source": "",
+        "protection_status": "nonProtection",
+        "protection_reason": "",
+        "enterprise_project_id": "0",
+        "expire_time": "<time-z>",
+        "created_at": "2026-11-21T10:00:00Z",
+        "updated_at": "2026-11-21T10:00:00Z"
+      }
+    ],
+    "page_info": {
+      "previous_marker": "<uuid>",
+      "current_count": 2
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "request_id": "<hex32>",
+    "rule": {
+      "id": "<uuid>",
+      "type": "PATH",
+      "compare_type": "STARTS_WITH",
+      "key": "",
+      "value": "/v2/orders",
+      "admin_state_up": true,
+      "invert": false,
+      "provisioning_status": "ACTIVE",
+      "project_id": "<hex32>",
+      "conditions": [],
+      "created_at": "<time-z>",
+      "updated_at": "<time-z>"
+    }
+  }
+}

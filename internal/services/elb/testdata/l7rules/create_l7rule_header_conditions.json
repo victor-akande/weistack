@@ -1,0 +1,30 @@
+{
+  "source": "docs",
+  "status": 201,
+  "body": {
+    "request_id": "<hex32>",
+    "rule": {
+      "id": "<uuid>",
+      "type": "HEADER",
+      "compare_type": "EQUAL_TO",
+      "key": "",
+      "value": "",
+      "admin_state_up": true,
+      "invert": false,
+      "provisioning_status": "ACTIVE",
+      "project_id": "<hex32>",
+      "conditions": [
+        {
+          "key": "X-Env",
+          "value": "canary"
+        },
+        {
+          "key": "X-Env",
+          "value": "staging"
+        }
+      ],
+      "created_at": "<time-z>",
+      "updated_at": "<time-z>"
+    }
+  }
+}

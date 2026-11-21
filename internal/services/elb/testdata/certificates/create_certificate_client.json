@@ -1,0 +1,31 @@
+{
+  "source": "docs",
+  "status": 201,
+  "body": {
+    "request_id": "<hex32>",
+    "certificate": {
+      "id": "<uuid>",
+      "name": "client-ca-1",
+      "description": "client ca certificate",
+      "type": "client",
+      "domain": "Example Root CA",
+      "certificate": "<string>",
+      "private_key": "",
+      "admin_state_up": true,
+      "project_id": "<hex32>",
+      "enc_certificate": "",
+      "enc_private_key": "",
+      "scm_certificate_id": "",
+      "common_name": "Example Root CA",
+      "fingerprint": "<string>",
+      "subject_alternative_names": [],
+      "source": "",
+      "protection_status": "nonProtection",
+      "protection_reason": "",
+      "enterprise_project_id": "0",
+      "expire_time": "2028-11-21T10:00:00Z",
+      "created_at": "2026-11-21T10:00:00Z",
+      "updated_at": "2026-11-21T10:00:00Z"
+    }
+  }
+}

@@ -87,6 +87,13 @@ fresh_secret() { python3 -c 'import secrets; print("Ws-1" + secrets.token_hex(8)
 TF_VAR_db_password="$(fresh_secret)"
 TF_VAR_iam_password="$(fresh_secret)"
 export TF_VAR_db_password TF_VAR_iam_password
+# Ephemeral self-signed certificate for ELB HTTPS listener (never committed).
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+	-keyout "$work/elb.key" -out "$work/elb.crt" \
+	-subj "/CN=tf-elb.example.com" >/dev/null 2>&1
+TF_VAR_elb_certificate="$(cat "$work/elb.crt")"
+TF_VAR_elb_private_key="$(cat "$work/elb.key")"
+export TF_VAR_elb_certificate TF_VAR_elb_private_key
 if [[ $iam == enforce ]]; then
 	# Exports HW_ACCESS_KEY and HW_SECRET_KEY, among others.
 	eval "$("$bin" credentials -tls-dir "$work/tls" 2>/dev/null)"
@@ -125,7 +132,12 @@ want = {"server_status": "ACTIVE", "rds_status": "ACTIVE",
                 "transit_ip_dnat_status": "ACTIVE", "private_dnat_type": "COMPUTE",
                 "public_gateways_count": 1, "snat_rules_count": 1,
                 "dnat_rules_count": 1, "private_gateways_count": 1,
-                "gateway_specs_count": 4, "private_snat_assoc_count": 1}}
+                "gateway_specs_count": 4, "private_snat_assoc_count": 1},
+        "elb": {"lb_name": "tf-elb", "member_status": "ONLINE",
+                "flavors_l4_count": 2, "flavors_l7_count": 2,
+                "loadbalancers_cnt": 1, "listeners_cnt": 1,
+                "pools_cnt": 1, "l7rule_value": "/api",
+                "cert_domain": "tf-elb.example.com"}}
 bad = {k: out.get(k) for k, v in want.items() if out.get(k) != v}
 if not out.get("server_ip", "").startswith("192.168.1."):
     bad["server_ip"] = out.get("server_ip")

@@ -1,0 +1,9 @@
+{
+  "source": "docs",
+  "status": 404,
+  "body": {
+    "error_code": "ELB.8904",
+    "error_msg": "<string>",
+    "request_id": "<hex32>"
+  }
+}
