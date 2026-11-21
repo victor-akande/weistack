@@ -1,0 +1,25 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "flavor": {
+      "id": "<uuid>",
+      "name": "L7_flavor.elb.s1.small",
+      "type": "L7",
+      "shared": true,
+      "project_id": "<hex32>",
+      "info": {
+        "connection": 200000,
+        "cps": 2000,
+        "qps": 4000,
+        "bandwidth": 50000,
+        "lcu": 10,
+        "https_cps": 200
+      },
+      "flavor_sold_out": false,
+      "public_border_group": "center",
+      "category": 0
+    },
+    "request_id": "<hex32>"
+  }
+}

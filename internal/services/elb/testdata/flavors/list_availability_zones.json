@@ -1,0 +1,35 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "availability_zones": [
+      [
+        {
+          "code": "ap-southeast-1a",
+          "state": "ACTIVE",
+          "protocol": ["L4", "L7"],
+          "public_border_group": "center",
+          "category": 0,
+          "spec_code": null
+        },
+        {
+          "code": "ap-southeast-1b",
+          "state": "ACTIVE",
+          "protocol": ["L4", "L7"],
+          "public_border_group": "center",
+          "category": 0,
+          "spec_code": null
+        },
+        {
+          "code": "ap-southeast-1c",
+          "state": "ACTIVE",
+          "protocol": ["L4", "L7"],
+          "public_border_group": "center",
+          "category": 0,
+          "spec_code": null
+        }
+      ]
+    ],
+    "request_id": "<hex32>"
+  }
+}

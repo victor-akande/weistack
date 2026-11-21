@@ -1,0 +1,60 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "loadbalancers": [
+      {
+        "id": "<uuid>",
+        "description": "primary dedicated lb",
+        "provisioning_status": "ACTIVE",
+        "admin_state_up": true,
+        "provider": "vlb",
+        "pools": [],
+        "listeners": [],
+        "operating_status": "ONLINE",
+        "name": "lb-golden",
+        "project_id": "<hex32>",
+        "vip_subnet_cidr_id": "<uuid>",
+        "vip_address": "192.168.0.2",
+        "vip_port_id": "<uuid>",
+        "tags": [
+          {
+            "key": "env",
+            "value": "test"
+          }
+        ],
+        "created_at": "2026-11-10T09:30:00Z",
+        "updated_at": "2026-11-10T09:30:00Z",
+        "guaranteed": true,
+        "vpc_id": "<uuid>",
+        "eips": [],
+        "ipv6_vip_address": "",
+        "ipv6_vip_virsubnet_id": "",
+        "ipv6_vip_port_id": "",
+        "availability_zone_list": ["ap-southeast-1a"],
+        "enterprise_project_id": "0",
+        "billing_info": "",
+        "l4_flavor_id": "<uuid>",
+        "l4_scale_flavor_id": "",
+        "l7_flavor_id": "<uuid>",
+        "l7_scale_flavor_id": "",
+        "loadbalancer_type": "dedicated",
+        "publicips": [],
+        "global_eips": [],
+        "elb_virsubnet_ids": ["<uuid>"],
+        "elb_virsubnet_type": "ipv4",
+        "ip_target_enable": false,
+        "frozen_scene": "",
+        "deletion_protection_enable": false,
+        "public_border_group": "center",
+        "protection_status": "nonProtection",
+        "protection_reason": ""
+      }
+    ],
+    "page_info": {
+      "previous_marker": "<uuid>",
+      "current_count": 1
+    },
+    "request_id": "<hex32>"
+  }
+}
