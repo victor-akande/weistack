@@ -1,0 +1,43 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "request_id": "<hex32>",
+    "page_info": {
+      "previous_marker": "<uuid>",
+      "current_count": 1
+    },
+    "members": [
+      {
+        "id": "<uuid>",
+        "availability_zone": "",
+        "name": "web-member-1-updated",
+        "project_id": "0123456789abcdef0123456789abcdef",
+        "pool_id": "<uuid>",
+        "admin_state_up": true,
+        "subnet_cidr_id": "<uuid>",
+        "protocol_port": 8081,
+        "weight": 50,
+        "address": "192.168.1.10",
+        "ip_version": "v4",
+        "operating_status": "ONLINE",
+        "status": [
+          {
+            "listener_id": "<uuid>",
+            "operating_status": "ONLINE"
+          }
+        ],
+        "loadbalancer_id": "<uuid>",
+        "loadbalancers": [
+          {
+            "id": "<uuid>"
+          }
+        ],
+        "created_at": "<time-z>",
+        "updated_at": "<time-z>",
+        "member_type": "instance",
+        "instance_id": ""
+      }
+    ]
+  }
+}

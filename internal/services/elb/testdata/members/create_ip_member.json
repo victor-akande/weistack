@@ -1,0 +1,29 @@
+{
+  "source": "docs",
+  "status": 201,
+  "body": {
+    "request_id": "<hex32>",
+    "member": {
+      "id": "<uuid>",
+      "availability_zone": "ap-southeast-1a",
+      "name": "ip-member-1",
+      "project_id": "0123456789abcdef0123456789abcdef",
+      "admin_state_up": true,
+      "protocol_port": 8080,
+      "weight": 1,
+      "address": "192.168.2.50",
+      "ip_version": "v4",
+      "operating_status": "OFFLINE",
+      "status": [
+        {
+          "listener_id": "<uuid>",
+          "operating_status": "OFFLINE"
+        }
+      ],
+      "created_at": "<time-z>",
+      "updated_at": "<time-z>",
+      "member_type": "ip",
+      "instance_id": ""
+    }
+  }
+}
