@@ -1,0 +1,60 @@
+{
+  "source": "docs",
+  "status": 201,
+  "body": {
+    "request_id": "<hex32>",
+    "listener": {
+      "id": "<uuid>",
+      "name": "tcp-range-listener",
+      "description": "",
+      "protocol": "TCP",
+      "protocol_port": 0,
+      "port_ranges": [
+        {
+          "start_port": 1000,
+          "end_port": 1010
+        },
+        {
+          "start_port": 2000,
+          "end_port": 2010
+        }
+      ],
+      "admin_state_up": true,
+      "loadbalancers": [
+        {
+          "id": "<uuid>"
+        }
+      ],
+      "default_pool_id": "",
+      "default_tls_container_ref": "",
+      "client_ca_tls_container_ref": "",
+      "sni_container_refs": [],
+      "sni_match_algo": "wildcard",
+      "tls_ciphers_policy": "",
+      "security_policy_id": "",
+      "http2_enable": false,
+      "insert_headers": null,
+      "enable_member_retry": true,
+      "keepalive_timeout": 300,
+      "client_timeout": 0,
+      "member_timeout": 0,
+      "ipgroup": null,
+      "transparent_client_ip_enable": true,
+      "proxy_protocol_enable": false,
+      "enhance_l7policy_enable": false,
+      "protection_status": "nonProtection",
+      "protection_reason": "",
+      "gzip_enable": false,
+      "ssl_early_data_enable": false,
+      "cps": 0,
+      "connection": 0,
+      "connection_limit": -1,
+      "nat64_enable": false,
+      "project_id": "<hex32>",
+      "enterprise_project_id": "0",
+      "tags": [],
+      "created_at": "2026-11-21T10:00:00Z",
+      "updated_at": "2026-11-21T10:00:00Z"
+    }
+  }
+}

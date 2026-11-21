@@ -1,0 +1,55 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "request_id": "<hex32>",
+    "pools": [
+      {
+        "id": "<uuid>",
+        "name": "pool-http-1",
+        "description": "primary http pool",
+        "protocol": "HTTP",
+        "lb_algorithm": "ROUND_ROBIN",
+        "admin_state_up": true,
+        "project_id": "<hex32>",
+        "enterprise_project_id": "0",
+        "healthmonitor_id": "",
+        "listeners": [],
+        "loadbalancers": [
+          {
+            "id": "<uuid>"
+          }
+        ],
+        "members": [],
+        "session_persistence": {
+          "type": "HTTP_COOKIE",
+          "persistence_timeout": 60
+        },
+        "slow_start": {
+          "enable": false,
+          "duration": 60
+        },
+        "ip_version": "v4",
+        "member_deletion_protection_enable": false,
+        "vpc_id": "<uuid>",
+        "type": "",
+        "protection_status": "nonProtection",
+        "protection_reason": "",
+        "any_port_enable": false,
+        "connection_drain": null,
+        "pool_health": {
+          "minimum_healthy_member_count": 0
+        },
+        "az_affinity": null,
+        "quic_cid_hash_strategy": null,
+        "public_border_group": "center",
+        "created_at": "<time-z>",
+        "updated_at": "<time-z>"
+      }
+    ],
+    "page_info": {
+      "previous_marker": "<uuid>",
+      "current_count": 1
+    }
+  }
+}

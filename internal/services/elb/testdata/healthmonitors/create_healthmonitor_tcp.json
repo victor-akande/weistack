@@ -1,0 +1,30 @@
+{
+  "source": "docs",
+  "status": 201,
+  "body": {
+    "request_id": "<hex32>",
+    "healthmonitor": {
+      "id": "<uuid>",
+      "name": "hm-tcp-1",
+      "project_id": "<hex32>",
+      "type": "TCP",
+      "delay": 5,
+      "timeout": 2,
+      "max_retries": 2,
+      "max_retries_down": 4,
+      "monitor_port": 8080,
+      "http_method": "",
+      "url_path": "",
+      "expected_codes": "",
+      "domain_name": null,
+      "admin_state_up": true,
+      "pools": [
+        {
+          "id": "<uuid>"
+        }
+      ],
+      "created_at": "<time-z>",
+      "updated_at": "<time-z>"
+    }
+  }
+}

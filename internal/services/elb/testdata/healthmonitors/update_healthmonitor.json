@@ -1,0 +1,30 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "request_id": "<hex32>",
+    "healthmonitor": {
+      "id": "<uuid>",
+      "name": "hm-http-updated",
+      "project_id": "<hex32>",
+      "type": "HTTP",
+      "delay": 15,
+      "timeout": 5,
+      "max_retries": 5,
+      "max_retries_down": 4,
+      "monitor_port": 8443,
+      "http_method": "HEAD",
+      "url_path": "/healthz",
+      "expected_codes": "200-204",
+      "domain_name": "app.example.com",
+      "admin_state_up": false,
+      "pools": [
+        {
+          "id": "<uuid>"
+        }
+      ],
+      "created_at": "<time-z>",
+      "updated_at": "<time-z>"
+    }
+  }
+}

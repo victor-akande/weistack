@@ -1,0 +1,84 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "statuses": {
+      "loadbalancer": {
+        "name": "lb-golden-updated",
+        "provisioning_status": "ACTIVE",
+        "listeners": [
+          {
+            "name": "listener-1",
+            "provisioning_status": "ACTIVE",
+            "pools": [
+              {
+                "provisioning_status": "ACTIVE",
+                "name": "pool-1",
+                "healthmonitor": {
+                  "type": "TCP",
+                  "id": "<uuid>",
+                  "name": "hm-1",
+                  "provisioning_status": "ACTIVE"
+                },
+                "members": [
+                  {
+                    "provisioning_status": "ACTIVE",
+                    "address": "192.168.0.50",
+                    "protocol_port": 80,
+                    "id": "<uuid>",
+                    "operating_status": "<string>"
+                  }
+                ],
+                "id": "<uuid>",
+                "operating_status": "ONLINE"
+              }
+            ],
+            "l7policies": [
+              {
+                "action": "REDIRECT_TO_POOL",
+                "id": "<uuid>",
+                "provisioning_status": "ACTIVE",
+                "name": "policy-1",
+                "rules": [
+                  {
+                    "id": "<uuid>",
+                    "type": "PATH",
+                    "provisioning_status": "ACTIVE"
+                  }
+                ]
+              }
+            ],
+            "id": "<uuid>",
+            "operating_status": "ONLINE"
+          }
+        ],
+        "pools": [
+          {
+            "provisioning_status": "ACTIVE",
+            "name": "pool-1",
+            "healthmonitor": {
+              "type": "TCP",
+              "id": "<uuid>",
+              "name": "hm-1",
+              "provisioning_status": "ACTIVE"
+            },
+            "members": [
+              {
+                "provisioning_status": "ACTIVE",
+                "address": "192.168.0.50",
+                "protocol_port": 80,
+                "id": "<uuid>",
+                "operating_status": "<string>"
+              }
+            ],
+            "id": "<uuid>",
+            "operating_status": "ONLINE"
+          }
+        ],
+        "id": "<uuid>",
+        "operating_status": "ONLINE"
+      }
+    },
+    "request_id": "<hex32>"
+  }
+}

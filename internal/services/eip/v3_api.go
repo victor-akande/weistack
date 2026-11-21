@@ -27,6 +27,7 @@ const (
 	v3PublicIPTypeEIP          = "EIP"
 	associateInstanceTypePort  = "PORT"
 	associateInstanceTypeNATGW = "NATGW"
+	associateInstanceTypeELB   = "ELB"
 	billingModePayPerUse       = "PAY_PER_USE"
 	maxDescriptionLen          = 255
 	maxV3Offset                = 99999
@@ -236,7 +237,7 @@ func validateAssociateInstanceType(typ string) error {
 		return errInvalidV3Input("")
 	case associateInstanceTypePort:
 		return nil
-	case associateInstanceTypeNATGW, "ELB", "ELBV1", "VPN":
+	case associateInstanceTypeNATGW, associateInstanceTypeELB, "ELBV1", "VPN":
 		return apierr.NotImplemented("eip", "associating EIP with "+typ)
 	default:
 		return errInvalidV3Input("")
@@ -263,7 +264,7 @@ func (s *Service) bindPublicIPLocked(ctx context.Context, t Tenant, pip *publicI
 			return errPortAlreadyBound()
 		}
 	}
-	if pip.NATGatewayID != "" || (pip.PortID != "" && pip.PortID != portID) {
+	if pip.NATGatewayID != "" || pip.ELBLoadBalancerID != "" || (pip.PortID != "" && pip.PortID != portID) {
 		return errPublicIPAlreadyBound()
 	}
 	if pip.PortID == "" {
@@ -278,7 +279,7 @@ func unbindPublicIPLocked(pip *publicIP) error {
 	if pip.Status == StatusPendingCreate {
 		return errPublicIPBusy()
 	}
-	if pip.PortID != "" {
+	if pip.PortID != "" && pip.ELBLoadBalancerID == "" {
 		pip.PortID = ""
 		pip.PrivateIP = ""
 		pip.Status = StatusDown
@@ -329,7 +330,7 @@ func (s *Service) disassociatePublicIP(ctx context.Context, t Tenant, id string)
 	if pip.Status == StatusPendingCreate {
 		return publicIP{}, errPublicIPBusy()
 	}
-	if pip.PortID != "" {
+	if pip.PortID != "" && pip.ELBLoadBalancerID == "" {
 		pip.PortID = ""
 		pip.PrivateIP = ""
 		pip.Status = StatusDown
@@ -451,7 +452,19 @@ func (s *Service) toPublicIPSingleShowResp(ctx context.Context, t Tenant, p publ
 		assocType *string
 		assocID   *string
 	)
-	if p.PortID != "" {
+	switch {
+	case p.ELBLoadBalancerID != "":
+		if p.PortID != "" {
+			vnic = &vnicInfo{
+				PrivateIPAddress: p.PrivateIP,
+				PortID:           p.PortID,
+			}
+		}
+		typ := associateInstanceTypeELB
+		lbID := p.ELBLoadBalancerID
+		assocType = &typ
+		assocID = &lbID
+	case p.PortID != "":
 		v := &vnicInfo{
 			PrivateIPAddress: p.PrivateIP,
 			PortID:           p.PortID,
@@ -485,7 +498,7 @@ func (s *Service) toPublicIPSingleShowResp(ctx context.Context, t Tenant, p publ
 		pid := p.PortID
 		assocType = &typ
 		assocID = &pid
-	} else if p.NATGatewayID != "" {
+	case p.NATGatewayID != "":
 		typ := associateInstanceTypeNATGW
 		gwID := p.NATGatewayID
 		assocType = &typ

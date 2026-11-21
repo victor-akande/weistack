@@ -1,0 +1,9 @@
+{
+  "source": "docs",
+  "status": 400,
+  "body": {
+    "request_id": "<hex32>",
+    "error_code": "ELB.8939",
+    "error_msg": "<string>"
+  }
+}

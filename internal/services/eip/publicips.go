@@ -210,7 +210,7 @@ func (s *Service) schedulePublicIPActivation(t Tenant, id string) {
 				switch {
 				case failed:
 					p.Status = "ERROR"
-				case p.PortID != "" || p.NATGatewayID != "":
+				case p.PortID != "" || p.NATGatewayID != "" || p.ELBLoadBalancerID != "":
 					p.Status = StatusActive
 				default:
 					p.Status = StatusDown
@@ -347,7 +347,7 @@ func (s *Service) updatePublicIP(ctx context.Context, t Tenant, id string, spec 
 				return publicIP{}, errPortAlreadyBound()
 			}
 		}
-		if pip.NATGatewayID != "" || (pip.PortID != "" && pip.PortID != bindPortID) {
+		if pip.NATGatewayID != "" || pip.ELBLoadBalancerID != "" || (pip.PortID != "" && pip.PortID != bindPortID) {
 			return publicIP{}, errPublicIPAlreadyBound()
 		}
 		if pip.PortID == "" {
@@ -359,7 +359,7 @@ func (s *Service) updatePublicIP(ctx context.Context, t Tenant, id string, spec 
 		if pip.Status == StatusPendingCreate {
 			return publicIP{}, errPublicIPBusy()
 		}
-		if pip.PortID != "" {
+		if pip.PortID != "" && pip.ELBLoadBalancerID == "" {
 			pip.PortID = ""
 			pip.PrivateIP = ""
 			pip.Status = StatusDown
@@ -387,7 +387,7 @@ func (s *Service) deletePublicIP(ctx context.Context, t Tenant, id string) error
 	if err != nil {
 		return err
 	}
-	if pip.PortID != "" || pip.NATGatewayID != "" {
+	if pip.PortID != "" || pip.NATGatewayID != "" || pip.ELBLoadBalancerID != "" {
 		return errPublicIPBound()
 	}
 	if pip.Status == StatusPendingCreate {

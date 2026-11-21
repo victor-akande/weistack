@@ -1,0 +1,30 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "request_id": "<hex32>",
+    "member": {
+      "id": "<uuid>",
+      "availability_zone": "",
+      "name": "web-member-1",
+      "project_id": "0123456789abcdef0123456789abcdef",
+      "admin_state_up": true,
+      "subnet_cidr_id": "<uuid>",
+      "protocol_port": 80,
+      "weight": 10,
+      "address": "192.168.1.10",
+      "ip_version": "v4",
+      "operating_status": "ONLINE",
+      "status": [
+        {
+          "listener_id": "<uuid>",
+          "operating_status": "ONLINE"
+        }
+      ],
+      "created_at": "<time-z>",
+      "updated_at": "<time-z>",
+      "member_type": "instance",
+      "instance_id": ""
+    }
+  }
+}
