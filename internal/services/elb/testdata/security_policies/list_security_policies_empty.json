@@ -1,0 +1,12 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "request_id": "<hex32>",
+    "security_policies": [],
+    "page_info": {
+      "previous_marker": "",
+      "current_count": 0
+    }
+  }
+}

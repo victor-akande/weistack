@@ -1,0 +1,33 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "request_id": "<hex32>",
+    "ipgroups": [
+      {
+        "id": "<uuid>",
+        "name": "office-allowlist",
+        "description": "corporate ingress",
+        "ip_list": [
+          {
+            "ip": "192.168.1.123",
+            "description": ""
+          },
+          {
+            "ip": "192.168.3.0/24",
+            "description": "office subnet"
+          }
+        ],
+        "listeners": [],
+        "project_id": "<hex32>",
+        "enterprise_project_id": "0",
+        "created_at": "2026-11-21T10:00:00Z",
+        "updated_at": "2026-11-21T10:00:00Z"
+      }
+    ],
+    "page_info": {
+      "previous_marker": "<uuid>",
+      "current_count": 1
+    }
+  }
+}
