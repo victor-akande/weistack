@@ -41,13 +41,10 @@ provider "huaweicloud" {
   region     = "ap-southeast-1"
   access_key = var.access_key
   secret_key = var.secret_key
-  project_id = var.project_id
   # No domain_id: the provider finds the account through IAM, as with the
   # real cloud.
 
-  skip_check_website_type = true
-  skip_check_upgrade      = true
-  max_retries             = 0
+  max_retries = 0
 
   # WeiStack presents certificates from its own CA. Instead of this,
   # SSL_CERT_FILE can name the output of `weistack ca`.

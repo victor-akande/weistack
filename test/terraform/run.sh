@@ -137,7 +137,10 @@ want = {"server_status": "ACTIVE", "rds_status": "ACTIVE",
                 "flavors_l4_count": 2, "flavors_l7_count": 2,
                 "loadbalancers_cnt": 1, "listeners_cnt": 1,
                 "pools_cnt": 1, "l7rule_value": "/api",
-                "cert_domain": "tf-elb.example.com"}}
+                "cert_domain": "tf-elb.example.com"},
+        "evs": {"attached_status": "in-use", "encrypted_status": "available",
+                "snapshot_status": "available", "web_volumes_count": 3,
+                "snapshots_count": 1, "has_azs": True, "volume_types_count": 7}}
 bad = {k: out.get(k) for k, v in want.items() if out.get(k) != v}
 if not out.get("server_ip", "").startswith("192.168.1."):
     bad["server_ip"] = out.get("server_ip")
@@ -214,8 +217,23 @@ if [[ $plan -ne 0 ]]; then
 fi
 echo "No changes."
 
+step "Expanding EVS volume (evs_size=30)"
+terraform apply -auto-approve -no-color -var evs_size=30
+
+step "terraform plan after expand (must show no changes)"
+set +e
+terraform plan -detailed-exitcode -no-color -var evs_size=30 >"$work/plan_expand.txt" 2>&1
+plan=$?
+set -e
+if [[ $plan -ne 0 ]]; then
+	cat "$work/plan_expand.txt"
+	echo "plan exited $plan: the post-expand plan must find no changes" >&2
+	exit 1
+fi
+echo "No changes."
+
 step "terraform destroy"
-terraform destroy -auto-approve -no-color
+terraform destroy -auto-approve -no-color -var evs_size=30
 
 step "Checking that nothing is left"
 unset HTTPS_PROXY HTTP_PROXY
