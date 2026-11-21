@@ -5,9 +5,12 @@ import (
 	"testing"
 )
 
-// actionRE is the documented form, service:resourceType:operation; IAM's
-// own access-key actions leave the resource type empty (iam::createAccessKey).
-var actionRE = regexp.MustCompile(`^[a-z]+:[a-zA-Z]*:[a-zA-Z0-9]+$`)
+// actionRE is the documented form, service:resourceType:operation. IAM's
+// own access-key actions leave the resource type empty
+// (iam::createAccessKey), and documented resource types may hold digits,
+// hyphens and underscores (elb:l7policies:get,
+// elb:security-policies:create, evs:recycle_policy:get).
+var actionRE = regexp.MustCompile(`^[a-z]+:[a-zA-Z0-9_-]*:[a-zA-Z0-9]+$`)
 
 func TestCatalogue(t *testing.T) {
 	t.Parallel()
@@ -25,6 +28,20 @@ func TestCatalogue(t *testing.T) {
 		}
 		if got := MustLookup(a.Name); got.Name != a.Name {
 			t.Errorf("Lookup(%q) = %q", a.Name, got.Name)
+		}
+	}
+	for name, want := range map[string]bool{
+		"elb:l7policies:get":           true,
+		"elb:security-policies:create": true,
+		"elb:availability-zones:list":  true,
+		"iam::createAccessKey":         true,
+		"vpc:vpcs":                     false,
+		"vpc:vpcs:list:all":            false,
+		"VPC:vpcs:list":                false,
+		"vpc:vpcs:list-all":            false,
+	} {
+		if got := actionRE.MatchString(name); got != want {
+			t.Errorf("actionRE.MatchString(%q) = %v, want %v", name, got, want)
 		}
 	}
 	if _, ok := Lookup("vpc:vpcs:fly"); ok {
