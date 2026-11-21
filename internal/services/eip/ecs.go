@@ -10,15 +10,18 @@ import (
 	"github.com/victor-akande/weistack/internal/services/vpc"
 )
 
-// ServerIP is what ECS asks for when creating a server with "publicip".
+// ServerIP is what ECS and ELB ask for when attaching or creating an EIP.
 type ServerIP struct {
-	ID                string // publicip.id: bind this existing EIP
-	Type              string // publicip.eip.iptype
-	ShareType         string // publicip.eip.bandwidth.sharetype
-	Size              int    // publicip.eip.bandwidth.size
-	ChargeMode        string // publicip.eip.bandwidth.chargemode
-	BandwidthID       string // publicip.eip.bandwidth.id (WHOLE)
-	ReleaseWithServer bool   // publicip.delete_on_termination
+	ID                  string // publicip.id: bind this existing EIP
+	Type                string // publicip.eip.iptype / network_type
+	ShareType           string // publicip.eip.bandwidth.sharetype
+	Size                int    // publicip.eip.bandwidth.size
+	ChargeMode          string // publicip.eip.bandwidth.chargemode
+	BandwidthID         string // publicip.eip.bandwidth.id (WHOLE)
+	BandwidthName       string // optional PER bandwidth name (ELB)
+	Description         string // optional EIP description (ELB)
+	EnterpriseProjectID string // optional enterprise project ID (ELB)
+	ReleaseWithServer   bool   // publicip.delete_on_termination
 }
 
 // AttachToServer binds an existing EIP (when ip.ID is set) or creates a new
@@ -202,7 +205,7 @@ func (s *Service) PortsRemoved(ctx context.Context, t vpc.Tenant, portIDs []stri
 	}
 	now := s.nowUTC()
 	for _, pip := range all {
-		if pip.PortID == "" {
+		if pip.PortID == "" || pip.ELBLoadBalancerID != "" {
 			continue
 		}
 		if _, ok := targets[pip.PortID]; !ok {

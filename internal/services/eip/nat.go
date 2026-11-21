@@ -36,6 +36,9 @@ func (s *Service) HoldForNAT(ctx context.Context, t vpc.Tenant, eipID, gatewayID
 	if pip.PortID != "" {
 		return "", fmt.Errorf("%w: %s", ErrNATBound, pip.PortID)
 	}
+	if pip.ELBLoadBalancerID != "" {
+		return "", fmt.Errorf("%w: %s", ErrNATBound, pip.ELBLoadBalancerID)
+	}
 	if pip.NATGatewayID != "" {
 		if pip.NATGatewayID == gatewayID {
 			return pip.Address, nil
