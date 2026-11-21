@@ -389,9 +389,3 @@ func decode(r *http.Request, dst any) error {
 	}
 	return nil
 }
-
-func (s *Service) notImplemented(op string) handler {
-	return func(http.ResponseWriter, *http.Request, Tenant) error {
-		return errNotImplemented(op)
-	}
-}
