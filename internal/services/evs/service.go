@@ -1,11 +1,5 @@
-// Package evs emulates the read side of Huawei Cloud Elastic Volume
-// Service for the disks of ECS servers.
-//
-// WeiStack has no standalone volumes: every disk belongs to the server
-// it was created with and lives exactly as long as that server. EVS
-// shows those disks, so that clients which read a server's disks
-// through EVS (Terraform's huaweicloud_compute_instance does) work.
-// Creating, attaching, resizing and deleting volumes is not emulated.
+// Package evs emulates Huawei Cloud Elastic Volume Service: volumes,
+// snapshots, tags, volume types, availability zones, and jobs.
 //
 // Response types mirror the models of the official Go SDK
 // (huaweicloud-sdk-go-v3, services/evs/v2).
@@ -16,79 +10,136 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"time"
+
+	"github.com/victor-akande/weistack/internal/core/cmk"
+	"github.com/victor-akande/weistack/internal/core/ids"
+	"github.com/victor-akande/weistack/internal/core/lifecycle"
+	"github.com/victor-akande/weistack/internal/core/store"
+	"github.com/victor-akande/weistack/internal/services/ims"
 )
 
-// Volume is one disk of a server, as its owner describes it.
-type Volume struct {
-	ID       string
-	Name     string
-	Type     string
-	SizeGB   int
-	Device   string
-	Bootable bool
-	// ServerID is the server the disk is attached to.
-	ServerID         string
-	AvailabilityZone string
-	// ImageID and ImageName are set on a disk created from an image.
-	ImageID   string
-	ImageName string
-	// Created and Updated are RFC 3339 timestamps.
-	Created             string
-	Updated             string
-	EnterpriseProjectID string
-	// KMSKeyID is the KMS key of an encrypted disk.
-	KMSKeyID string
+// Sentinel errors returned to ECS and mapped to ECS error codes.
+var (
+	ErrVolumeNotFound  = errors.New("evs: volume not found")
+	ErrNotAvailable    = errors.New("evs: volume is not available")
+	ErrAlreadyAttached = errors.New("evs: volume is already attached to this server")
+	ErrOtherAZ         = errors.New("evs: volume and server are in different availability zones")
+	ErrTooManyDisks    = errors.New("evs: server has reached the maximum number of data disks")
+	ErrBadDevice       = errors.New("evs: invalid or occupied device name")
+	ErrNotAttached     = errors.New("evs: volume is not attached to this server")
+	ErrSystemDisk      = errors.New("evs: cannot perform operation on system disk")
+	ErrShared          = errors.New("evs: cannot update delete_on_termination on multiattach volume")
+	ErrServerNotFound  = errors.New("evs: server not found")
+)
+
+// Tenant identifies whose volumes a call is about.
+type Tenant struct {
+	Region    string
+	ProjectID string
 }
 
-// VolumeSource lists the disks of a project. The ECS service implements
-// it.
-type VolumeSource interface {
-	Volumes(ctx context.Context, region, projectID string) ([]Volume, error)
+// ServerInfo describes an ECS server's AZ and status for EVS checks.
+type ServerInfo struct {
+	AvailabilityZone string
+	Status           string
+}
+
+// Servers is what EVS needs from ECS; *ecs.Service implements it.
+type Servers interface {
+	// ServerForVolume returns a server's AZ and status, or ErrServerNotFound.
+	ServerForVolume(ctx context.Context, t Tenant, id string) (ServerInfo, error)
+	// AttachVolume attaches an available volume as attachvolume does.
+	AttachVolume(ctx context.Context, t Tenant, serverID, volumeID string) error
 }
 
 // Deps are the dependencies of the service.
 type Deps struct {
+	Store  store.Store
+	Engine *lifecycle.Engine
+	IDs    *ids.Generator
 	Logger *slog.Logger
-	// Volumes may be nil, and may be set later with SetVolumes.
-	Volumes VolumeSource
+	Images *ims.Service // imageRef
+	Keys   cmk.Keys     // encryption; nil refuses encrypted volumes with EVS.2040
+	Now    func() time.Time
 }
 
 // Service is the EVS emulator.
 type Service struct {
-	log *slog.Logger
+	store  store.Store
+	engine *lifecycle.Engine
+	ids    *ids.Generator
+	log    *slog.Logger
+	images *ims.Service
+	keys   cmk.Keys
+	now    func() time.Time
 
 	mu      sync.Mutex
-	volumes VolumeSource
+	servers Servers
 }
 
 // New returns the EVS service.
 func New(d Deps) (*Service, error) {
+	if d.Store == nil {
+		return nil, errors.New("evs: Store is required")
+	}
+	if d.Engine == nil {
+		return nil, errors.New("evs: Engine is required")
+	}
+	if d.IDs == nil {
+		return nil, errors.New("evs: IDs is required")
+	}
 	if d.Logger == nil {
 		return nil, errors.New("evs: Logger is required")
 	}
-	return &Service{log: d.Logger, volumes: d.Volumes}, nil
+	now := d.Now
+	if now == nil {
+		now = time.Now
+	}
+	return &Service{
+		store:  d.Store,
+		engine: d.Engine,
+		ids:    d.IDs,
+		log:    d.Logger,
+		images: d.Images,
+		keys:   d.Keys,
+		now:    now,
+	}, nil
 }
 
-// SetVolumes installs the source of disks.
-func (s *Service) SetVolumes(v VolumeSource) {
+// SetServers installs the ECS callback after both services exist.
+func (s *Service) SetServers(srv Servers) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.volumes = v
+	s.servers = srv
 }
 
 // Name implements server.Service.
 func (s *Service) Name() string { return "evs" }
 
 // Version implements server.Service.
-func (s *Service) Version() string { return "v2 (read only)" }
+func (s *Service) Version() string { return "v2, v2.1" }
 
-// list returns the project's disks; none without a source.
-func (s *Service) list(ctx context.Context, region, projectID string) ([]Volume, error) {
-	s.mu.Lock()
-	src := s.volumes
-	s.mu.Unlock()
-	if src == nil {
-		return nil, nil
-	}
-	return src.Volumes(ctx, region, projectID)
+const (
+	kindVolume   = "evs.volume"
+	kindSnapshot = "evs.snapshot"
+	kindJob      = "evs.job"
+)
+
+func (s *Service) volumes(t Tenant) store.Collection[volume] {
+	return store.Of[volume](s.store, store.Scope{Region: t.Region, ProjectID: t.ProjectID, Kind: kindVolume})
+}
+
+func (s *Service) snapshots(t Tenant) store.Collection[snapshot] {
+	return store.Of[snapshot](s.store, store.Scope{Region: t.Region, ProjectID: t.ProjectID, Kind: kindSnapshot})
+}
+
+func (s *Service) jobs(t Tenant) store.Collection[job] {
+	return store.Of[job](s.store, store.Scope{Region: t.Region, ProjectID: t.ProjectID, Kind: kindJob})
+}
+
+// Resume continues any asynchronous volume or snapshot operations that
+// were in flight when a persistent emulator last stopped.
+func (s *Service) Resume(_ context.Context) error {
+	return nil
 }

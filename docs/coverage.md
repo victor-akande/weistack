@@ -10,10 +10,10 @@ A request for anything else answers `501 WeiStack.0501`. The pages under
 
 | Service | API versions | Operations |
 | --- | --- | --- |
-| [ECS](#ecs) | v1, v2.1 | 16 |
+| [ECS](#ecs) | v1, v2.1 | 19 |
 | [ELB](#elb) | v3 (dedicated) | 80 |
 | [EPS](#eps) | v1.0 (the default enterprise project) | 1 |
-| [EVS](#evs) | v2 (read only) | 2 |
+| [EVS](#evs) | v2, v2.1 | 18 |
 | [IAM](#iam) | v3, v3.0, v5 (users, groups, tokens, access keys, roles, custom policies, role assignments, identity policies) | 131 |
 | [IMS](#ims) | v1, v2 | 6 |
 | [KMS](#kms) | v1.0 (keys, encryption, data keys, rotation, tags) | 38 |
@@ -35,8 +35,11 @@ Endpoint: `ecs.{region}.myhuaweicloud.com`. Details: [ECS](services/ecs.md).
 | `GET` | `/v1/{project_id}/cloudservers/detail` | `ecs:cloudServers:listServersDetails` |
 | `GET` | `/v1/{project_id}/cloudservers/flavors` | `ecs:cloudServerFlavors:get` |
 | `GET` | `/v1/{project_id}/cloudservers/tags` | `ecs:cloudServers:listServerTags` |
+| `POST` | `/v1/{project_id}/cloudservers/{server_id}/attachvolume` | `ecs:cloudServers:attach` |
 | `GET` | `/v1/{project_id}/cloudservers/{server_id}/block_device/{volume_id}` | `ecs:cloudServers:showServerBlockDevice` |
+| `PUT` | `/v1/{project_id}/cloudservers/{server_id}/block_device/{volume_id}` | `ecs:cloudServers:updateServerBlockDevice` |
 | `GET` | `/v1/{project_id}/cloudservers/{server_id}/block_device` | `ecs:cloudServers:listServerVolumeAttachments` |
+| `DELETE` | `/v1/{project_id}/cloudservers/{server_id}/detachvolume/{volume_id}` | `ecs:cloudServers:detachVolume` |
 | `POST` | `/v1/{project_id}/cloudservers/{server_id}/resize` | `ecs:cloudServers:resize` |
 | `POST` | `/v1/{project_id}/cloudservers/{server_id}/tags/action` | Depends on the body (the action) |
 | `GET` | `/v1/{project_id}/cloudservers/{server_id}/tags` | `ecs:cloudServers:showServerTags` |
@@ -147,8 +150,24 @@ Endpoint: `evs.{region}.myhuaweicloud.com`. Details: [EVS](services/evs.md).
 
 | Method | Path | IAM action |
 | --- | --- | --- |
+| `GET` | `/v1/{project_id}/jobs/{job_id}` | None needed |
+| `POST` | `/v2.1/{project_id}/cloudvolumes/{volume_id}/action` | `evs:volumes:resize` |
+| `POST` | `/v2.1/{project_id}/cloudvolumes` | `evs:volumes:create` |
+| `GET` | `/v2/{project_id}/cloudsnapshots/detail` | `evs:snapshots:list` |
+| `POST` | `/v2/{project_id}/cloudsnapshots/{snapshot_id}/rollback` | `evs:snapshots:rollback` |
+| `DELETE` | `/v2/{project_id}/cloudsnapshots/{snapshot_id}` | `evs:snapshots:delete` |
+| `GET` | `/v2/{project_id}/cloudsnapshots/{snapshot_id}` | `evs:snapshots:get` |
+| `PUT` | `/v2/{project_id}/cloudsnapshots/{snapshot_id}` | `evs:snapshots:update` |
+| `POST` | `/v2/{project_id}/cloudsnapshots` | `evs:snapshots:create` |
 | `GET` | `/v2/{project_id}/cloudvolumes/detail` | `evs:volumes:list` |
+| `GET` | `/v2/{project_id}/cloudvolumes/tags` | `evs:volumes:listTags` |
+| `POST` | `/v2/{project_id}/cloudvolumes/{volume_id}/tags/action` | Depends on the body (the action) |
+| `GET` | `/v2/{project_id}/cloudvolumes/{volume_id}/tags` | `evs:volumes:listTagsForResource` |
+| `DELETE` | `/v2/{project_id}/cloudvolumes/{volume_id}` | `evs:volumes:delete` |
 | `GET` | `/v2/{project_id}/cloudvolumes/{volume_id}` | `evs:volumes:get` |
+| `PUT` | `/v2/{project_id}/cloudvolumes/{volume_id}` | `evs:volumes:update` |
+| `GET` | `/v2/{project_id}/os-availability-zone` | None needed |
+| `GET` | `/v2/{project_id}/types` | `evs:types:get` |
 
 ## IAM
 

@@ -19,6 +19,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/services/eip"
+	"github.com/victor-akande/weistack/internal/services/evs"
 	"github.com/victor-akande/weistack/internal/services/ims"
 	"github.com/victor-akande/weistack/internal/services/vpc"
 )
@@ -344,8 +345,8 @@ func TestCreateServerOptions(t *testing.T) {
 	if strings.Contains(string(raw), "Str0ng") || strings.Contains(string(out), "Str0ng") {
 		t.Error("the admin password leaked into stored state or a response")
 	}
-	if srv := e.server(t, ids[0]); srv.RootVolume.SizeGB != 80 || srv.RootVolume.Type != "SSD" {
-		t.Errorf("root volume = %+v", srv.RootVolume)
+	if disks, err := e.volumes.DisksOf(t.Context(), testTenant.evs(), ids[0]); err != nil || len(disks) == 0 || disks[0].SizeGB != 80 || disks[0].Type != "SSD" {
+		t.Errorf("root volume = %+v, %v", disks, err)
 	}
 
 	// That address is now taken.
@@ -730,8 +731,9 @@ func TestImageFromServerAndServerFromImage(t *testing.T) {
 	_, second := e.mustCreate(t, n.serverBody("name", `"clone"`, "imageRef", `"`+imageID+`"`))
 	e.settle(t)
 	srv := e.server(t, second[0])
-	if srv.Status != StatusActive || srv.ImageID != imageID || srv.ImageType != "private" || srv.RootVolume.SizeGB != 60 {
-		t.Fatalf("second server = %+v", srv)
+	disks, err := e.volumes.DisksOf(t.Context(), testTenant.evs(), second[0])
+	if err != nil || len(disks) == 0 || srv.Status != StatusActive || srv.ImageID != imageID || srv.ImageType != "private" || disks[0].SizeGB != 60 {
+		t.Fatalf("second server = %+v, disks = %+v, err = %v", srv, disks, err)
 	}
 
 	// Another project cannot image this server or boot from this image.
@@ -1113,13 +1115,18 @@ func TestCreateServerPublicIPErrorRollsBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	evsSvc, err := evs.New(evs.Deps{Store: st, Engine: engine, IDs: gen, Logger: log, Images: imsSvc, Now: clock.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
 	ecsSvc, err := New(Deps{
 		Store: st, Engine: engine, IDs: gen, Logger: log, Now: clock.Now,
-		Network: vpcSvc, EIPs: eipSvc, Images: imsSvc,
+		Network: vpcSvc, EIPs: eipSvc, Images: imsSvc, Volumes: evsSvc,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	evsSvc.SetServers(ecsSvc)
 	vpcSvc.SetPorts(ecsSvc)
 
 	v, err := vpcSvc.CreateVPC(t.Context(), testTenant.vpc(), vpc.CreateVPCOption{CIDR: ptr("10.0.0.0/16")})
@@ -1184,13 +1191,18 @@ func TestCreateServerWithoutEIPServiceIgnoresPublicIP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	evsSvc, err := evs.New(evs.Deps{Store: st, Engine: engine, IDs: gen, Logger: log, Images: imsSvc, Now: clock.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
 	ecsSvc, err := New(Deps{
 		Store: st, Engine: engine, IDs: gen, Logger: log, Now: clock.Now,
-		Network: vpcSvc, Images: imsSvc, // EIPs intentionally nil
+		Network: vpcSvc, Images: imsSvc, Volumes: evsSvc, // EIPs intentionally nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	evsSvc.SetServers(ecsSvc)
 	v, err := vpcSvc.CreateVPC(t.Context(), testTenant.vpc(), vpc.CreateVPCOption{CIDR: ptr("10.1.0.0/16")})
 	if err != nil {
 		t.Fatal(err)
@@ -1225,7 +1237,7 @@ func TestCreateServerWithoutEIPServiceIgnoresPublicIP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	detail := ecsSvc.detail(t.Context(), testTenant, srv)
+	detail := ecsSvc.detail(t.Context(), testTenant, srv, nil)
 	addrs := detail.Addresses[v.ID]
 	if len(addrs) != 1 || addrs[0].Type != "fixed" {
 		t.Fatalf("addresses with nil EIPs = %+v, want only fixed address (no invented floating IP)", addrs)

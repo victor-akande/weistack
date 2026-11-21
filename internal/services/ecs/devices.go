@@ -13,39 +13,9 @@ import (
 	"github.com/victor-akande/weistack/internal/services/vpc"
 )
 
-// A server's disks (RootVolume, DataVolumes) and NICs are part of its
-// record. This file shows the disks to EVS and through ECS's own block
-// device API, and the NICs to VPC as ports.
-
-// Volumes implements evs.VolumeSource: every disk of the project's
-// servers, in server creation order, system disk first.
-func (s *Service) Volumes(ctx context.Context, region, projectID string) ([]evs.Volume, error) {
-	servers, err := s.servers(Tenant{Region: region, ProjectID: projectID}).List(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	var out []evs.Volume
-	for _, srv := range servers {
-		for i, v := range srv.disks() {
-			vol := evs.Volume{
-				ID: v.ID, Name: fmt.Sprintf("%s-volume-%04d", srv.Name, i), Type: v.Type, SizeGB: v.SizeGB,
-				Device: v.Device, Bootable: i == 0, ServerID: srv.ID, AvailabilityZone: srv.AvailabilityZone,
-				Created: srv.Created, Updated: srv.Updated, EnterpriseProjectID: srv.EnterpriseProjectID,
-				KMSKeyID: v.KMSKeyID,
-			}
-			if i == 0 {
-				vol.ImageID, vol.ImageName = srv.ImageID, srv.ImageName
-			}
-			out = append(out, vol)
-		}
-	}
-	return out, nil
-}
-
-// disks returns the system disk followed by the data disks.
-func (srv Server) disks() []Volume {
-	return append([]Volume{srv.RootVolume}, srv.DataVolumes...)
-}
+// A server's disks live in EVS; its NICs are part of its record. This
+// file shows the disks through ECS's block device API, and the NICs to
+// VPC as ports.
 
 // blockDevice mirrors the SDK model ecs/v2 ServerBlockDevice.
 type blockDevice struct {
@@ -59,16 +29,11 @@ type blockDevice struct {
 	Bus        string `json:"bus"`
 }
 
-func blockDevices(srv Server) []blockDevice {
-	disks := srv.disks()
+func blockDevices(serverID string, disks []evs.Disk) []blockDevice {
 	out := make([]blockDevice, len(disks))
-	for i, v := range disks {
-		boot := -1
-		if i == 0 {
-			boot = 0
-		}
+	for i, d := range disks {
 		out[i] = blockDevice{
-			ID: v.ID, ServerID: srv.ID, VolumeID: v.ID, Device: v.Device, Size: v.SizeGB, BootIndex: boot,
+			ID: d.VolumeID, ServerID: serverID, VolumeID: d.VolumeID, Device: d.Device, Size: d.SizeGB, BootIndex: d.BootIndex,
 			// Virtio disks occupy consecutive PCI slots from 0000:02:01.0.
 			PCIAddress: fmt.Sprintf("0000:02:%02x.0", i+1), Bus: "virtio",
 		}
@@ -91,10 +56,20 @@ func (s *Service) handleListBlockDevices(w http.ResponseWriter, r *http.Request,
 	if err != nil {
 		return err
 	}
-	free := maxDataVolumes - len(srv.DataVolumes)
+	disks, err := s.volumes.DisksOf(r.Context(), t.evs(), srv.ID)
+	if err != nil {
+		return err
+	}
+	dataCount := 0
+	for _, d := range disks {
+		if d.BootIndex != 0 {
+			dataCount++
+		}
+	}
+	free := maxDataVolumes - dataCount
 	return httpx.WriteJSON(w, http.StatusOK, listBlockDevicesResponse{
 		AttachableQuantity: attachableQuantity{FreeBlk: free, FreeDisk: free},
-		VolumeAttachments:  blockDevices(srv),
+		VolumeAttachments:  blockDevices(srv.ID, disks),
 	})
 }
 
@@ -107,8 +82,12 @@ func (s *Service) handleShowBlockDevice(w http.ResponseWriter, r *http.Request, 
 	if err != nil {
 		return err
 	}
+	disks, err := s.volumes.DisksOf(r.Context(), t.evs(), srv.ID)
+	if err != nil {
+		return err
+	}
 	id := chi.URLParam(r, "volume_id")
-	for _, bd := range blockDevices(srv) {
+	for _, bd := range blockDevices(srv.ID, disks) {
 		if bd.VolumeID == id {
 			return httpx.WriteJSON(w, http.StatusOK, showBlockDeviceResponse{VolumeAttachment: bd})
 		}

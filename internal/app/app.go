@@ -359,9 +359,19 @@ func buildServices(
 		return nil, err
 	}
 
+	evsSvc, err := evs.New(evs.Deps{
+		Store: st, Engine: engine, IDs: gen, Logger: log, Images: imsSvc, Keys: kmsSvc,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := evsSvc.Resume(ctx); err != nil {
+		return nil, err
+	}
+
 	ecsSvc, err := ecs.New(ecs.Deps{
 		Store: st, Engine: engine, IDs: gen, Logger: log, SeedDir: cfg.SeedDir,
-		Network: vpcSvc, EIPs: eipSvc, Images: imsSvc, Keys: kmsSvc,
+		Network: vpcSvc, EIPs: eipSvc, Images: imsSvc, Volumes: evsSvc, Keys: kmsSvc,
 		Quota: ecs.Quota{Servers: cfg.ECSMaxServers, VCPUs: cfg.ECSMaxVCPUs},
 	})
 	if err != nil {
@@ -370,6 +380,7 @@ func buildServices(
 	if err := ecsSvc.Resume(ctx); err != nil {
 		return nil, err
 	}
+	evsSvc.SetServers(ecsSvc)
 	// IMS makes images of ECS servers; ECS reads IMS images. The cycle
 	// is closed here, after both exist.
 	imsSvc.SetServers(ecsSvc)
@@ -386,12 +397,6 @@ func buildServices(
 	vpcSvc.Extend(natSvc.VPCExtension())
 
 	elbSvc, err := elb.New(elb.Deps{Store: st, IDs: gen, Logger: log, Vault: vlt, VPC: vpcSvc, EIPs: eipSvc, Servers: ecsSvc})
-	if err != nil {
-		return nil, err
-	}
-
-	// EVS shows the disks of ECS servers.
-	evsSvc, err := evs.New(evs.Deps{Logger: log, Volumes: ecsSvc})
 	if err != nil {
 		return nil, err
 	}

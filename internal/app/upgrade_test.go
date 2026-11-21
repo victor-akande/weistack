@@ -114,6 +114,7 @@ func TestUpgradeFromReleasedData(t *testing.T) {
 			expect("/vpc/v1/"+p+"/subnets/"+ids.Subnet, `"name":"fixture-subnet"`, `"status":"ACTIVE"`)
 			expect("/vpc/v3/"+p+"/vpc/security-groups/"+ids.SecurityGroup, `"name":"fixture-sg"`, `"multiport":"22"`)
 			expect("/ecs/v1/"+p+"/cloudservers/"+ids.Server, `"name":"fixture-server"`, `"status":"ACTIVE"`)
+			expect("/evs/v2/"+p+"/cloudvolumes/detail?server_id="+ids.Server, `"status":"in-use"`, `"bootable":"true"`)
 			expect("/rds/v3/"+p+"/instances?id="+ids.RDS, `"name":"fixture-mysql"`, `"status":"ACTIVE"`)
 
 			_, body := inst.get(t, "/ims/v1/"+p+"/jobs/"+ids.ImageJob)

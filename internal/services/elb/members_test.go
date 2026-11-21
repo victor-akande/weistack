@@ -25,6 +25,7 @@ import (
 	"github.com/victor-akande/weistack/internal/server"
 	"github.com/victor-akande/weistack/internal/services/ecs"
 	"github.com/victor-akande/weistack/internal/services/eip"
+	"github.com/victor-akande/weistack/internal/services/evs"
 	"github.com/victor-akande/weistack/internal/services/ims"
 	"github.com/victor-akande/weistack/internal/services/vpc"
 	"github.com/victor-akande/weistack/internal/testutil/golden"
@@ -107,13 +108,18 @@ func newMemEnv(t *testing.T) *memEnv {
 	if err != nil {
 		t.Fatalf("ims.New: %v", err)
 	}
+	evsSvc, err := evs.New(evs.Deps{Store: st, Engine: engine, IDs: gen, Logger: log, Images: imsSvc, Now: clock.Now})
+	if err != nil {
+		t.Fatalf("evs.New: %v", err)
+	}
 	ecsSvc, err := ecs.New(ecs.Deps{
 		Store: st, Engine: engine, IDs: gen, Logger: log, Now: clock.Now,
-		Network: vpcSvc, Images: imsSvc,
+		Network: vpcSvc, Images: imsSvc, Volumes: evsSvc,
 	})
 	if err != nil {
 		t.Fatalf("ecs.New: %v", err)
 	}
+	evsSvc.SetServers(ecsSvc)
 	elbSvc, err := New(Deps{
 		Store: st, IDs: gen, Logger: log, Vault: vlt,
 		VPC: vpcSvc, EIPs: memStubEIPs{}, Servers: ecsSvc, Now: clock.Now,

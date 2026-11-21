@@ -3,7 +3,6 @@ package evs
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -26,37 +25,32 @@ const (
 	otherID = "33333333-3333-4333-8333-333333333333"
 )
 
-type fakeSource struct {
-	vols []Volume
-	err  error
-}
-
-func (f *fakeSource) Volumes(_ context.Context, r, p string) ([]Volume, error) {
-	if r != region || p != project {
-		return nil, nil
-	}
-	return f.vols, f.err
-}
-
-func newHandler(t *testing.T, src VolumeSource) http.Handler {
+func newHandler(t *testing.T, vols []volume) http.Handler {
 	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc, err := New(Deps{Logger: log})
+	st := store.NewMemory()
+	t.Cleanup(func() { _ = st.Close() })
+	engine := lifecycle.New(lifecycle.Options{})
+	gen := ids.NewSeeded(1)
+
+	svc, err := New(Deps{Store: st, Engine: engine, IDs: gen, Logger: log})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if src != nil {
-		svc.SetVolumes(src)
+	ten := Tenant{Region: region, ProjectID: project}
+	for _, v := range vols {
+		if err := svc.volumes(ten).Create(context.Background(), v.ID, v); err != nil {
+			t.Fatal(err)
+		}
 	}
+
 	cfg, err := config.Load(nil, func(string) string { return "" }, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
-	st := store.NewMemory()
-	t.Cleanup(func() { _ = st.Close() })
 	srv, err := server.New(server.Options{
-		Config: cfg, ProjectID: project, Logger: log, Store: st, Engine: lifecycle.New(lifecycle.Options{}),
-		IDs: ids.New(), Services: []server.Service{svc},
+		Config: cfg, ProjectID: project, Logger: log, Store: st, Engine: engine,
+		IDs: gen, Services: []server.Service{svc},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -77,16 +71,25 @@ func get(t *testing.T, h http.Handler, path string) (int, map[string]any) {
 	return w.Code, out
 }
 
-func disks() *fakeSource {
-	return &fakeSource{vols: []Volume{
-		{ID: rootID, Name: "web-volume-0000", Type: "GPSSD", SizeGB: 40, Device: "/dev/vda", Bootable: true,
-			ServerID: "srv-1", AvailabilityZone: "ap-southeast-1a", ImageID: "img-1", ImageName: "Ubuntu",
-			Created: "2026-01-02T03:04:05Z", Updated: "2026-01-02T03:04:05Z"},
-		{ID: dataID, Name: "web-volume-0001", Type: "SSD", SizeGB: 100, Device: "/dev/vdb",
-			ServerID: "srv-1", AvailabilityZone: "ap-southeast-1a", Created: "2026-01-02T03:04:05Z", EnterpriseProjectID: "ep"},
-		{ID: otherID, Name: "db-volume-0000", Type: "SAS", SizeGB: 40, Device: "/dev/vda", Bootable: true,
-			ServerID: "srv-2", AvailabilityZone: "ap-southeast-1b"},
-	}}
+func disks() []volume {
+	return []volume{
+		{
+			ID: rootID, Name: "web-volume-0000", Status: statusInUse, VolumeType: "GPSSD", SizeGB: 40,
+			Bootable: true, AvailabilityZone: "ap-southeast-1a", ImageID: "img-1", ImageName: "Ubuntu",
+			CreatedAt: "2026-01-02T03:04:05Z", UpdatedAt: "2026-01-02T03:04:05Z",
+			Attachments: []attachment{{ID: rootID, ServerID: "srv-1", Device: "/dev/vda", BootIndex: 0, DeleteOnTermination: true, AttachedAt: "2026-01-02T03:04:05Z"}},
+		},
+		{
+			ID: dataID, Name: "web-volume-0001", Status: statusInUse, VolumeType: "SSD", SizeGB: 100,
+			AvailabilityZone: "ap-southeast-1a", CreatedAt: "2026-01-02T03:04:05Z", EnterpriseProjectID: "ep",
+			Attachments: []attachment{{ID: dataID, ServerID: "srv-1", Device: "/dev/vdb", BootIndex: -1, DeleteOnTermination: false, AttachedAt: "2026-01-02T03:04:05Z"}},
+		},
+		{
+			ID: otherID, Name: "db-volume-0000", Status: statusInUse, VolumeType: "SAS", SizeGB: 40,
+			Bootable: true, AvailabilityZone: "ap-southeast-1b",
+			Attachments: []attachment{{ID: otherID, ServerID: "srv-2", Device: "/dev/vda", BootIndex: 0, DeleteOnTermination: true}},
+		},
+	}
 }
 
 func TestShowVolume(t *testing.T) {
@@ -169,18 +172,6 @@ func TestListVolumes(t *testing.T) {
 	}
 }
 
-func TestWithoutASource(t *testing.T) {
-	t.Parallel()
-	h := newHandler(t, nil)
-	if status, out := get(t, h, "/v2/{p}/cloudvolumes/detail"); status != http.StatusOK || out["count"] != 0.0 {
-		t.Fatalf("no source: %d %v", status, out)
-	}
-	failing := newHandler(t, &fakeSource{err: errors.New("disk on fire")})
-	if status, _ := get(t, failing, "/v2/{p}/cloudvolumes/"+rootID); status != http.StatusInternalServerError {
-		t.Fatalf("a failing source: %d", status)
-	}
-}
-
 func TestUnemulatedOperations(t *testing.T) {
 	t.Parallel()
 	h := newHandler(t, disks())
@@ -193,9 +184,9 @@ func TestUnemulatedOperations(t *testing.T) {
 	}
 }
 
-func TestNewNeedsALogger(t *testing.T) {
+func TestNewValidation(t *testing.T) {
 	t.Parallel()
 	if _, err := New(Deps{}); err == nil {
-		t.Fatal("New accepted no logger")
+		t.Fatal("New accepted empty Deps")
 	}
 }

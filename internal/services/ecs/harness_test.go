@@ -18,6 +18,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/server"
 	"github.com/victor-akande/weistack/internal/services/eip"
+	"github.com/victor-akande/weistack/internal/services/evs"
 	"github.com/victor-akande/weistack/internal/services/ims"
 	"github.com/victor-akande/weistack/internal/services/vpc"
 	"github.com/victor-akande/weistack/internal/testutil/golden"
@@ -43,6 +44,7 @@ type env struct {
 	network *vpc.Service
 	eips    *eip.Service
 	images  *ims.Service
+	volumes *evs.Service
 	store   store.Store
 	engine  *lifecycle.Engine
 	clock   *lifecycle.FakeClock
@@ -96,13 +98,18 @@ func newEnvOpts(t *testing.T, st store.Store, seedDir string, quota Quota, fault
 	if err != nil {
 		t.Fatalf("ims.New: %v", err)
 	}
+	volumes, err := evs.New(evs.Deps{Store: st, Engine: engine, IDs: gen, Logger: log, Images: images, Now: clock.Now})
+	if err != nil {
+		t.Fatalf("evs.New: %v", err)
+	}
 	svc, err := New(Deps{
 		Store: st, Engine: engine, IDs: gen, Logger: log, Now: clock.Now, SeedDir: seedDir,
-		Network: network, EIPs: eips, Images: images, Quota: quota,
+		Network: network, EIPs: eips, Images: images, Volumes: volumes, Quota: quota,
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	volumes.SetServers(svc)
 	images.SetServers(svc)
 	network.SetPorts(svc)
 	cfg, err := config.Load(nil, func(string) string { return "" }, io.Discard)
@@ -111,12 +118,12 @@ func newEnvOpts(t *testing.T, st store.Store, seedDir string, quota Quota, fault
 	}
 	srv, err := server.New(server.Options{
 		Config: cfg, ProjectID: testProject, Logger: log, Store: st, Engine: engine, IDs: gen,
-		Services: []server.Service{network, svc},
+		Services: []server.Service{network, svc, volumes},
 	})
 	if err != nil {
 		t.Fatalf("server.New: %v", err)
 	}
-	return &env{svc: svc, network: network, eips: eips, images: images, store: st, engine: engine, clock: clock, handler: srv.Handler()}
+	return &env{svc: svc, network: network, eips: eips, images: images, volumes: volumes, store: st, engine: engine, clock: clock, handler: srv.Handler()}
 }
 
 // call sends a request to the ECS endpoint host. path starts at the API
