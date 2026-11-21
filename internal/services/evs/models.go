@@ -1,12 +1,128 @@
 package evs
 
 import (
+	"maps"
 	"net/http"
+	"strconv"
 )
 
-// statusInUse is the status of an attached disk; every disk WeiStack
-// has is attached.
-const statusInUse = "in-use"
+const (
+	volumeTimeLayout = "2006-01-02T15:04:05.000000"
+	jobTimeLayout    = "2006-01-02T15:04:05.000Z"
+)
+
+// Volume and snapshot statuses (EVSStatus.txt).
+const (
+	statusAvailable        = "available"
+	statusCreating         = "creating"
+	statusExtending        = "extending"
+	statusDeleting         = "deleting"
+	statusAttaching        = "attaching"
+	statusDetaching        = "detaching"
+	statusInUse            = "in-use"
+	statusError            = "error"
+	statusErrorExtending   = "error_extending"
+	statusErrorDeleting    = "error_deleting"
+	statusErrorRestoring   = "error_restoring"
+	statusErrorRollbacking = "error_rollbacking"
+	statusRollbacking      = "rollbacking"
+)
+
+// volume is an EVS disk. Its JSON layout is part of data format 2.
+type volume struct {
+	ID                  string            `json:"id"`
+	Name                string            `json:"name"`
+	Description         string            `json:"description"`
+	Status              string            `json:"status"`
+	SizeGB              int               `json:"size"`
+	VolumeType          string            `json:"volume_type"`
+	AvailabilityZone    string            `json:"availability_zone"`
+	Bootable            bool              `json:"bootable"`
+	ImageID             string            `json:"image_id,omitempty"`
+	ImageName           string            `json:"image_name,omitempty"`
+	SnapshotID          string            `json:"snapshot_id,omitempty"`
+	KMSKeyID            string            `json:"kms_key_id,omitempty"`
+	Passthrough         bool              `json:"passthrough,omitempty"` // metadata hw:passthrough
+	Multiattach         bool              `json:"multiattach,omitempty"`
+	IOPS                int               `json:"iops,omitempty"`
+	Throughput          int               `json:"throughput,omitempty"`
+	QoSID               string            `json:"qos_id,omitempty"`   // the id of the iops and throughput objects
+	Metadata            map[string]string `json:"metadata,omitempty"` // the caller's keys, without the system ones
+	Tags                map[string]string `json:"tags,omitempty"`
+	EnterpriseProjectID string            `json:"enterprise_project_id"`
+	Attachments         []attachment      `json:"attachments"`
+	Pending             *pending          `json:"pending,omitempty"`
+	CreatedAt           string            `json:"created_at"`
+	UpdatedAt           string            `json:"updated_at"`
+}
+
+type attachment struct {
+	ID                  string `json:"id"` // the attachment ID
+	ServerID            string `json:"server_id"`
+	Device              string `json:"device"`
+	BootIndex           int    `json:"boot_index"` // 0 for a system disk, -1 for a data disk
+	DeleteOnTermination bool   `json:"delete_on_termination"`
+	AttachedAt          string `json:"attached_at"`
+}
+
+// pending is the asynchronous operation in flight, kept so it resumes
+// after a restart.
+type pending struct {
+	Op         string `json:"op"`     // "create", "extend", "delete", "rollback", "attach", "detach"
+	JobID      string `json:"job_id"` // EVS's job, or ECS's for attach and detach
+	ServerID   string `json:"server_id,omitempty"`
+	Device     string `json:"device,omitempty"`
+	NewSize    int    `json:"new_size,omitempty"`
+	SnapshotID string `json:"snapshot_id,omitempty"`
+	AttachTo   string `json:"attach_to,omitempty"` // create's server_id
+}
+
+type snapshot struct {
+	ID                  string            `json:"id"`
+	Name                string            `json:"name"`
+	Description         string            `json:"description"`
+	Status              string            `json:"status"`
+	VolumeID            string            `json:"volume_id"`
+	SizeGB              int               `json:"size"`
+	VolumeType          string            `json:"volume_type"`
+	AvailabilityZone    string            `json:"availability_zone"`
+	Metadata            map[string]string `json:"metadata,omitempty"`
+	EnterpriseProjectID string            `json:"enterprise_project_id"`
+	CreatedAt           string            `json:"created_at"`
+	UpdatedAt           string            `json:"updated_at"`
+}
+
+// job mirrors the SDK model evs/v2 ShowJobResponse.
+type job struct {
+	Status     string      `json:"status"`
+	Entities   jobEntities `json:"entities"`
+	JobID      string      `json:"job_id"`
+	JobType    string      `json:"job_type"`
+	BeginTime  string      `json:"begin_time"`
+	EndTime    string      `json:"end_time"`
+	ErrorCode  string      `json:"error_code,omitempty"`
+	FailReason string      `json:"fail_reason,omitempty"`
+}
+
+type jobEntities struct {
+	VolumeType   string   `json:"volume_type,omitempty"`
+	Size         int      `json:"size,omitempty"`
+	VolumeID     string   `json:"volume_id,omitempty"`
+	Name         string   `json:"name,omitempty"`
+	SubJobsTotal int      `json:"sub_jobs_total,omitempty"`
+	SubJobs      []subJob `json:"sub_jobs,omitempty"`
+}
+
+type subJob struct {
+	Status     string      `json:"status"`
+	Entities   jobEntities `json:"entities"`
+	JobID      string      `json:"job_id"`
+	JobType    string      `json:"job_type"`
+	BeginTime  string      `json:"begin_time"`
+	EndTime    string      `json:"end_time"`
+	ErrorCode  string      `json:"error_code,omitempty"`
+	FailReason string      `json:"fail_reason,omitempty"`
+}
 
 // volumeDetail mirrors the SDK model evs/v2 VolumeDetail.
 type volumeDetail struct {
@@ -14,7 +130,7 @@ type volumeDetail struct {
 	Links               []link            `json:"links"`
 	Name                string            `json:"name"`
 	Status              string            `json:"status"`
-	Attachments         []attachment      `json:"attachments"`
+	Attachments         []attachmentWire  `json:"attachments"`
 	AvailabilityZone    string            `json:"availability_zone"`
 	Host                string            `json:"os-vol-host-attr:host"`
 	SnapshotID          string            `json:"snapshot_id"`
@@ -34,6 +150,8 @@ type volumeDetail struct {
 	Encrypted           bool              `json:"encrypted"`
 	Tags                map[string]string `json:"tags"`
 	EnterpriseProjectID string            `json:"enterprise_project_id"`
+	IOPS                *qosWire          `json:"iops,omitempty"`
+	Throughput          *qosWire          `json:"throughput,omitempty"`
 }
 
 type link struct {
@@ -41,8 +159,8 @@ type link struct {
 	Rel  string `json:"rel"`
 }
 
-// attachment mirrors the SDK model evs/v2 Attachment.
-type attachment struct {
+// attachmentWire mirrors the SDK model evs/v2 Attachment.
+type attachmentWire struct {
 	ID           string `json:"id"`
 	AttachmentID string `json:"attachment_id"`
 	AttachedAt   string `json:"attached_at"`
@@ -52,49 +170,85 @@ type attachment struct {
 	VolumeID     string `json:"volume_id"`
 }
 
-func detail(v Volume, t tenant, r *http.Request) volumeDetail {
-	bootable := "false"
+type qosWire struct {
+	Frozened bool   `json:"frozened"`
+	ID       string `json:"id"`
+	TotalVal int    `json:"total_val"`
+}
+
+func detail(v volume, t Tenant, r *http.Request) volumeDetail {
 	image := map[string]string{}
-	if v.Bootable {
-		bootable = "true"
-	}
 	if v.ImageID != "" {
 		image["image_id"] = v.ImageID
 		image["image_name"] = v.ImageName
 	}
-	// An encrypted disk names its key in the system metadata.
-	metadata := map[string]string{"__system__encrypted": "0", "hw:passthrough": "false"}
+
+	metadata := make(map[string]string, len(v.Metadata)+3)
+	maps.Copy(metadata, v.Metadata)
+	metadata["__system__encrypted"] = "0"
 	if v.KMSKeyID != "" {
-		metadata["__system__encrypted"], metadata["__system__cmkid"] = "1", v.KMSKeyID
+		metadata["__system__encrypted"] = "1"
+		metadata["__system__cmkid"] = v.KMSKeyID
 	}
+	metadata["hw:passthrough"] = strconv.FormatBool(v.Passthrough)
+
+	tags := map[string]string{}
+	if len(v.Tags) > 0 {
+		tags = maps.Clone(v.Tags)
+	}
+
 	epid := v.EnterpriseProjectID
 	if epid == "" {
 		epid = "0"
 	}
-	self := "https://" + r.Host + "/v2/" + t.projectID + "/os-vendor-volumes/" + v.ID
-	return volumeDetail{
-		ID:    v.ID,
-		Links: []link{{Href: self, Rel: "self"}, {Href: self, Rel: "bookmark"}},
-		Name:  v.Name, Status: statusInUse,
-		Attachments: []attachment{{
-			// A disk has exactly one attachment, so it reuses the disk's ID.
-			ID: v.ID, AttachmentID: v.ID, AttachedAt: v.Created, Device: v.Device,
-			ServerID: v.ServerID, VolumeID: v.ID,
-		}},
-		AvailabilityZone: v.AvailabilityZone,
-		CreatedAt:        v.Created, UpdatedAt: v.Updated,
-		TenantID:          t.projectID,
-		ImageMetadata:     image,
-		VolumeType:        v.Type,
-		Size:              v.SizeGB,
-		Bootable:          bootable,
-		Metadata:          metadata,
-		Encrypted:         v.KMSKeyID != "",
-		ReplicationStatus: "disabled",
-		Shareable:         "false",
-		ServiceType:       "EVS",
-		Tags:              map[string]string{},
 
+	atts := make([]attachmentWire, 0, len(v.Attachments))
+	for _, a := range v.Attachments {
+		atts = append(atts, attachmentWire{
+			ID:           a.ID,
+			AttachmentID: a.ID,
+			AttachedAt:   a.AttachedAt,
+			Device:       a.Device,
+			HostName:     "",
+			ServerID:     a.ServerID,
+			VolumeID:     v.ID,
+		})
+	}
+
+	var iops, throughput *qosWire
+	if v.IOPS > 0 {
+		iops = &qosWire{Frozened: false, ID: v.QoSID, TotalVal: v.IOPS}
+	}
+	if v.Throughput > 0 {
+		throughput = &qosWire{Frozened: false, ID: v.QoSID, TotalVal: v.Throughput}
+	}
+
+	self := "https://" + r.Host + "/v2/" + t.ProjectID + "/os-vendor-volumes/" + v.ID
+	return volumeDetail{
+		ID:                  v.ID,
+		Links:               []link{{Href: self, Rel: "self"}, {Href: self, Rel: "bookmark"}},
+		Name:                v.Name,
+		Status:              v.Status,
+		Attachments:         atts,
+		AvailabilityZone:    v.AvailabilityZone,
+		SnapshotID:          v.SnapshotID,
+		Description:         v.Description,
+		CreatedAt:           v.CreatedAt,
+		UpdatedAt:           v.UpdatedAt,
+		TenantID:            t.ProjectID,
+		ImageMetadata:       image,
+		VolumeType:          v.VolumeType,
+		Size:                v.SizeGB,
+		Bootable:            strconv.FormatBool(v.Bootable),
+		Metadata:            metadata,
+		ReplicationStatus:   "disabled",
+		Shareable:           strconv.FormatBool(v.Multiattach),
+		Multiattach:         v.Multiattach,
+		ServiceType:         "EVS",
+		Encrypted:           v.KMSKeyID != "",
+		Tags:                tags,
 		EnterpriseProjectID: epid,
+		IOPS:                iops,
+		Throughput:          throughput,
 	}
 }

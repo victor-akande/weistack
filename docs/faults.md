@@ -32,7 +32,8 @@ The kinds of transition:
 
 | Service | Kinds |
 | --- | --- |
-| ECS | `ecs.server.build`, `ecs.server.delete`, `ecs.server.start`, `ecs.server.stop`, `ecs.server.reboot`, `ecs.server.resize` |
+| ECS | `ecs.server.build`, `ecs.server.delete`, `ecs.server.start`, `ecs.server.stop`, `ecs.server.reboot`, `ecs.server.resize`, `ecs.volume.attach`, `ecs.volume.detach` |
+| EVS | `evs.volume.create`, `evs.volume.extend`, `evs.volume.delete`, `evs.snapshot.create`, `evs.snapshot.rollback` |
 | RDS | `rds.instance.create`, `rds.instance.delete`, `rds.instance.restart`, `rds.instance.resize`, `rds.instance.enlarge`, `rds.instance.backup` |
 | IMS | `ims.image.save`, `ims.image.activate` |
 | VPC | `vpc.vpc.create`, `vpc.subnet.create` |

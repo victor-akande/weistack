@@ -38,6 +38,9 @@ func (s *Service) Routes(r chi.Router) {
 	r.With(act("ecs:cloudServers:resize", server)).Post("/v1/{project_id}/cloudservers/{server_id}/resize", s.handle("ResizePostPaidServer", s.handleResize))
 	r.With(act("ecs:cloudServers:listServerVolumeAttachments", server)).Get("/v1/{project_id}/cloudservers/{server_id}/block_device", s.handle("ListServerBlockDevices", s.handleListBlockDevices))
 	r.With(act("ecs:cloudServers:showServerBlockDevice", server)).Get("/v1/{project_id}/cloudservers/{server_id}/block_device/{volume_id}", s.handle("ShowServerBlockDevice", s.handleShowBlockDevice))
+	r.With(act("ecs:cloudServers:attach", server)).Post("/v1/{project_id}/cloudservers/{server_id}/attachvolume", s.handle("AttachServerVolume", s.handleAttachVolume))
+	r.With(act("ecs:cloudServers:detachVolume", server)).Delete("/v1/{project_id}/cloudservers/{server_id}/detachvolume/{volume_id}", s.handle("DetachServerVolume", s.handleDetachVolume))
+	r.With(act("ecs:cloudServers:updateServerBlockDevice", server)).Put("/v1/{project_id}/cloudservers/{server_id}/block_device/{volume_id}", s.handle("UpdateServerBlockDevice", s.handleUpdateBlockDevice))
 	r.With(act("ecs:cloudServers:showServerTags", server)).Get("/v1/{project_id}/cloudservers/{server_id}/tags", s.handle("ShowServerTags", s.handleShowTags))
 	r.With(authz.Defer()).Post("/v1/{project_id}/cloudservers/{server_id}/tags/action", s.handle("BatchServerTags", s.handleTagAction))
 	// Querying a job needs no permission: its API page (ecs_02_0901)
@@ -166,7 +169,11 @@ func (s *Service) handleShowServer(w http.ResponseWriter, r *http.Request, t Ten
 	if err != nil {
 		return err
 	}
-	return httpx.WriteJSON(w, http.StatusOK, serverResponse{Server: s.detail(r.Context(), t, srv)})
+	disks, err := s.volumes.DisksOf(r.Context(), t.evs(), srv.ID)
+	if err != nil {
+		return err
+	}
+	return httpx.WriteJSON(w, http.StatusOK, serverResponse{Server: s.detail(r.Context(), t, srv, disks)})
 }
 
 // Paging of ListServersDetails: offset is a page number starting at 1,
@@ -221,10 +228,14 @@ func (s *Service) handleListServers(w http.ResponseWriter, r *http.Request, t Te
 	if err != nil {
 		return err
 	}
+	disksBySrv, err := s.volumes.DisksByServer(r.Context(), t.evs())
+	if err != nil {
+		return err
+	}
 	window := pagination.ByOffset(all, pagination.Offset{Offset: (page - 1) * limit, Limit: limit})
 	res := listServersResponse{Count: len(all), Servers: make([]ServerDetail, 0, len(window))}
 	for _, srv := range window {
-		res.Servers = append(res.Servers, s.detail(r.Context(), t, srv))
+		res.Servers = append(res.Servers, s.detail(r.Context(), t, srv, disksBySrv[srv.ID]))
 	}
 	return httpx.WriteJSON(w, http.StatusOK, res)
 }
@@ -241,7 +252,7 @@ func (s *Service) handleDeleteServers(w http.ResponseWriter, r *http.Request, t 
 	if err := authz.Check(r, "ecs:cloudServers:deleteServers", instances(ids)...); err != nil {
 		return err
 	}
-	job, err := s.deleteServers(r.Context(), t, ids, req.DeletePublicIP)
+	job, err := s.deleteServers(r.Context(), t, ids, req.DeletePublicIP, req.DeleteVolume)
 	if err != nil {
 		return err
 	}

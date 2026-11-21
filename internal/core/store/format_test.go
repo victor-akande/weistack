@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -61,7 +62,7 @@ func TestV01FileIsFormatOne(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "weistack.db")
 	writeV01(t, path)
 
-	b, err := OpenBolt(path)
+	b, err := openBolt(path, 1, nil)
 	if err != nil {
 		t.Fatalf("opening a v0.1 file: %v", err)
 	}
@@ -90,7 +91,7 @@ func TestNewerFormatIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = OpenBolt(path)
-	if !errors.Is(err, ErrNewerFormat) || !strings.Contains(err.Error(), "format 5") || !strings.Contains(err.Error(), "up to format 1") {
+	if !errors.Is(err, ErrNewerFormat) || !strings.Contains(err.Error(), "format 5") || !strings.Contains(err.Error(), "up to format 2") {
 		t.Fatalf("opening a newer file: %v", err)
 	}
 	// Refusing leaves the file alone and releases it.
@@ -218,5 +219,110 @@ func TestCorruptFormatRecord(t *testing.T) {
 	_ = db.Close()
 	if _, err := OpenBolt(path); err == nil || !strings.Contains(err.Error(), "corrupt") {
 		t.Fatalf("corrupt format record: %v", err)
+	}
+}
+
+func TestFormat1To2Migration(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "weistack.db")
+	srvScope := Scope{Region: "ap-southeast-1", ProjectID: "0123456789abcdef0123456789abcdef", Kind: "ecs.server"}
+	volScope := Scope{Region: "ap-southeast-1", ProjectID: "0123456789abcdef0123456789abcdef", Kind: "evs.volume"}
+
+	db, err := bolt.Open(path, 0o600, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srvJSON := `{
+		"id":"srv-1","name":"web","availability_zone":"ap-southeast-1a",
+		"enterprise_project_id":"ep-1","image_id":"img-1","image_name":"ubuntu",
+		"created":"2026-11-10T09:30:00Z","updated":"2026-11-10T09:31:00Z",
+		"root_volume":{"id":"vol-root","type":"GPSSD","size":40,"device":"/dev/vda","kms_key_id":""},
+		"data_volumes":[
+			{"id":"vol-data-1","type":"SSD","size":100,"device":"/dev/vdb","kms_key_id":"kms-1"},
+			{"id":"vol-data-2","type":"SAS","size":200,"device":"/dev/vdc","kms_key_id":""}
+		]
+	}`
+	err = db.Update(func(tx *bolt.Tx) error {
+		if err := writeFormat(tx, 1); err != nil {
+			return err
+		}
+		bkt, err := tx.CreateBucket([]byte(mustKey(t, srvScope)))
+		if err != nil {
+			return err
+		}
+		return bkt.Put([]byte("srv-1"), encodeBolt(7, 3, []byte(srvJSON)))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	b, err := OpenBolt(path)
+	if err != nil {
+		t.Fatalf("OpenBolt: %v", err)
+	}
+	if v, err := b.Format(); err != nil || v != 2 {
+		t.Fatalf("Format() = %d, %v; want 2", v, err)
+	}
+	if _, err := os.Stat(path + ".format1.bak"); err != nil {
+		t.Fatalf("missing .format1.bak: %v", err)
+	}
+
+	ctx := context.Background()
+	srvRec, err := b.Get(ctx, srvScope, "srv-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if srvRec.Version != 4 {
+		t.Fatalf("server version = %d, want 4", srvRec.Version)
+	}
+	var srvMap map[string]any
+	if err := json.Unmarshal(srvRec.Data, &srvMap); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := srvMap["root_volume"]; ok {
+		t.Fatal("root_volume still present on migrated server")
+	}
+	if _, ok := srvMap["data_volumes"]; ok {
+		t.Fatal("data_volumes still present on migrated server")
+	}
+
+	checkVol := func(id, name, volType string, size int, device string, bootable bool, bootIdx int, imgID, imgName, kmsID string) {
+		t.Helper()
+		rec, err := b.Get(ctx, volScope, id)
+		if err != nil {
+			t.Fatalf("Get(%s): %v", id, err)
+		}
+		var v format2Volume
+		if err := json.Unmarshal(rec.Data, &v); err != nil {
+			t.Fatal(err)
+		}
+		if v.ID != id || v.Name != name || v.Status != "in-use" || v.SizeGB != size || v.VolumeType != volType ||
+			v.AvailabilityZone != "ap-southeast-1a" || v.Bootable != bootable || v.ImageID != imgID ||
+			v.ImageName != imgName || v.KMSKeyID != kmsID || v.EnterpriseProjectID != "ep-1" ||
+			v.CreatedAt != "2026-11-10T09:30:00Z" || v.UpdatedAt != "2026-11-10T09:31:00Z" {
+			t.Fatalf("migrated volume %s = %+v", id, v)
+		}
+		if len(v.Attachments) != 1 {
+			t.Fatalf("attachments = %+v", v.Attachments)
+		}
+		a := v.Attachments[0]
+		if a.ID != id || a.ServerID != "srv-1" || a.Device != device || a.BootIndex != bootIdx ||
+			!a.DeleteOnTermination || a.AttachedAt != "2026-11-10T09:30:00Z" {
+			t.Fatalf("attachment = %+v", a)
+		}
+	}
+	checkVol("vol-root", "web-volume-0000", "GPSSD", 40, "/dev/vda", true, 0, "img-1", "ubuntu", "")
+	checkVol("vol-data-1", "web-volume-0001", "SSD", 100, "/dev/vdb", false, -1, "", "", "kms-1")
+	checkVol("vol-data-2", "web-volume-0002", "SAS", 200, "/dev/vdc", false, -1, "", "", "")
+	if err := b.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// A format-2 file opened by format-1 code is refused with ErrNewerFormat.
+	if _, err := openBolt(path, 1, nil); !errors.Is(err, ErrNewerFormat) {
+		t.Fatalf("openBolt(format 1) = %v, want ErrNewerFormat", err)
 	}
 }

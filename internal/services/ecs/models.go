@@ -49,9 +49,8 @@ type Server struct {
 	// DeletePublicIP records delete_publicip from a delete request in
 	// flight, so a resumed delete honours it.
 	DeletePublicIP bool `json:"delete_publicip,omitempty"`
-
-	RootVolume  Volume   `json:"root_volume"`
-	DataVolumes []Volume `json:"data_volumes"`
+	// DeleteVolume records delete_volume from a delete request in flight.
+	DeleteVolume bool `json:"delete_volume,omitempty"`
 
 	KeyName  string            `json:"key_name"`
 	UserData string            `json:"user_data"`
@@ -94,16 +93,6 @@ type NIC struct {
 	PortID   string `json:"port_id"`
 	IP       string `json:"ip"`
 	MAC      string `json:"mac"`
-}
-
-// Volume is a disk of a server. No EVS service stands behind it.
-type Volume struct {
-	ID     string `json:"id"`
-	Type   string `json:"type"`
-	SizeGB int    `json:"size"`
-	Device string `json:"device"`
-	// KMSKeyID is the key an encrypted disk is encrypted with.
-	KMSKeyID string `json:"kms_key_id,omitempty"`
 }
 
 // ServerDetail mirrors the SDK model ecs/v2 ServerDetail.
@@ -251,9 +240,10 @@ type CreateNIC struct {
 // CreateVolume mirrors the SDK models ecs/v2 PostPaidServerRootVolume
 // and PostPaidServerDataVolume.
 type CreateVolume struct {
-	VolumeType string          `json:"volumetype"`
-	Size       *int            `json:"size"`
-	Metadata   *VolumeMetadata `json:"metadata"`
+	VolumeType          string          `json:"volumetype"`
+	Size                *int            `json:"size"`
+	Metadata            *VolumeMetadata `json:"metadata"`
+	DeleteOnTermination *bool           `json:"delete_on_termination"`
 }
 
 // VolumeMetadata mirrors the SDK models ecs/v2

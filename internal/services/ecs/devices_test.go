@@ -14,6 +14,11 @@ func TestServerDisks(t *testing.T) {
 	e.settle(t)
 	srv := e.server(t, ids[0])
 
+	disks, err := e.volumes.DisksOf(t.Context(), testTenant.evs(), srv.ID)
+	if err != nil || len(disks) != 3 {
+		t.Fatalf("DisksOf = %+v, %v", disks, err)
+	}
+
 	// ECS's own view.
 	status, out := e.call(t, http.MethodGet, serversPath+"/"+srv.ID+"/block_device", "")
 	if status != http.StatusOK {
@@ -24,7 +29,7 @@ func TestServerDisks(t *testing.T) {
 		t.Fatalf("block devices = %+v", list)
 	}
 	root, data := list.VolumeAttachments[0], list.VolumeAttachments[1]
-	if root.VolumeID != srv.RootVolume.ID || root.BootIndex != 0 || root.Size != 50 || root.Device != "/dev/vda" ||
+	if root.VolumeID != disks[0].VolumeID || root.BootIndex != 0 || root.Size != 50 || root.Device != "/dev/vda" ||
 		data.BootIndex != -1 || data.Size != 100 || data.Device != "/dev/vdb" || root.PCIAddress == data.PCIAddress {
 		t.Fatalf("block devices = %+v", list.VolumeAttachments)
 	}
@@ -41,18 +46,13 @@ func TestServerDisks(t *testing.T) {
 	}
 
 	// EVS's view.
-	vols, err := e.svc.Volumes(t.Context(), testTenant.Region, testTenant.ProjectID)
-	if err != nil || len(vols) != 3 {
-		t.Fatalf("Volumes = %+v, %v", vols, err)
+	if d := disks[0]; !d.DeleteOnTermination || d.Type != "GPSSD" || d.SizeGB != 50 {
+		t.Fatalf("system disk = %+v", d)
 	}
-	if v := vols[0]; v.ID != srv.RootVolume.ID || !v.Bootable || v.ImageID != ubuntuImage || v.Name != "web-volume-0000" ||
-		v.ServerID != srv.ID || v.AvailabilityZone != srv.AvailabilityZone || v.Type != "GPSSD" {
-		t.Fatalf("system disk = %+v", v)
+	if d := disks[2]; d.DeleteOnTermination || d.Type != "SAS" || d.SizeGB != 20 {
+		t.Fatalf("data disk = %+v", d)
 	}
-	if v := vols[2]; v.Bootable || v.ImageID != "" || v.Name != "web-volume-0002" || v.Type != "SAS" || v.SizeGB != 20 {
-		t.Fatalf("data disk = %+v", v)
-	}
-	if other, err := e.svc.Volumes(t.Context(), testTenant.Region, otherProject); err != nil || len(other) != 0 {
+	if other, err := e.volumes.DisksOf(t.Context(), Tenant{Region: testTenant.Region, ProjectID: otherProject}.evs(), srv.ID); err != nil || len(other) != 0 {
 		t.Fatalf("another project sees %d disks (%v)", len(other), err)
 	}
 }

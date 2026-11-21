@@ -19,6 +19,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/core/zones"
 	"github.com/victor-akande/weistack/internal/services/eip"
+	"github.com/victor-akande/weistack/internal/services/evs"
 	"github.com/victor-akande/weistack/internal/services/ims"
 	"github.com/victor-akande/weistack/internal/services/vpc"
 )
@@ -51,6 +52,8 @@ type Deps struct {
 	EIPs EIPs
 	// Images resolves imageRef.
 	Images *ims.Service
+	// Volumes manages the disks of servers.
+	Volumes *evs.Service
 	// Keys checks the KMS keys of encrypted disks. Nil refuses them.
 	Keys cmk.Keys
 	// Quota bounds what one project may hold. Zero fields get defaults.
@@ -86,6 +89,7 @@ type Service struct {
 	network *vpc.Service
 	eips    EIPs
 	images  *ims.Service
+	volumes *evs.Service
 	keys    cmk.Keys
 	quota   Quota
 
@@ -99,8 +103,8 @@ type Service struct {
 
 // New returns the ECS service. It fails if the seed data is invalid.
 func New(d Deps) (*Service, error) {
-	if d.Store == nil || d.Engine == nil || d.IDs == nil || d.Logger == nil || d.Network == nil || d.Images == nil {
-		return nil, errors.New("ecs: Store, Engine, IDs, Logger, Network and Images are required")
+	if d.Store == nil || d.Engine == nil || d.IDs == nil || d.Logger == nil || d.Network == nil || d.Images == nil || d.Volumes == nil {
+		return nil, errors.New("ecs: Store, Engine, IDs, Logger, Network, Images and Volumes are required")
 	}
 	if d.Quota.Servers == 0 {
 		d.Quota.Servers = DefaultMaxServers
@@ -117,7 +121,7 @@ func New(d Deps) (*Service, error) {
 	}
 	s := &Service{
 		store: d.Store, engine: d.Engine, ids: d.IDs, log: d.Logger, now: d.Now,
-		network: d.Network, eips: d.EIPs, images: d.Images, keys: d.Keys, quota: d.Quota,
+		network: d.Network, eips: d.EIPs, images: d.Images, volumes: d.Volumes, keys: d.Keys, quota: d.Quota,
 		flavors:      flavors,
 		flavorByName: make(map[string]FlavorSpec, len(flavors)),
 	}

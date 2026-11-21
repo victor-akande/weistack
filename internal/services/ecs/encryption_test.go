@@ -44,9 +44,10 @@ func TestEncryptedDisks(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("create = %d %s", status, out)
 	}
-	vols, err := e.svc.Volumes(t.Context(), testRegion, testProject)
+	created := decodeInto[createServersResponse](t, out)
+	vols, err := e.volumes.DisksOf(t.Context(), testTenant.evs(), created.ServerIDs[0])
 	if err != nil || len(vols) != 3 {
-		t.Fatalf("Volumes = %+v, %v", vols, err)
+		t.Fatalf("DisksOf = %+v, %v", vols, err)
 	}
 	if vols[0].KMSKeyID != "evs-default-key" || vols[1].KMSKeyID != "good" || vols[2].KMSKeyID != "" {
 		t.Errorf("disk keys = %q %q %q", vols[0].KMSKeyID, vols[1].KMSKeyID, vols[2].KMSKeyID)

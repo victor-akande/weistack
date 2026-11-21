@@ -17,6 +17,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/core/zones"
 	"github.com/victor-akande/weistack/internal/services/eip"
+	"github.com/victor-akande/weistack/internal/services/evs"
 	"github.com/victor-akande/weistack/internal/services/ims"
 	"github.com/victor-akande/weistack/internal/services/vpc"
 )
@@ -66,6 +67,7 @@ func (s *Service) servers(t Tenant) store.Collection[Server] {
 
 func (t Tenant) vpc() vpc.Tenant { return vpc.Tenant{Region: t.Region, ProjectID: t.ProjectID} }
 func (t Tenant) ims() ims.Tenant { return ims.Tenant{Region: t.Region, ProjectID: t.ProjectID} }
+func (t Tenant) evs() evs.Tenant { return evs.Tenant{Region: t.Region, ProjectID: t.ProjectID} }
 
 // plan is a validated create request: everything resolved, nothing
 // written yet.
@@ -409,12 +411,13 @@ func (s *Service) CreateServers(ctx context.Context, t Tenant, opt CreateServerO
 	)
 	releaseEIPOnRollback := p.publicIP != nil && p.publicIP.ID == ""
 
-	// On any failure, give back every EIP, server record and private address taken so far.
+	// On any failure, give back every EIP, volume, server record and private address taken so far.
 	rollback := func() {
 		if s.eips != nil && len(attachedPorts) > 0 {
 			s.eips.PortsRemoved(ctx, t.vpc(), attachedPorts, releaseEIPOnRollback)
 		}
 		for _, id := range savedIDs {
+			_ = s.volumes.ReleaseForServer(ctx, t.evs(), id)
 			_ = s.servers(t).Delete(ctx, id)
 		}
 		for _, srv := range servers {
@@ -451,16 +454,9 @@ func (s *Service) CreateServers(ctx context.Context, t Tenant, opt CreateServerO
 			LaunchIndex:         i,
 			Created:             now,
 			Updated:             now,
-			RootVolume:          Volume{ID: s.ids.UUID(), Type: opt.RootVolume.VolumeType, SizeGB: p.rootGB, Device: "/dev/vda", KMSKeyID: p.rootKey},
 		}
 		if p.count > 1 {
 			srv.Name = fmt.Sprintf("%s-%04d", opt.Name, i+1)
-		}
-		for n, dv := range opt.DataVolumes {
-			srv.DataVolumes = append(srv.DataVolumes, Volume{
-				ID: s.ids.UUID(), Type: dv.VolumeType, SizeGB: *dv.Size, Device: "/dev/vd" + string(rune('b'+n)),
-				KMSKeyID: p.dataKeys[n],
-			})
 		}
 		servers = append(servers, srv)
 		cur := &servers[len(servers)-1]
@@ -486,6 +482,35 @@ func (s *Service) CreateServers(ctx context.Context, t Tenant, opt CreateServerO
 			return Job{}, nil, err
 		}
 		savedIDs = append(savedIDs, srv.ID)
+		dataDisks := make([]evs.NewDisk, len(opt.DataVolumes))
+		for n, dv := range opt.DataVolumes {
+			delOnTerm := dv.DeleteOnTermination != nil && *dv.DeleteOnTermination
+			dataDisks[n] = evs.NewDisk{
+				Type:                dv.VolumeType,
+				SizeGB:              *dv.Size,
+				KMSKeyID:            p.dataKeys[n],
+				DeleteOnTermination: delOnTerm,
+			}
+		}
+		if err := s.volumes.CreateForServer(ctx, t.evs(), evs.ServerDisks{
+			ServerID:            srv.ID,
+			ServerName:          srv.Name,
+			AvailabilityZone:    srv.AvailabilityZone,
+			EnterpriseProjectID: srv.EnterpriseProjectID,
+			ImageID:             srv.ImageID,
+			ImageName:           srv.ImageName,
+			Created:             srv.Created,
+			Root: evs.NewDisk{
+				Type:                opt.RootVolume.VolumeType,
+				SizeGB:              p.rootGB,
+				KMSKeyID:            p.rootKey,
+				DeleteOnTermination: true,
+			},
+			Data: dataDisks,
+		}); err != nil {
+			rollback()
+			return Job{}, nil, err
+		}
 		ids = append(ids, srv.ID)
 	}
 	if s.eips != nil && p.publicIP != nil {
@@ -597,7 +622,18 @@ func (s *Service) LookupServer(ctx context.Context, region, projectID, id string
 	if err != nil {
 		return ims.Server{}, err
 	}
-	return ims.Server{ID: srv.ID, ImageID: srv.ImageID, SystemDiskGB: srv.RootVolume.SizeGB}, nil
+	disks, err := s.volumes.DisksOf(ctx, evs.Tenant{Region: region, ProjectID: projectID}, id)
+	if err != nil {
+		return ims.Server{}, err
+	}
+	var rootGB int
+	for _, d := range disks {
+		if d.BootIndex == 0 {
+			rootGB = d.SizeGB
+			break
+		}
+	}
+	return ims.Server{ID: srv.ID, ImageID: srv.ImageID, SystemDiskGB: rootGB}, nil
 }
 
 // ListServers returns the project's servers that match f, in creation
@@ -650,10 +686,10 @@ func hasTag(tags []string, want string) bool {
 // DeleteServers starts deleting the given servers and returns the job
 // that tracks it. Every server must exist; none is touched otherwise.
 func (s *Service) DeleteServers(ctx context.Context, t Tenant, ids []string) (Job, error) {
-	return s.deleteServers(ctx, t, ids, false)
+	return s.deleteServers(ctx, t, ids, false, false)
 }
 
-func (s *Service) deleteServers(ctx context.Context, t Tenant, ids []string, deletePublicIP bool) (Job, error) {
+func (s *Service) deleteServers(ctx context.Context, t Tenant, ids []string, deletePublicIP, deleteVolume bool) (Job, error) {
 	if len(ids) == 0 {
 		return Job{}, errInvalidRequest("servers must contain at least one ECS")
 	}
@@ -685,6 +721,7 @@ func (s *Service) deleteServers(ctx context.Context, t Tenant, ids []string, del
 		if _, err := s.servers(t).Update(ctx, id, func(srv *Server) error {
 			srv.TaskState = "deleting"
 			srv.DeletePublicIP = deletePublicIP
+			srv.DeleteVolume = deleteVolume
 			srv.Updated = now
 			return nil
 		}); err != nil && !errors.Is(err, store.ErrNotFound) {
@@ -723,6 +760,7 @@ func (s *Service) scheduleDelete(t Tenant, serverID, jobID string) {
 				_, err := s.servers(t).Update(ctx, serverID, func(srv *Server) error {
 					srv.TaskState = ""
 					srv.DeletePublicIP = false
+					srv.DeleteVolume = false
 					srv.Status = StatusError
 					return nil
 				})
@@ -734,6 +772,9 @@ func (s *Service) scheduleDelete(t Tenant, serverID, jobID string) {
 			}
 			srv, err := s.servers(t).Get(ctx, serverID)
 			if err == nil {
+				if err := s.volumes.ServerDeleted(ctx, t.evs(), serverID, srv.DeleteVolume); err != nil {
+					s.log.ErrorContext(ctx, "releasing server volumes failed", "server_id", serverID, "error", err)
+				}
 				if s.eips != nil {
 					s.eips.PortsRemoved(ctx, t.vpc(), serverPortIDs(srv), srv.DeletePublicIP)
 				}
@@ -751,7 +792,14 @@ func (s *Service) scheduleDelete(t Tenant, serverID, jobID string) {
 }
 
 // detail renders the API form of a server.
-func (s *Service) detail(ctx context.Context, t Tenant, srv Server) ServerDetail {
+func (s *Service) detail(ctx context.Context, t Tenant, srv Server, disks []evs.Disk) ServerDetail {
+	var rootDevice string
+	for _, disk := range disks {
+		if disk.BootIndex == 0 {
+			rootDevice = disk.Device
+			break
+		}
+	}
 	d := ServerDetail{
 		ID:                 srv.ID,
 		Name:               srv.Name,
@@ -772,7 +820,7 @@ func (s *Service) detail(ctx context.Context, t Tenant, srv Server) ServerDetail
 		Hostname:           srv.Name,
 		ReservationID:      srv.ReservationID,
 		LaunchIndex:        srv.LaunchIndex,
-		RootDeviceName:     srv.RootVolume.Device,
+		RootDeviceName:     rootDevice,
 		Tags:               append([]string{}, srv.Tags...),
 		SchedulerHints:     map[string]any{},
 		EnterpriseProject:  srv.EnterpriseProjectID,
@@ -831,9 +879,18 @@ func (s *Service) detail(ctx context.Context, t Tenant, srv Server) ServerDetail
 		d.SecurityGroups = append(d.SecurityGroups, g)
 	}
 
-	d.VolumesAttached = []ServerVolume{{ID: srv.RootVolume.ID, DeleteOnTermination: "true", BootIndex: "0", Device: srv.RootVolume.Device}}
-	for _, v := range srv.DataVolumes {
-		d.VolumesAttached = append(d.VolumesAttached, ServerVolume{ID: v.ID, DeleteOnTermination: "false", BootIndex: "-1", Device: v.Device})
+	d.VolumesAttached = make([]ServerVolume, 0, len(disks))
+	for _, disk := range disks {
+		delOnTerm := disk.DeleteOnTermination
+		if disk.BootIndex == 0 {
+			delOnTerm = true
+		}
+		d.VolumesAttached = append(d.VolumesAttached, ServerVolume{
+			ID:                  disk.VolumeID,
+			DeleteOnTermination: strconv.FormatBool(delOnTerm),
+			BootIndex:           strconv.Itoa(disk.BootIndex),
+			Device:              disk.Device,
+		})
 	}
 
 	// System metadata the platform adds, then the user's own.

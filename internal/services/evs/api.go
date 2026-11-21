@@ -3,6 +3,7 @@ package evs
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -12,22 +13,48 @@ import (
 	"github.com/victor-akande/weistack/internal/core/httpx"
 	"github.com/victor-akande/weistack/internal/core/pagination"
 	"github.com/victor-akande/weistack/internal/core/reqctx"
+	"github.com/victor-akande/weistack/internal/core/store"
 )
 
 // Routes implements server.Service. Paths are those of the real API.
-// EVS's API pages name no actions; these are the action table's
-// (usermanual-permissions iam_11_0013).
 func (s *Service) Routes(r chi.Router) {
+	act, vol := authz.Action, authz.Param("volume", "volume_id")
 	r.Use(authz.Service(authz.ServiceOptions{Name: "evs", Style: apierr.StyleNested}))
-	r.With(authz.Action("evs:volumes:list")).Get("/v2/{project_id}/cloudvolumes/detail", s.handle("ListVolumes", s.handleListVolumes))
-	r.With(authz.Action("evs:volumes:get", authz.Param("volume", "volume_id"))).Get("/v2/{project_id}/cloudvolumes/{volume_id}", s.handle("ShowVolume", s.handleShowVolume))
+
+	// Volumes (§3.1)
+	r.With(act("evs:volumes:create")).Post("/v2.1/{project_id}/cloudvolumes", s.handle("CreateVolume", s.handleCreateVolume))
+	r.With(act("evs:volumes:list")).Get("/v2/{project_id}/cloudvolumes/detail", s.handle("ListVolumes", s.handleListVolumes))
+	r.With(act("evs:volumes:get", vol)).Get("/v2/{project_id}/cloudvolumes/{volume_id}", s.handle("ShowVolume", s.handleShowVolume))
+	r.With(act("evs:volumes:update", vol)).Put("/v2/{project_id}/cloudvolumes/{volume_id}", s.handle("UpdateVolume", s.handleUpdateVolume))
+	r.With(act("evs:volumes:delete", vol)).Delete("/v2/{project_id}/cloudvolumes/{volume_id}", s.handle("DeleteVolume", s.handleDeleteVolume))
+	r.With(act("evs:volumes:resize", vol)).Post("/v2.1/{project_id}/cloudvolumes/{volume_id}/action", s.handle("ResizeVolume", s.handleResizeVolume))
+
+	// Snapshots (§3.2)
+	r.With(act("evs:snapshots:create")).Post("/v2/{project_id}/cloudsnapshots", s.notImplemented("CreateSnapshot"))
+	r.With(act("evs:snapshots:list")).Get("/v2/{project_id}/cloudsnapshots/detail", s.notImplemented("ListSnapshots"))
+	r.With(act("evs:snapshots:get")).Get("/v2/{project_id}/cloudsnapshots/{snapshot_id}", s.notImplemented("ShowSnapshot"))
+	r.With(act("evs:snapshots:update")).Put("/v2/{project_id}/cloudsnapshots/{snapshot_id}", s.notImplemented("UpdateSnapshot"))
+	r.With(act("evs:snapshots:delete")).Delete("/v2/{project_id}/cloudsnapshots/{snapshot_id}", s.notImplemented("DeleteSnapshot"))
+	r.With(act("evs:snapshots:rollback")).Post("/v2/{project_id}/cloudsnapshots/{snapshot_id}/rollback", s.notImplemented("RollbackSnapshot"))
+
+	// Tags (§3.3)
+	r.With(authz.Defer()).Post("/v2/{project_id}/cloudvolumes/{volume_id}/tags/action", s.handle("BatchVolumeTags", s.handleBatchVolumeTags))
+	r.With(act("evs:volumes:listTagsForResource", vol)).Get("/v2/{project_id}/cloudvolumes/{volume_id}/tags", s.handle("ShowVolumeTags", s.handleShowVolumeTags))
+	r.With(act("evs:volumes:listTags")).Get("/v2/{project_id}/cloudvolumes/tags", s.handle("ListVolumeTags", s.handleListVolumeTags))
+
+	// Types, zones and jobs (§3.4)
+	r.With(act("evs:types:get")).Get("/v2/{project_id}/types", s.handle("CinderListVolumeTypes", s.handleListVolumeTypes))
+	r.With(authz.Public()).Get("/v2/{project_id}/os-availability-zone", s.handle("CinderListAvailabilityZones", s.handleListAvailabilityZones))
+	r.With(authz.Public()).Get("/v1/{project_id}/jobs/{job_id}", s.handle("ShowJob", s.handleShowJob))
 }
 
-type tenant struct {
-	region, projectID string
+func (s *Service) notImplemented(op string) http.HandlerFunc {
+	return s.handle(op, func(_ http.ResponseWriter, r *http.Request, _ Tenant) error {
+		return apierr.NotImplemented("evs", r.Method+" "+r.URL.Path)
+	})
 }
 
-type handler func(w http.ResponseWriter, r *http.Request, t tenant) error
+type handler func(w http.ResponseWriter, r *http.Request, t Tenant) error
 
 // handle names the operation for logs, resolves the tenant and renders
 // errors in the EVS envelope, {"error": {"code": ..., "message": ...}}.
@@ -35,7 +62,7 @@ func (s *Service) handle(op string, fn handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		info := reqctx.From(r.Context())
 		info.SetOperation(op)
-		err := fn(w, r, tenant{region: info.Region, projectID: chi.URLParam(r, "project_id")})
+		err := fn(w, r, Tenant{Region: info.Region, ProjectID: chi.URLParam(r, "project_id")})
 		if err == nil {
 			return
 		}
@@ -47,31 +74,20 @@ func (s *Service) handle(op string, fn handler) http.HandlerFunc {
 	}
 }
 
-// Error catalogue, from the "Error Codes" appendix of the EVS API
-// reference.
-var (
-	errVolumeNotFound = apierr.New(http.StatusNotFound, "EVS.5404", "Resource(Volume, Snapshot, Backup .etc) cound not be found.")
-	errInvalidLimit   = apierr.New(http.StatusBadRequest, "EVS.1023", "invalid filter limit!")
-	errLimitTooLarge  = apierr.New(http.StatusBadRequest, "EVS.2142", "invalid filter limit, can not greater than 1000.")
-	errInvalidRequest = apierr.New(http.StatusBadRequest, "EVS.1070", "invalid request.")
-)
-
 type showVolumeResponse struct {
 	Volume volumeDetail `json:"volume"`
 }
 
-func (s *Service) handleShowVolume(w http.ResponseWriter, r *http.Request, t tenant) error {
+func (s *Service) handleShowVolume(w http.ResponseWriter, r *http.Request, t Tenant) error {
 	id := chi.URLParam(r, "volume_id")
-	all, err := s.list(r.Context(), t.region, t.projectID)
+	v, err := s.volumes(t).Get(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		return errVolumeNotFound
+	}
 	if err != nil {
 		return err
 	}
-	for _, v := range all {
-		if v.ID == id {
-			return httpx.WriteJSON(w, http.StatusOK, showVolumeResponse{Volume: detail(v, t, r)})
-		}
-	}
-	return errVolumeNotFound
+	return httpx.WriteJSON(w, http.StatusOK, showVolumeResponse{Volume: detail(v, t, r)})
 }
 
 type listVolumesResponse struct {
@@ -81,7 +97,7 @@ type listVolumesResponse struct {
 
 const maxLimit = 1000
 
-func (s *Service) handleListVolumes(w http.ResponseWriter, r *http.Request, t tenant) error {
+func (s *Service) handleListVolumes(w http.ResponseWriter, r *http.Request, t Tenant) error {
 	q := r.URL.Query()
 	page, err := pagination.ParseOffset(q, pagination.Limits{Default: maxLimit, Min: 1, Max: 1 << 30})
 	switch {
@@ -93,7 +109,7 @@ func (s *Service) handleListVolumes(w http.ResponseWriter, r *http.Request, t te
 		return errLimitTooLarge
 	}
 
-	all, err := s.list(r.Context(), t.region, t.projectID)
+	all, err := s.volumes(t).List(r.Context(), nil)
 	if err != nil {
 		return err
 	}
@@ -105,15 +121,38 @@ func (s *Service) handleListVolumes(w http.ResponseWriter, r *http.Request, t te
 		}
 	}
 	eq := func(want, got string) bool { return want == "" || want == got }
-	matched := make([]Volume, 0, len(all))
+	matched := make([]volume, 0, len(all))
 	for _, v := range all {
-		if !eq(q.Get("id"), v.ID) || !eq(q.Get("server_id"), v.ServerID) ||
-			!eq(q.Get("availability_zone"), v.AvailabilityZone) || !eq(q.Get("status"), statusInUse) ||
+		if !eq(q.Get("id"), v.ID) ||
+			!eq(q.Get("availability_zone"), v.AvailabilityZone) ||
+			!eq(q.Get("status"), v.Status) ||
 			(ids != nil && !ids[v.ID]) {
+			continue
+		}
+		if srvID := q.Get("server_id"); srvID != "" && !hasServerAttachment(v, srvID) {
 			continue
 		}
 		if name := q.Get("name"); name != "" && !strings.Contains(v.Name, name) {
 			continue
+		}
+		if ma := q.Get("multiattach"); ma != "" {
+			if want, err := strconv.ParseBool(ma); err == nil && v.Multiattach != want {
+				continue
+			}
+		}
+		if vtID := q.Get("volume_type_id"); vtID != "" {
+			if vt, ok := volumeTypeByID[vtID]; !ok || v.VolumeType != vt {
+				continue
+			}
+		}
+		if ep := q.Get("enterprise_project_id"); ep != "" && ep != "all_granted_eps" {
+			volEP := v.EnterpriseProjectID
+			if volEP == "" {
+				volEP = "0"
+			}
+			if volEP != ep {
+				continue
+			}
 		}
 		matched = append(matched, v)
 	}

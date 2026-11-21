@@ -17,7 +17,7 @@ Legend: **Yes** implemented, **Partial** implemented with the listed gaps,
 | CreateServers | `POST /v1.1/{project_id}/cloudservers` | Partial | Same body and behaviour; pay-per-use only |
 | ShowServer | `GET /v1/{project_id}/cloudservers/{server_id}` | Yes | |
 | ListServersDetails | `GET /v1/{project_id}/cloudservers/detail` | Yes | See "Listing servers" |
-| DeleteServers | `POST /v1/{project_id}/cloudservers/delete` | Yes | `delete_publicip`, `delete_volume` accepted; disks and EIPs are data only |
+| DeleteServers | `POST /v1/{project_id}/cloudservers/delete` | Yes | `delete_publicip` accepted (EIPs are data only); `delete_volume` deletes data disks (see "Disks") |
 | ShowJob | `GET /v1/{project_id}/jobs/{job_id}` | Yes | |
 | UpdateServer | `PUT /v1/{project_id}/cloudservers/{server_id}` | Partial | `name`, `description`, `user_data`. `hostname` cannot be changed |
 | BatchStartServers | `POST /v1/{project_id}/cloudservers/action` (`os-start`) | Yes | |
@@ -29,7 +29,10 @@ Legend: **Yes** implemented, **Partial** implemented with the listed gaps,
 | ListServerTags | `GET /v1/{project_id}/cloudservers/tags` | Yes | |
 | ListServerBlockDevices | `GET /v1/{project_id}/cloudservers/{server_id}/block_device` | Yes | The server's disks; see "Disks" |
 | ShowServerBlockDevice | `GET /v1/{project_id}/cloudservers/{server_id}/block_device/{volume_id}` | Yes | |
-| Batch resize, rename, redeploy, NICs, attaching and detaching disks, key pairs, server groups, metadata, password, console | | No | |
+| AttachServerVolume | `POST /v1/{project_id}/cloudservers/{server_id}/attachvolume` | Yes | `dry_run` supported |
+| DetachServerVolume | `DELETE /v1/{project_id}/cloudservers/{server_id}/detachvolume/{volume_id}` | Yes | System disk cannot be detached (`Ecs.0005`); `delete_flag` ignored |
+| UpdateServerBlockDevice | `PUT /v1/{project_id}/cloudservers/{server_id}/block_device/{volume_id}` | Yes | `delete_on_termination` |
+| Batch resize, rename, redeploy, NICs, key pairs, server groups, metadata, password, console | | No | |
 | Nova-native server API (`/v2.1/{project_id}/servers...`) | | No | |
 
 ## Creating servers
@@ -68,12 +71,22 @@ one `createSingleServer` sub-job per server) then reports `SUCCESS`.
 
 ## Disks
 
-A server's system and data disks are part of the server: they are created
-with it and deleted with it. ECS shows them as block devices: the system
-disk has `bootIndex` 0 and device `/dev/vda`, data disks have -1 and
-`/dev/vdb` onwards. [EVS](evs.md) shows the same disks as volumes, named
-`{server name}-volume-0000` onwards. A volume that is not attached to the
-server is `400 Ecs.0111`.
+A server's disks are [EVS](evs.md) volumes. System and data disks requested at
+server creation are created in EVS (`{server name}-volume-0000` onwards,
+immediately `in-use`), and standalone EVS volumes can be attached and detached
+with `AttachServerVolume` and `DetachServerVolume` (up to 23 data disks per
+server). ECS shows them as block devices: the system disk has `bootIndex` 0 and
+device `/dev/vda`, data disks have -1 and `/dev/vdb` onwards. A volume that is
+not attached to the server is `400 Ecs.0111`.
+
+**`delete_on_termination` and `delete_volume`.** The system disk always has
+`delete_on_termination: true` and is always deleted when the server is deleted.
+Data disks created with the server honour `data_volumes[].delete_on_termination`
+(default `false`), and attached data disks start with `false`;
+`UpdateServerBlockDevice` updates `delete_on_termination` on a non-shared data
+disk. When a server is deleted, a data disk is deleted only if `DeleteServers`
+sets `delete_volume: true` or the disk's `delete_on_termination` is `true`;
+otherwise it is detached and becomes `available` in EVS.
 
 **Encrypted disks.** A `root_volume` or data volume with `metadata`
 `{"__system__encrypted": "1"}` is encrypted with the [KMS](kms.md) key

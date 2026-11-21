@@ -138,6 +138,19 @@ func (s *Service) resumeSubJob(ctx context.Context, t Tenant, job Job, sub SubJo
 		s.finishSubJob(ctx, t, job.JobID, id, errors.New("the ECS no longer exists"))
 	case sub.JobType == jobCreateSingleServer && srv.Status == StatusBuild:
 		s.scheduleBuild(t, id, job.JobID)
+	case sub.JobType == jobAttachVolume || sub.JobType == jobDetachVolume:
+		volID, op, ok, err := s.volumes.PendingAttach(ctx, t.evs(), job.JobID)
+		if err != nil {
+			return err
+		}
+		switch {
+		case !ok:
+			s.finishSubJob(ctx, t, job.JobID, id, nil)
+		case op == "attach":
+			s.scheduleAttach(t, volID, id, job.JobID)
+		default:
+			s.scheduleDetach(t, volID, id, job.JobID)
+		}
 	case srv.Pending != nil && srv.Pending.JobID == job.JobID:
 		s.scheduleOp(t, id, *srv.Pending) // a start, stop, reboot or resize
 	default:
