@@ -57,10 +57,14 @@ resource "huaweicloud_identity_role" "bucket_reader" {
 
 # Grants in every scope: one project, all projects, global services and
 # the default enterprise project.
+data "huaweicloud_identity_projects" "region" {
+  name = "ap-southeast-1"
+}
+
 resource "huaweicloud_identity_group_role_assignment" "project" {
   group_id   = huaweicloud_identity_group.devs.id
   role_id    = data.huaweicloud_identity_role.ecs_full.id
-  project_id = var.project_id
+  project_id = data.huaweicloud_identity_projects.region.projects[0].id
 }
 
 resource "huaweicloud_identity_group_role_assignment" "all_projects" {
