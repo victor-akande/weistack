@@ -461,3 +461,115 @@ func TestEVSPermissions(t *testing.T) {
 	})
 	denialOf(t, err, "WeiStack.0403")
 }
+
+func TestEVSSnapshotsAndRollback(t *testing.T) {
+	t.Parallel()
+	c := newEVS(t)
+
+	azRes, err := c.CinderListAvailabilityZones(&evs.CinderListAvailabilityZonesRequest{})
+	if err != nil || azRes.AvailabilityZoneInfo == nil || len(*azRes.AvailabilityZoneInfo) == 0 {
+		t.Fatalf("CinderListAvailabilityZones: %v", err)
+	}
+	az := (*azRes.AvailabilityZoneInfo)[0].ZoneName
+
+	volName := "sdk-snap-vol"
+	cr, err := c.CreateVolume(&evs.CreateVolumeRequest{
+		Body: &evs.CreateVolumeRequestBody{
+			Volume: &evs.CreateVolumeOption{
+				AvailabilityZone: az,
+				Name:             &volName,
+				Size:             20,
+				VolumeType:       evs.GetCreateVolumeOptionVolumeTypeEnum().GPSSD,
+			},
+		},
+	})
+	if err != nil || cr.JobId == nil || cr.VolumeIds == nil || len(*cr.VolumeIds) != 1 {
+		t.Fatalf("CreateVolume: %+v, %v", cr, err)
+	}
+	volID := (*cr.VolumeIds)[0]
+	waitEVSJob(t, c, *cr.JobId)
+
+	// CreateSnapshot.
+	snapName := "sdk-snap"
+	snapDesc := "initial snapshot"
+	cs, err := c.CreateSnapshot(&evs.CreateSnapshotRequest{
+		Body: &evs.CreateSnapshotRequestBody{
+			Snapshot: &evs.CreateSnapshotOption{
+				VolumeId:    volID,
+				Name:        &snapName,
+				Description: &snapDesc,
+			},
+		},
+	})
+	if err != nil || cs.Snapshot == nil || cs.Snapshot.Id == nil {
+		t.Fatalf("CreateSnapshot: %+v, %v", cs, err)
+	}
+	snapID := *cs.Snapshot.Id
+
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		show, err := c.ShowSnapshot(&evs.ShowSnapshotRequest{SnapshotId: snapID})
+		if err != nil {
+			t.Fatalf("ShowSnapshot(%s): %v", snapID, err)
+		}
+		if show.Snapshot != nil && show.Snapshot.Status != nil && *show.Snapshot.Status == "available" {
+			break
+		}
+		if show.Snapshot != nil && show.Snapshot.Status != nil && *show.Snapshot.Status == "error" {
+			t.Fatalf("snapshot %s ended in error", snapID)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// ListSnapshots & UpdateSnapshot.
+	list, err := c.ListSnapshots(&evs.ListSnapshotsRequest{VolumeId: &volID})
+	if err != nil || list.Snapshots == nil || len(*list.Snapshots) != 1 {
+		t.Fatalf("ListSnapshots: %+v, %v", list, err)
+	}
+	newName := "sdk-snap-renamed"
+	newDesc := "updated snapshot"
+	upd, err := c.UpdateSnapshot(&evs.UpdateSnapshotRequest{
+		SnapshotId: snapID,
+		Body: &evs.UpdateSnapshotRequestBody{
+			Snapshot: &evs.UpdateSnapshotOption{Name: &newName, Description: &newDesc},
+		},
+	})
+	if err != nil || upd.Snapshot == nil || upd.Snapshot.Name == nil || *upd.Snapshot.Name != newName {
+		t.Fatalf("UpdateSnapshot: %+v, %v", upd, err)
+	}
+
+	// RollbackSnapshot.
+	rb, err := c.RollbackSnapshot(&evs.RollbackSnapshotRequest{
+		SnapshotId: snapID,
+		Body: &evs.RollbackSnapshotRequestBody{
+			Rollback: &evs.RollbackSnapshotOption{VolumeId: volID},
+		},
+	})
+	if err != nil || rb.Rollback == nil || rb.Rollback.VolumeId != volID {
+		t.Fatalf("RollbackSnapshot: %+v, %v", rb, err)
+	}
+	deadline = time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		show, err := c.ShowVolume(&evs.ShowVolumeRequest{VolumeId: volID})
+		if err != nil {
+			t.Fatalf("ShowVolume(%s): %v", volID, err)
+		}
+		if show.Volume != nil && show.Volume.Status == "available" {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// DeleteSnapshot & DeleteVolume.
+	if _, err := c.DeleteSnapshot(&evs.DeleteSnapshotRequest{SnapshotId: snapID}); err != nil {
+		t.Fatalf("DeleteSnapshot: %v", err)
+	}
+	if _, err := c.ShowSnapshot(&evs.ShowSnapshotRequest{SnapshotId: snapID}); err == nil {
+		t.Fatal("ShowSnapshot after DeleteSnapshot succeeded")
+	}
+	del, err := c.DeleteVolume(&evs.DeleteVolumeRequest{VolumeId: volID})
+	if err != nil {
+		t.Fatalf("DeleteVolume: %v", err)
+	}
+	waitEVSJob(t, c, *del.JobId)
+}

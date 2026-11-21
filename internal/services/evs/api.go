@@ -30,12 +30,12 @@ func (s *Service) Routes(r chi.Router) {
 	r.With(act("evs:volumes:resize", vol)).Post("/v2.1/{project_id}/cloudvolumes/{volume_id}/action", s.handle("ResizeVolume", s.handleResizeVolume))
 
 	// Snapshots (§3.2)
-	r.With(act("evs:snapshots:create")).Post("/v2/{project_id}/cloudsnapshots", s.notImplemented("CreateSnapshot"))
-	r.With(act("evs:snapshots:list")).Get("/v2/{project_id}/cloudsnapshots/detail", s.notImplemented("ListSnapshots"))
-	r.With(act("evs:snapshots:get")).Get("/v2/{project_id}/cloudsnapshots/{snapshot_id}", s.notImplemented("ShowSnapshot"))
-	r.With(act("evs:snapshots:update")).Put("/v2/{project_id}/cloudsnapshots/{snapshot_id}", s.notImplemented("UpdateSnapshot"))
-	r.With(act("evs:snapshots:delete")).Delete("/v2/{project_id}/cloudsnapshots/{snapshot_id}", s.notImplemented("DeleteSnapshot"))
-	r.With(act("evs:snapshots:rollback")).Post("/v2/{project_id}/cloudsnapshots/{snapshot_id}/rollback", s.notImplemented("RollbackSnapshot"))
+	r.With(act("evs:snapshots:create")).Post("/v2/{project_id}/cloudsnapshots", s.handle("CreateSnapshot", s.handleCreateSnapshot))
+	r.With(act("evs:snapshots:list")).Get("/v2/{project_id}/cloudsnapshots/detail", s.handle("ListSnapshots", s.handleListSnapshots))
+	r.With(act("evs:snapshots:get")).Get("/v2/{project_id}/cloudsnapshots/{snapshot_id}", s.handle("ShowSnapshot", s.handleShowSnapshot))
+	r.With(act("evs:snapshots:update")).Put("/v2/{project_id}/cloudsnapshots/{snapshot_id}", s.handle("UpdateSnapshot", s.handleUpdateSnapshot))
+	r.With(act("evs:snapshots:delete")).Delete("/v2/{project_id}/cloudsnapshots/{snapshot_id}", s.handle("DeleteSnapshot", s.handleDeleteSnapshot))
+	r.With(act("evs:snapshots:rollback")).Post("/v2/{project_id}/cloudsnapshots/{snapshot_id}/rollback", s.handle("RollbackSnapshot", s.handleRollbackSnapshot))
 
 	// Tags (§3.3)
 	r.With(authz.Defer()).Post("/v2/{project_id}/cloudvolumes/{volume_id}/tags/action", s.handle("BatchVolumeTags", s.handleBatchVolumeTags))
@@ -46,12 +46,6 @@ func (s *Service) Routes(r chi.Router) {
 	r.With(act("evs:types:get")).Get("/v2/{project_id}/types", s.handle("CinderListVolumeTypes", s.handleListVolumeTypes))
 	r.With(authz.Public()).Get("/v2/{project_id}/os-availability-zone", s.handle("CinderListAvailabilityZones", s.handleListAvailabilityZones))
 	r.With(authz.Public()).Get("/v1/{project_id}/jobs/{job_id}", s.handle("ShowJob", s.handleShowJob))
-}
-
-func (s *Service) notImplemented(op string) http.HandlerFunc {
-	return s.handle(op, func(_ http.ResponseWriter, r *http.Request, _ Tenant) error {
-		return apierr.NotImplemented("evs", r.Method+" "+r.URL.Path)
-	})
 }
 
 type handler func(w http.ResponseWriter, r *http.Request, t Tenant) error

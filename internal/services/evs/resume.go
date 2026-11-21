@@ -46,7 +46,7 @@ func (s *Service) Resume(ctx context.Context) error {
 				case "extend":
 					s.resumeExtend(t, v.ID, v.Pending.JobID, v.Pending.NewSize)
 				case "rollback":
-					s.resumeRollback(t, v.ID)
+					s.scheduleSnapshotRollback(t, v.ID)
 				}
 			}
 		case kindSnapshot:
@@ -56,7 +56,7 @@ func (s *Service) Resume(ctx context.Context) error {
 					return fmt.Errorf("evs: decoding %s/%s: %w", key, rec.ID, err)
 				}
 				if sn.Status == statusCreating {
-					s.resumeSnapshotCreate(t, sn.ID)
+					s.scheduleSnapshotCreate(t, sn.ID)
 				}
 			}
 		}
@@ -111,7 +111,7 @@ func (s *Service) resumeExtend(t Tenant, volumeID, jobID string, newSize int) {
 	})
 }
 
-func (s *Service) resumeRollback(t Tenant, volumeID string) {
+func (s *Service) scheduleSnapshotRollback(t Tenant, volumeID string) {
 	s.engine.Schedule(lifecycle.Task{
 		Key:  volumeID,
 		Kind: taskSnapshotRollback,
@@ -136,7 +136,7 @@ func (s *Service) resumeRollback(t Tenant, volumeID string) {
 	})
 }
 
-func (s *Service) resumeSnapshotCreate(t Tenant, snapshotID string) {
+func (s *Service) scheduleSnapshotCreate(t Tenant, snapshotID string) {
 	s.engine.Schedule(lifecycle.Task{
 		Key:  snapshotID,
 		Kind: taskSnapshotCreate,
