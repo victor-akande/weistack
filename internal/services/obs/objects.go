@@ -613,7 +613,7 @@ func (s *Service) copyBody(c *call, srcRegion string, src Object, dstRegion stri
 		return s.blobs.link(src.Blob, dst.Blob)
 	}
 	if src.SSE.encrypted() {
-		if err := authz.Check(c.r, "kms:cmk:decryptDataKey", keyResource(src.SSE.KeyURN)); err != nil {
+		if err := authz.CheckDependency(c.r, "kms", "kms:cmk:decryptDataKey", keyResource(src.SSE.KeyURN)); err != nil {
 			return err
 		}
 	}

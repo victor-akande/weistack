@@ -141,7 +141,7 @@ func (s *Service) newSSE(c *call, region string, req sseRequest) (*sse, error) {
 	}
 	// Using a key needs the KMS permission too (OBS's dependency on
 	// kms:cmk:createDataKey).
-	if err := authz.Check(c.r, "kms:cmk:createDataKey", keyResource(dk.KeyURN)); err != nil {
+	if err := authz.CheckDependency(c.r, "kms", "kms:cmk:createDataKey", keyResource(dk.KeyURN)); err != nil {
 		return nil, err
 	}
 	iv, err := newIV()
@@ -207,7 +207,7 @@ func (s *Service) cipherFor(c *call, region string, e *sse) (cipher.Block, error
 // readKey checks the caller may decrypt with an object's key (OBS's
 // dependency on kms:cmk:decryptDataKey) and returns its cipher.
 func (s *Service) readKey(c *call, region string, e *sse) (cipher.Block, error) {
-	if err := authz.Check(c.r, "kms:cmk:decryptDataKey", keyResource(e.KeyURN)); err != nil {
+	if err := authz.CheckDependency(c.r, "kms", "kms:cmk:decryptDataKey", keyResource(e.KeyURN)); err != nil {
 		return nil, err
 	}
 	return s.cipherFor(c, region, e)
