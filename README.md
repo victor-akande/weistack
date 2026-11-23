@@ -248,6 +248,7 @@ defaults. Run `weistack -h` for the full list.
 | `-vault-key-file` | `WEISTACK_VAULT_KEY_FILE` | `vault-key.json` in `-data-dir` | With `-persist`, the key that seals stored secret keys and KMS key material, kept apart from the data. Move the existing file there; WeiStack refuses to start while a key is also left in the data directory |
 | `-metrics` | `WEISTACK_METRICS` | off | Serve Prometheus metrics |
 | `-max-body-bytes` | `WEISTACK_MAX_BODY_BYTES` | `10485760` | Body limit for JSON APIs |
+| `-max-data-bytes` | `WEISTACK_MAX_DATA_BYTES` | `21474836480` (20 GiB) | Most data WeiStack keeps: records and object data, on disk or in memory. Past it, new resources and uploads get 507 `WeiStack.0507`; changes and deletes still work. `0` is no limit. Reset backups are not counted |
 | `-shutdown-timeout` | `WEISTACK_SHUTDOWN_TIMEOUT` | `10s` | Drain time on SIGTERM |
 
 ## Admin API
