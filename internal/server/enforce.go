@@ -28,7 +28,11 @@ import (
 // api-sign-errorcode.html): 401 with {"error_msg", "error_code",
 // "request_id"}.
 
-func (s *Server) enforcing() bool { return s.cfg.IAM == config.IAMEnforce }
+// enforcing reports whether r's credentials are checked: under
+// -iam=enforce, and always for requests from other machines (-lan).
+func (s *Server) enforcing(r *http.Request) bool {
+	return s.cfg.IAM == config.IAMEnforce || fromNetwork(r.Context())
+}
 
 // The gateway's errors.
 const iamAuthInfo = "Incorrect IAM authentication information: "

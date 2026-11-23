@@ -115,7 +115,9 @@ func isAdminPath(path string) bool {
 // cross-site browser requests to the admin API.
 func (s *Server) guard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.hosts != nil && !s.hosts.allows(r.Host) {
+		// Other machines (-lan) reach WeiStack by names it cannot know,
+		// and always need credentials, which a rebinding page lacks.
+		if s.hosts != nil && !fromNetwork(r.Context()) && !s.hosts.allows(r.Host) {
 			s.log.WarnContext(r.Context(), "refused a request for an unknown host name",
 				"host", r.Host, "remote", r.RemoteAddr)
 			apierr.Write(w, r, apierr.StyleFlat, apierr.New(http.StatusForbidden, "WeiStack.0403",

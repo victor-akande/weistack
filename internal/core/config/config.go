@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/netip"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -40,13 +41,44 @@ const (
 	DefaultECSMaxVCPUs      = 80
 	DefaultEIPMaxPerProject = 50
 	DefaultRDSMaxInstances  = 20
+	// DefaultLANPort is the HTTPS port -lan opens for other machines.
+	DefaultLANPort = 8781
 )
+
+// DefaultLANClients are the clients -lan admits unless -lan-clients
+// says otherwise: loopback, private, shared (carrier-grade NAT, as VPN
+// meshes use) and link-local addresses.
+var DefaultLANClients = []netip.Prefix{
+	netip.MustParsePrefix("127.0.0.0/8"),
+	netip.MustParsePrefix("10.0.0.0/8"),
+	netip.MustParsePrefix("172.16.0.0/12"),
+	netip.MustParsePrefix("192.168.0.0/16"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("169.254.0.0/16"),
+	netip.MustParsePrefix("::1/128"),
+	netip.MustParsePrefix("fc00::/7"),
+	netip.MustParsePrefix("fe80::/10"),
+}
 
 // Config is the fully resolved runtime configuration.
 type Config struct {
 	// Host is the address to bind. Loopback by default so a learner's
 	// emulator is not exposed to the network; the Docker image sets 0.0.0.0.
+	// Other addresses are refused outside a container: -lan is the way
+	// to serve other machines.
 	Host string
+	// InContainer marks a WeiStack running in a container, where it must
+	// bind beyond loopback to be reached through a published port. The
+	// image sets WEISTACK_IN_CONTAINER=1.
+	InContainer bool
+	// LAN serves other machines on LANPort, over HTTPS with a certificate
+	// from the local CA, always checking credentials.
+	LAN bool
+	// LANPort is the port -lan listens on, on every interface. 0 picks a
+	// free port.
+	LANPort int
+	// LANClients are the client addresses -lan admits.
+	LANClients []netip.Prefix
 	// Port is the TCP port of the single shared listener. 0 picks a free port.
 	Port int
 	// Region is used when a request does not carry one.
@@ -141,15 +173,19 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 		proxyBypass  string
 		quotas       string
 		allowedHosts string
+		lanClients   string
 	)
 
 	fs := flag.NewFlagSet("weistack", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.StringVar(&cfg.Host, "host", env.str("HOST", DefaultHost), "address to bind")
 	fs.IntVar(&cfg.Port, "port", env.int("PORT", DefaultPort), "port to listen on (0 picks a free port)")
+	fs.BoolVar(&cfg.LAN, "lan", env.bool("LAN"), "serve other machines on -lan-port, over HTTPS, always checking credentials")
+	fs.IntVar(&cfg.LANPort, "lan-port", env.int("LAN_PORT", DefaultLANPort), "the HTTPS port -lan opens on every interface (0 picks a free port)")
+	fs.StringVar(&lanClients, "lan-clients", env.str("LAN_CLIENTS", ""), "comma-separated address ranges -lan admits, for example 192.168.1.0/24 (default: private and loopback ranges)")
 	fs.StringVar(&cfg.Region, "region", env.str("REGION", DefaultRegion), "default region")
 	fs.StringVar(&cfg.ProjectID, "project-id", env.str("PROJECT_ID", ""), "default project ID, 32 hex characters (generated when empty)")
-	fs.BoolVar(&cfg.Persist, "persist", env.bool("PERSIST", false), "persist state under the data directory")
+	fs.BoolVar(&cfg.Persist, "persist", env.bool("PERSIST"), "persist state under the data directory")
 	fs.StringVar(&cfg.DataDir, "data-dir", env.str("DATA_DIR", DefaultDataDir(getenv)), "directory for persistent state and object bodies, with -persist")
 	fs.StringVar(&cfg.SeedDir, "seed-dir", env.str("SEED_DIR", ""), "directory of YAML files that extend the built-in seed data")
 	fs.IntVar(&cfg.ECSMaxServers, "ecs-max-servers", env.int("ECS_MAX_SERVERS", DefaultECSMaxServers), "per-project quota of ECS servers")
@@ -174,7 +210,7 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 	fs.StringVar(&cfg.VaultKeyFile, "vault-key-file", env.str("VAULT_KEY_FILE", ""), "file of the key that seals stored secrets, kept apart from the data (default: vault-key.json in -data-dir)")
 	fs.StringVar(&servicePorts, "service-ports", env.str("SERVICE_PORTS", ""), "extra per-service listeners, for example obs=9000,ecs=9001")
 	fs.StringVar(&services, "services", env.str("SERVICES", ""), "comma-separated services to enable (default all)")
-	fs.BoolVar(&cfg.Metrics, "metrics", env.bool("METRICS", false), "serve Prometheus metrics at /_weistack/metrics")
+	fs.BoolVar(&cfg.Metrics, "metrics", env.bool("METRICS"), "serve Prometheus metrics at /_weistack/metrics")
 	fs.Int64Var(&cfg.MaxBodyBytes, "max-body-bytes", env.int64("MAX_BODY_BYTES", DefaultMaxBodyBytes), "maximum request body size for JSON APIs")
 	fs.DurationVar(&cfg.ShutdownTimeout, "shutdown-timeout", env.duration("SHUTDOWN_TIMEOUT", DefaultShutdownTimeout), "time allowed for in-flight requests to finish on shutdown")
 
@@ -200,6 +236,10 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 		return Config{}, err
 	}
 	cfg.AllowedHosts = splitList(allowedHosts)
+	cfg.InContainer = env.bool("IN_CONTAINER")
+	if cfg.LANClients, err = parseLANClients(lanClients); err != nil {
+		return Config{}, err
+	}
 	if cfg.ServicePorts, err = parseServicePorts(servicePorts); err != nil {
 		return Config{}, err
 	}
@@ -215,6 +255,18 @@ func (c Config) Validate() error {
 	var errs []error
 	if c.Port < 0 || c.Port > 65535 {
 		errs = append(errs, fmt.Errorf("port %d is out of range 0-65535", c.Port))
+	}
+	if !c.Loopback() && !c.InContainer {
+		errs = append(errs, fmt.Errorf("-host %s would let other machines use WeiStack over plain HTTP; "+
+			"keep it on 127.0.0.1 and add -lan to serve them over HTTPS with credentials checked", c.Host))
+	}
+	if c.LAN {
+		if c.LANPort < 0 || c.LANPort > 65535 {
+			errs = append(errs, fmt.Errorf("LAN port %d is out of range 0-65535", c.LANPort))
+		}
+		if c.LANPort != 0 && c.LANPort == c.Port {
+			errs = append(errs, fmt.Errorf("-lan-port %d is also -port", c.LANPort))
+		}
 	}
 	if !regionRE.MatchString(c.Region) {
 		errs = append(errs, fmt.Errorf("region %q is not a valid region name (for example %s)", c.Region, DefaultRegion))
@@ -480,15 +532,16 @@ func (e *envReader) int64(key string, def int64) int64 {
 	return n
 }
 
-func (e *envReader) bool(key string, def bool) bool {
+// bool reads a switch, off unless set.
+func (e *envReader) bool(key string) bool {
 	v, ok := e.lookup(key)
 	if !ok {
-		return def
+		return false
 	}
 	b, err := strconv.ParseBool(v)
 	if err != nil {
 		e.fail(key, v, "a boolean (1, 0, true, false)")
-		return def
+		return false
 	}
 	return b
 }
@@ -509,4 +562,37 @@ func (e *envReader) duration(key string, def time.Duration) time.Duration {
 		return def
 	}
 	return d
+}
+
+// parseLANClients reads -lan-clients: address ranges, or single
+// addresses. Empty means DefaultLANClients.
+func parseLANClients(spec string) ([]netip.Prefix, error) {
+	items := splitList(spec)
+	if len(items) == 0 {
+		return append([]netip.Prefix(nil), DefaultLANClients...), nil
+	}
+	out := make([]netip.Prefix, 0, len(items))
+	for _, item := range items {
+		if p, err := netip.ParsePrefix(item); err == nil {
+			out = append(out, p.Masked())
+			continue
+		}
+		a, err := netip.ParseAddr(item)
+		if err != nil {
+			return nil, fmt.Errorf("LAN client %q is not an address or a range like 192.168.1.0/24", item)
+		}
+		out = append(out, netip.PrefixFrom(a.Unmap(), a.Unmap().BitLen()))
+	}
+	return out, nil
+}
+
+// LANClientAllowed reports whether -lan admits a client at addr.
+func (c Config) LANClientAllowed(addr netip.Addr) bool {
+	addr = addr.Unmap()
+	for _, p := range c.LANClients {
+		if p.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }

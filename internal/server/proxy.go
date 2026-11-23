@@ -207,8 +207,15 @@ func (p *proxy) intercept(w http.ResponseWriter, r *http.Request, host string) {
 	}
 	tlsConn := tls.Server(conn, p.opts.CA.ServerConfig(host))
 
+	// Requests inside the tunnel come from the same client as the
+	// CONNECT, so they keep its network mark (-lan).
+	base := context.Background()
+	if fromNetwork(r.Context()) {
+		base = withNetwork(base)
+	}
 	hs := &http.Server{
 		Handler:           p.handler,
+		BaseContext:       func(net.Listener) context.Context { return base },
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 		ErrorLog:          slog.NewLogLogger(p.log.Handler(), slog.LevelDebug),

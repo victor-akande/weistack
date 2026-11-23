@@ -36,8 +36,12 @@ COPY --from=build /out/weistack /weistack
 COPY --from=build --chown=65532:65532 /out/data /data
 
 # Inside a container the emulator must listen on all interfaces to be
-# reachable through a published port; outside it defaults to loopback.
+# reachable through a published port; outside it defaults to loopback,
+# and refuses other addresses unless WEISTACK_IN_CONTAINER says it runs
+# in one. Publish the port on loopback (-p 127.0.0.1:8780:8780) unless
+# other machines need it.
 ENV WEISTACK_HOST=0.0.0.0 \
+    WEISTACK_IN_CONTAINER=1 \
     WEISTACK_TLS_DIR=/data/tls \
     WEISTACK_DATA_DIR=/data
 
