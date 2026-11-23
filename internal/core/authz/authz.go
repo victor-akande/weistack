@@ -338,6 +338,21 @@ func Check(r *http.Request, name string, resources ...Resource) error {
 	return check(r, actions.MustLookup(name), resources)
 }
 
+// CheckDependency reports whether the caller may perform an action of
+// another, regional service that the request's own service performs on
+// its behalf, as OBS uses KMS for SSE-KMS (Huawei lists such actions as
+// a permission's dependencies). The action is evaluated where that
+// service's own grants apply, in the region's project, so a KMS
+// permission granted in the region allows it, as it would a direct call
+// to KMS; a denial is the calling service's own error.
+func CheckDependency(r *http.Request, service, name string, resources ...Resource) error {
+	if GateFrom(r.Context()) == nil {
+		return nil
+	}
+	scope := Scope{Service: service, Region: reqctx.From(r.Context()).Region}
+	return checkIn(r, actions.MustLookup(name), resources, &scope)
+}
+
 // Defer marks a request whose route leaves the check to its handler
 // (with Check), once the body says which action it is.
 func Defer() func(http.Handler) http.Handler { return Public() }
@@ -350,8 +365,15 @@ func write(w http.ResponseWriter, r *http.Request, err error) {
 	apierr.Write(w, r, style, err)
 }
 
-// check authorizes a against the gate in r's context.
+// check authorizes a against the gate in r's context, in the scope of
+// the request's own service.
 func check(r *http.Request, a actions.Action, res []Resource) error {
+	return checkIn(r, a, res, nil)
+}
+
+// checkIn authorizes a in scope, or, when scope is nil, in the scope of
+// the request's own service.
+func checkIn(r *http.Request, a actions.Action, res []Resource, in *Scope) error {
 	ctx := r.Context()
 	g := GateFrom(ctx)
 	g.markChecked(a.Name)
@@ -363,6 +385,9 @@ func check(r *http.Request, a actions.Action, res []Resource) error {
 	scope := Scope{Service: o.Name, Region: reqctx.From(ctx).Region, Global: o.Global}
 	if !o.Global {
 		scope.ProjectID = chi.URLParam(r, "project_id")
+	}
+	if in != nil {
+		scope = *in
 	}
 	if g.foreignProject(scope) {
 		return g.deny(ctx, o, a, nil, policy.Decision{}, "the project belongs to another account")
