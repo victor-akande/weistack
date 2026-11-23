@@ -328,6 +328,7 @@ for how a service plugs into the core.
 make check      # gofmt, vet, golangci-lint, tests with the race detector
 make test-sdk   # drive a real emulator with Huawei's official Go SDK
 make test-terraform  # apply, re-plan and destroy a stack with the Terraform provider
+make fuzz       # every fuzz target for FUZZTIME each (default 10s)
 ```
 
 The Terraform scenario ([test/terraform](test/terraform)) also shows the

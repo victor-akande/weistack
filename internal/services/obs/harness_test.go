@@ -39,18 +39,18 @@ type env struct {
 	now     time.Time
 }
 
-func newEnv(t *testing.T) *env {
+func newEnv(t testing.TB) *env {
 	t.Helper()
 	return newEnvWith(t, store.NewMemory(), t.TempDir())
 }
 
-func newEnvWith(t *testing.T, st store.Store, dir string) *env {
+func newEnvWith(t testing.TB, st store.Store, dir string) *env {
 	t.Helper()
 	return newEnvDir(t, st, dir, nil)
 }
 
 // newEnvDir is newEnvWith with a directory of known access keys.
-func newEnvDir(t *testing.T, st store.Store, dir string, keys *identity.Directory) *env {
+func newEnvDir(t testing.TB, st store.Store, dir string, keys *identity.Directory) *env {
 	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	e := &env{store: st, dir: dir, now: testEpoch}
@@ -94,7 +94,7 @@ type resp struct {
 	Body   string
 }
 
-func (e *env) do(t *testing.T, q req) resp {
+func (e *env) do(t testing.TB, q req) resp {
 	t.Helper()
 	var rd io.Reader
 	if q.Body != "" {

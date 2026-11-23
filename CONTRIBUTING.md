@@ -27,6 +27,14 @@ make build   # binary in ./bin
 make help    # every target
 ```
 
+Code that parses what clients or files send (signatures, request
+bodies, stored records, archives) has fuzz targets (`func FuzzX` in a
+`_test.go` file). `make fuzz` runs each for `FUZZTIME` (10s by default);
+CI runs them briefly on every change and for five minutes each night. A
+failing input lands in the package's `testdata/fuzz/`, where `go test`
+replays it from then on: commit it with the fix. Add a target when you
+add such a parser.
+
 ## Code conventions
 
 - Standard Go layout; application code lives under `internal/`.

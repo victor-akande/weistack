@@ -40,6 +40,25 @@ jobs:
       - name: govulncheck
         run: make vuln
 
+  fuzz:
+    name: fuzz
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Every fuzz target, briefly (the nightly run fuzzes longer)
+        run: make fuzz FUZZTIME=10s
+      - name: Keep failing inputs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-failures
+          path: "**/testdata/fuzz/**"
+          retention-days: 14
+
   test:
     name: test
     runs-on: ubuntu-latest
