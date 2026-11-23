@@ -294,15 +294,21 @@ func (a *Authority) Certificate(host string) (*tls.Certificate, error) {
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber: sn,
-		Subject:      pkix.Name{CommonName: host},
 		NotBefore:    now.Add(-time.Hour),
 		NotAfter:     notAfter,
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
 	if ip := net.ParseIP(host); ip != nil {
+		// An address goes only in the subject alternative name, with an
+		// empty subject (RFC 5280 4.1.2.6). OpenSSL checks a common name
+		// that looks like a host name against the CA's DNS name
+		// constraints, and "10.1.1.64" is under none of them, so a
+		// common name would make curl, Python and every other OpenSSL
+		// client refuse the certificate.
 		tmpl.IPAddresses = []net.IP{ip}
 	} else {
+		tmpl.Subject = pkix.Name{CommonName: host}
 		tmpl.DNSNames = []string{host}
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, a.cert, &a.leafKey.PublicKey, a.key)
