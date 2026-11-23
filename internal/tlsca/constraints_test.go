@@ -160,7 +160,7 @@ func TestLeafVerifiesWithOpenSSL(t *testing.T) {
 	if err := os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: a.cert.Raw}), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for _, host := range []string{"10.1.1.64", "192.168.1.20", "fd00::1", "nas.lan", "vpc.ap-southeast-1.myhuaweicloud.com"} {
+	for _, host := range []string{"10.0.0.5", "192.168.1.20", "fd00::1", "nas.lan", "vpc.ap-southeast-1.myhuaweicloud.com"} {
 		c, err := a.Certificate(host)
 		if err != nil {
 			t.Fatalf("%s: %v", host, err)
