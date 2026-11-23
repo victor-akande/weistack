@@ -166,9 +166,18 @@ export SSL_CERT_FILE=$PWD/weistack-ca.pem   # Go and OpenSSL-based clients
 
 The CA is kept in `~/.config/weistack/tls` (`-tls-dir` changes it;
 `/data/tls` in the image), with or without `-persist`, so clients trust it
-once. Its key never leaves that directory and is readable only by you. A
-running emulator also serves the certificate, which is the easy way to get
-it out of a container:
+once. Its key never leaves that directory and is readable only by you.
+Since v0.3 a new CA can sign only for the names WeiStack answers:
+`myhuaweicloud.com` and the other `-proxy-domains` it was created with,
+`localhost`, names under `.local`, `.lan`, `.internal` and `.home.arpa`,
+and loopback and private addresses. Clients refuse its certificates for
+any other site, so even its key could not be used to impersonate one. A CA
+created by an earlier release has no such limit and still works; WeiStack
+warns about it at start. To replace it, delete `ca.pem` and `ca-key.pem`
+from that directory, restart, and trust the new CA in place of the old
+one. Do the same after adding a `-proxy-domains` domain the CA was not
+created with. A running emulator also serves the certificate, which is
+the easy way to get it out of a container:
 
 ```bash
 curl -o weistack-ca.pem http://127.0.0.1:8780/_weistack/ca
