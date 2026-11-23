@@ -128,3 +128,23 @@ func errSecGroupRuleNotFound(id string) *apierr.Error {
 func errAddressGroupNotFound(id string) *apierr.Error {
 	return apierr.New(http.StatusNotFound, "VPC.9904", "IP address group %s does not exist.", id)
 }
+
+// errVPCQuotaExceeded is VPC.0114 with 409.
+func errVPCQuotaExceeded() *apierr.Error {
+	return apierr.New(http.StatusConflict, "VPC.0114", "Quota exceeded for resources: ['router'].")
+}
+
+// errSubnetQuotaExceeded is VPC.9905 with 409.
+func errSubnetQuotaExceeded() *apierr.Error {
+	return apierr.New(http.StatusConflict, "VPC.9905", "Quota exceeded for resources: ['subnet'].")
+}
+
+// errSecGroupQuotaExceeded is VPC.9905 with 409 (mapped to VPC.0604 on v1).
+func errSecGroupQuotaExceeded() *apierr.Error {
+	return apierr.New(http.StatusConflict, "VPC.9905", "Quota exceeded for resources: security_group.")
+}
+
+// errSecGroupRuleQuotaExceeded is VPC.9905 with 409 (mapped to VPC.0602 on v1).
+func errSecGroupRuleQuotaExceeded() *apierr.Error {
+	return apierr.New(http.StatusConflict, "VPC.9905", "Quota exceeded for resources: ['security_group_rule'].")
+}

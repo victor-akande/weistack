@@ -7,6 +7,7 @@ import (
 	"net/netip"
 
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
@@ -114,6 +115,9 @@ func (s *Service) CreateSubnet(ctx context.Context, t Tenant, opt CreateSubnetOp
 		if other, err := parseIPv4CIDR(sib.CIDR); err == nil && other.Overlaps(block) {
 			return Subnet{}, errSubnetCIDRConflict(opt.CIDR, sib.CIDR)
 		}
+	}
+	if err := checkQuota(ctx, s.quotas, s.subnets(t), quota.VPCSubnet, 1, errSubnetQuotaExceeded); err != nil {
+		return Subnet{}, err
 	}
 
 	sn.CreatedAt = s.timestamp()
