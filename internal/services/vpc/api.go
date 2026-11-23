@@ -58,6 +58,8 @@ func (s *Service) Routes(r chi.Router) {
 		r.With(act("vpc:securityGroupRules:list")).Get("/security-group-rules", s.v1("ListSecurityGroupRulesV1", s.handleListRulesV1))
 		r.With(act("vpc:securityGroupRules:get", rule)).Get("/security-group-rules/{security_group_rule_id}", s.v1("ShowSecurityGroupRuleV1", s.handleShowRuleV1))
 		r.With(act("vpc:securityGroupRules:delete", rule)).Delete("/security-group-rules/{security_group_rule_id}", s.v1("DeleteSecurityGroupRuleV1", s.handleDeleteRuleV1))
+
+		r.With(act("vpc:quotas:list")).Get("/quotas", s.v1("ShowQuota", s.handleShowQuotaV1))
 		for _, ext := range s.exts {
 			ext.RoutesV1(r)
 		}
@@ -77,6 +79,8 @@ func (s *Service) Routes(r chi.Router) {
 
 		r.With(act("vpc:vpcs:list")).Get("/vpcs", s.v3("ListVpcsV3", s.handleListVPCsV3))
 		r.With(act("vpc:vpcs:get", vpc)).Get("/vpcs/{vpc_id}", s.v3("ShowVpcV3", s.handleShowVPCv3))
+
+		r.With(act("vpc:quotas:list")).Get("/quotas", s.v3("ShowQuotaV3", s.handleShowQuotaV3))
 	})
 	for _, ext := range s.exts {
 		ext.Routes(r)

@@ -690,3 +690,240 @@ func TestQuotasLoadBalancerParallelCreate(t *testing.T) {
 		t.Fatalf("stored loadbalancers = %d, want %d", len(lbs), limit)
 	}
 }
+
+func TestShowQuota(t *testing.T) {
+	t.Run("defaults", func(t *testing.T) {
+		e := newQuotaEnv(t, quota.Limits{})
+		defaults := quota.Limits{}
+
+		st, out := e.call(t, http.MethodGet, "/quotas", "")
+		if st != http.StatusOK {
+			t.Fatalf("GET /quotas: status %d: %s", st, out)
+		}
+		var resp showQuotaResponse
+		if err := json.Unmarshal(out, &resp); err != nil {
+			t.Fatalf("unmarshal ShowQuota: %v", err)
+		}
+		if resp.RequestID == "" {
+			t.Error("request_id is empty")
+		}
+		q := resp.Quota
+		if q.ProjectID != lbTestProject {
+			t.Errorf("project_id = %q, want %q", q.ProjectID, lbTestProject)
+		}
+		checks := []struct {
+			name string
+			got  int
+			want int
+		}{
+			{"loadbalancer", q.Loadbalancer, defaults.Get(quota.ELBLoadBalancer)},
+			{"listener", q.Listener, defaults.Get(quota.ELBListener)},
+			{"l7policy", q.L7Policy, defaults.Get(quota.ELBL7Policy)},
+			{"pool", q.Pool, defaults.Get(quota.ELBPool)},
+			{"member", q.Member, defaults.Get(quota.ELBMember)},
+			{"certificate", q.Certificate, defaults.Get(quota.ELBCertificate)},
+			{"l7policies_per_listener", q.L7PoliciesPerListener, defaults.Get(quota.ELBL7PoliciesPerListener)},
+			{"condition_per_policy", q.ConditionPerPolicy, quota.Unlimited},
+			{"healthmonitor", q.Healthmonitor, quota.Unlimited},
+			{"members_per_pool", q.MembersPerPool, quota.Unlimited},
+			{"listeners_per_pool", q.ListenersPerPool, quota.Unlimited},
+			{"ipgroup", q.IPGroup, quota.Unlimited},
+			{"ipgroup_bindings", q.IPGroupBindings, quota.Unlimited},
+			{"ipgroup_max_length", q.IPGroupMaxLength, quota.Unlimited},
+			{"ipgroups_per_listener", q.IPGroupsPerListener, quota.Unlimited},
+			{"security_policy", q.SecurityPolicy, quota.Unlimited},
+			{"listeners_per_loadbalancer", q.ListenersPerLoadbalancer, quota.Unlimited},
+			{"pools_per_l7policy", q.PoolsPerL7Policy, quota.Unlimited},
+			{"free_instance_members_per_pool", q.FreeInstanceMembersPerPool, quota.Unlimited},
+			{"free_instance_listeners_per_loadbalancer", q.FreeInstanceListenersPerLoadbalancer, quota.Unlimited},
+		}
+		for _, c := range checks {
+			if c.got != c.want {
+				t.Errorf("%s = %d, want %d", c.name, c.got, c.want)
+			}
+		}
+	})
+
+	t.Run("custom_limits", func(t *testing.T) {
+		lbLim, lsnLim, l7Lim, poolLim, memLim, certLim, perLsnLim := 7, 11, 13, 17, 19, 23, 29
+		e := newQuotaEnv(t, quota.For(map[quota.Key]int{
+			quota.ELBLoadBalancer:          lbLim,
+			quota.ELBListener:              lsnLim,
+			quota.ELBL7Policy:              l7Lim,
+			quota.ELBPool:                  poolLim,
+			quota.ELBMember:                memLim,
+			quota.ELBCertificate:           certLim,
+			quota.ELBL7PoliciesPerListener: perLsnLim,
+		}))
+
+		st, out := e.call(t, http.MethodGet, "/quotas", "")
+		if st != http.StatusOK {
+			t.Fatalf("GET /quotas: status %d: %s", st, out)
+		}
+		var resp showQuotaResponse
+		if err := json.Unmarshal(out, &resp); err != nil {
+			t.Fatalf("unmarshal ShowQuota: %v", err)
+		}
+		q := resp.Quota
+		if q.Loadbalancer != lbLim || q.Listener != lsnLim || q.L7Policy != l7Lim ||
+			q.Pool != poolLim || q.Member != memLim || q.Certificate != certLim ||
+			q.L7PoliciesPerListener != perLsnLim {
+			t.Fatalf("unexpected custom quotas: %+v", q)
+		}
+	})
+}
+
+func TestListQuotaDetails(t *testing.T) {
+	lbLim, lsnLim, l7Lim, poolLim, memLim, certLim, perLsnLim := 5, 6, 7, 8, 9, 10, 4
+	e := newQuotaEnv(t, quota.For(map[quota.Key]int{
+		quota.ELBLoadBalancer:          lbLim,
+		quota.ELBListener:              lsnLim,
+		quota.ELBL7Policy:              l7Lim,
+		quota.ELBPool:                  poolLim,
+		quota.ELBMember:                memLim,
+		quota.ELBCertificate:           certLim,
+		quota.ELBL7PoliciesPerListener: perLsnLim,
+	}))
+
+	// Empty project: all 7 keys in §2 order with 0 usage.
+	st, out := e.call(t, http.MethodGet, "/quotas/details", "")
+	if st != http.StatusOK {
+		t.Fatalf("GET /quotas/details: status %d: %s", st, out)
+	}
+	var emptyResp listQuotaDetailsResponse
+	if err := json.Unmarshal(out, &emptyResp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if emptyResp.RequestID == "" {
+		t.Error("request_id is empty")
+	}
+	wantOrder := []string{"loadbalancer", "listener", "l7policy", "pool", "member", "certificate", "l7policies_per_listener"}
+	if len(emptyResp.Quotas) != len(wantOrder) {
+		t.Fatalf("len(quotas) = %d, want %d", len(emptyResp.Quotas), len(wantOrder))
+	}
+	for i, key := range wantOrder {
+		got := emptyResp.Quotas[i]
+		if got.QuotaKey != key || got.Used != 0 || got.Unit != "count" {
+			t.Errorf("quotas[%d] = %+v, want key=%q used=0 unit=count", i, got, key)
+		}
+	}
+
+	// Create resources, including two listeners with different L7 policy counts (1 vs 3).
+	lbID := e.mustCreateLB(t, "lb-1")
+	lsn1 := e.mustCreateListener(t, lbID, "lsn-1", 80)
+	lsn2 := e.mustCreateListener(t, lbID, "lsn-2", 81)
+	poolID := e.mustCreatePool(t, lbID, "pool-1")
+	_ = e.mustCreateMember(t, poolID, "192.168.0.10", 80)
+	_ = e.mustCreateMember(t, poolID, "192.168.0.11", 80)
+	cert := certGenRSA(t, "details.example.com", nil, nil, false, lbTestEpoch.Add(24*time.Hour))
+	_ = e.mustCreateCert(t, "cert-1", cert)
+	_ = e.mustCreateL7Policy(t, lsn1, "pol-1a")
+	_ = e.mustCreateL7Policy(t, lsn2, "pol-2a")
+	_ = e.mustCreateL7Policy(t, lsn2, "pol-2b")
+	_ = e.mustCreateL7Policy(t, lsn2, "pol-2c")
+
+	st, out = e.call(t, http.MethodGet, "/quotas/details", "")
+	if st != http.StatusOK {
+		t.Fatalf("GET /quotas/details: status %d: %s", st, out)
+	}
+	var resp listQuotaDetailsResponse
+	if err := json.Unmarshal(out, &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	wantAll := []quotaInfoWire{
+		{QuotaKey: "loadbalancer", QuotaLimit: lbLim, Used: 1, Unit: "count"},
+		{QuotaKey: "listener", QuotaLimit: lsnLim, Used: 2, Unit: "count"},
+		{QuotaKey: "l7policy", QuotaLimit: l7Lim, Used: 4, Unit: "count"},
+		{QuotaKey: "pool", QuotaLimit: poolLim, Used: 1, Unit: "count"},
+		{QuotaKey: "member", QuotaLimit: memLim, Used: 2, Unit: "count"},
+		{QuotaKey: "certificate", QuotaLimit: certLim, Used: 1, Unit: "count"},
+		{QuotaKey: "l7policies_per_listener", QuotaLimit: perLsnLim, Used: 3, Unit: "count"},
+	}
+	if len(resp.Quotas) != len(wantAll) {
+		t.Fatalf("len(quotas) = %d, want %d", len(resp.Quotas), len(wantAll))
+	}
+	for i, w := range wantAll {
+		if resp.Quotas[i] != w {
+			t.Errorf("quotas[%d] = %+v, want %+v", i, resp.Quotas[i], w)
+		}
+	}
+
+	// Repeatable ?quota_key= filter preserves §2 order.
+	st, out = e.call(t, http.MethodGet, "/quotas/details?quota_key=l7policies_per_listener&quota_key=loadbalancer", "")
+	if st != http.StatusOK {
+		t.Fatalf("filtered GET /quotas/details: status %d: %s", st, out)
+	}
+	var filtered listQuotaDetailsResponse
+	if err := json.Unmarshal(out, &filtered); err != nil {
+		t.Fatalf("unmarshal filtered: %v", err)
+	}
+	wantFiltered := []quotaInfoWire{wantAll[0], wantAll[6]}
+	if len(filtered.Quotas) != len(wantFiltered) || filtered.Quotas[0] != wantFiltered[0] || filtered.Quotas[1] != wantFiltered[1] {
+		t.Fatalf("filtered quotas = %+v, want %+v", filtered.Quotas, wantFiltered)
+	}
+
+	// Unknown quota_key returns empty list (not null).
+	st, out = e.call(t, http.MethodGet, "/quotas/details?quota_key=unknown_key", "")
+	if st != http.StatusOK {
+		t.Fatalf("unknown key GET /quotas/details: status %d: %s", st, out)
+	}
+	if !strings.Contains(string(out), `"quotas":[]`) {
+		t.Errorf("unknown key response = %s, want empty quotas array", out)
+	}
+}
+
+func TestListQuotaDetailsExistingDataOverLimit(t *testing.T) {
+	limit, seeded := 1, 3
+	e := newQuotaEnv(t, quota.For(map[quota.Key]int{
+		quota.ELBLoadBalancer: limit,
+		quota.ELBListener:     limit,
+	}))
+	ctx := t.Context()
+
+	var lbID string
+	for i := range seeded {
+		lb := loadBalancer{ID: e.svc.ids.UUID(), Name: fmt.Sprintf("over-lb-%d", i+1), L4FlavorID: e.l4FlavorID, L7FlavorID: e.l7FlavorID, VPCID: e.vpcID, AdminStateUp: true, CreatedAt: lbTestEpoch, UpdatedAt: lbTestEpoch}
+		if err := e.svc.loadBalancers(lbTestTenant).Create(ctx, lb.ID, lb); err != nil {
+			t.Fatalf("seed LB: %v", err)
+		}
+		if i == 0 {
+			lbID = lb.ID
+		}
+	}
+	for i := range seeded {
+		l := listener{ID: e.svc.ids.UUID(), LoadBalancerID: lbID, Name: fmt.Sprintf("over-lsn-%d", i+1), Protocol: "HTTP", ProtocolPort: 80 + i, AdminStateUp: true, CreatedAt: lbTestEpoch, UpdatedAt: lbTestEpoch}
+		if err := e.svc.listeners(lbTestTenant).Create(ctx, l.ID, l); err != nil {
+			t.Fatalf("seed listener: %v", err)
+		}
+	}
+
+	st, out := e.call(t, http.MethodGet, "/quotas/details?quota_key=loadbalancer&quota_key=listener", "")
+	if st != http.StatusOK {
+		t.Fatalf("GET /quotas/details: status %d: %s", st, out)
+	}
+	var resp listQuotaDetailsResponse
+	if err := json.Unmarshal(out, &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.Quotas) != 2 {
+		t.Fatalf("len(quotas) = %d, want 2", len(resp.Quotas))
+	}
+	for _, q := range resp.Quotas {
+		if q.Used != seeded || q.QuotaLimit != limit {
+			t.Errorf("%s: used=%d limit=%d, want used=%d limit=%d", q.QuotaKey, q.Used, q.QuotaLimit, seeded, limit)
+		}
+	}
+
+	// VPCExtension().Quotas reports the same loadbalancer and listener numbers.
+	extQuotas, err := e.svc.VPCExtension().Quotas(ctx, lbTestTenant)
+	if err != nil {
+		t.Fatalf("VPCExtension().Quotas: %v", err)
+	}
+	wantExt := []vpc.QuotaResource{
+		{Type: "loadbalancer", Used: seeded, Quota: limit, Min: 0},
+		{Type: "listener", Used: seeded, Quota: limit, Min: 0},
+	}
+	if len(extQuotas) != len(wantExt) || extQuotas[0] != wantExt[0] || extQuotas[1] != wantExt[1] {
+		t.Fatalf("VPCExtension().Quotas = %+v, want %+v", extQuotas, wantExt)
+	}
+}

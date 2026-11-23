@@ -18,8 +18,9 @@ Legend: **Yes** implemented, **Partial** implemented with the listed gaps,
 | UpdateImage | `PATCH /v2/cloudimages/{image_id}` | Partial | `name`, `__description`, `min_ram`, `max_ram`, `hw_firmware_type`, `enterprise_project_id`. Other attributes: `501` |
 | GlanceDeleteImage | `DELETE /v2/images/{image_id}` | Yes | `delete_backup` ignored |
 | ShowJob | `GET /v1/{project_id}/jobs/{job_id}` | Yes | |
+| ShowImageQuota | `GET /v1/cloudimages/quota` | Yes | Private image quota and usage (`ims:quotas:get`) |
 | GlanceListImages | `GET /v2/images` | No | |
-| Tags, members, copy, export, import, quotas, OS versions | | No | |
+| Tags, members, copy, export, import, OS versions | | No | |
 
 ## Public images
 
@@ -94,6 +95,16 @@ entry.
 - A caller sees the region's public images and its own project's private
   images.
 
+## Quotas
+
+`ShowImageQuota` (`GET /v1/cloudimages/quota`, action `ims:quotas:get`)
+reports the project's private image limit and usage. Limits are per project
+and configurable with `-quotas` (see [Quotas](../quotas.md)).
+
+| Key | Default | Error | Enforced |
+| --- | --- | --- | --- |
+| `ims.image` | 20 | `400 IMG.0015` | Yes |
+
 ## Error codes
 
 IMS errors are `{"error": {"code": "...", "message": "..."}}`.
@@ -109,6 +120,7 @@ IMS errors are `{"error": {"code": "...", "message": "..."}}`.
 | `IMG.0009` | 400 | Image name already used in the project |
 | `IMG.0012` | 400 | `instance_id` missing or not a UUID |
 | `IMG.0013` | 400 | Image name missing |
+| `IMG.0015` | 400 | Private image quota reached |
 | `IMG.0023` | 400 | Job does not exist in the project |
 | `IMG.0027` | 404 | Image does not exist or belongs to another project |
 | `IMG.0046` | 400 | Updating an image that is not `active` |

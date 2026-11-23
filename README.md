@@ -317,6 +317,18 @@ service's 403 for the rest. See [Checking credentials](docs/enforce.md)
 for what is checked, the errors, and what is not covered yet. The admin API (`/_weistack/*`) is not
 protected by `-iam`: keep the emulator's port to yourself.
 
+## Quotas
+
+Every service enforces per-project limits (account-wide across regions for
+OBS buckets) matching the defaults of a new Huawei Cloud account. Override
+limits with `-quotas` or `WEISTACK_QUOTAS` (for example
+`-quotas vpc.vpc=500,elb.loadbalancer=-1`, where `-1` means unlimited);
+`-ecs-max-servers`, `-ecs-max-vcpus`, `-eip-max-per-project` and
+`-rds-max-instances` configure their respective keys. Lowering a limit never
+deletes existing persisted resources: only new creates are refused, and
+quota APIs report current usage alongside the limit. See
+[docs/quotas.md](docs/quotas.md) for the full key table.
+
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow (GitHub flow,

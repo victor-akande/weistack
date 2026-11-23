@@ -50,9 +50,10 @@ func (s *Service) Routes(r chi.Router) {
 			r.With(act("nat:dnatRules:delete")).Delete("/nat_gateways/{nat_gateway_id}/dnat_rules/{dnat_rule_id}", s.handle("DeleteNatGatewayDnatRule", s.handleDeleteDnatRule))
 		})
 
-		// §3.4 Public gateway tags (v2.0 prefix used by Terraform provider).
+		// §3.4 Public gateway tags (v2.0 prefix used by Terraform provider) and quotas.
 		r.Route("/v2.0/{project_id}", func(r chi.Router) {
 			s.mountPublicTagRoutes(r, act, gw)
+			r.With(authz.Public()).Get("/nat_gateways/quotas", s.handle("ListNatGatewayQuotas", s.handleListQuotas))
 		})
 
 		// §3.4 Public gateway tags (v3), §3.5–§3.9 Private NAT, §3.10 Private tags.

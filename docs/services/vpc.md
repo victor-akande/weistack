@@ -125,6 +125,23 @@ with v3 and reads and deletes them with v1. Every version WeiStack serves is a
 view of the same stored resources, so a group or rule created through one is
 visible, and can be deleted, through the other.
 
+## Quotas
+
+| Operation | Method and path | Status | Notes |
+| --- | --- | --- | --- |
+| ShowQuota | `GET /v1/{project_id}/quotas` | Yes | Optional `type` filter (unknown `type` returns `400 VPC.1207`); includes `vpc`, `subnet`, `securityGroup`, `securityGroupRule`, plus [EIP](eip.md#quotas) (`publicIp`, `shareBandwidth`, `shareBandwidthIP`) and [ELB](elb.md#quotas) (`loadbalancer`, `listener`) entries when enabled |
+| ShowQuotaV3 | `GET /v3/{project_id}/vpc/quotas` | Yes | Optional `type` filter; reports `vpc`, `virsubnet`, `security_group` and `security_group_rule` |
+
+Limits are per project and configurable with `-quotas` (see
+[Quotas](../quotas.md)).
+
+| Key | Default | Error | Enforced |
+| --- | --- | --- | --- |
+| `vpc.vpc` | 150 | `409 VPC.0114` | Yes |
+| `vpc.subnet` | 400 | `409 VPC.9905` | Yes |
+| `vpc.securityGroup` | 100 | v1: `409 VPC.0604`; v3: `409 VPC.9905` | Yes |
+| `vpc.securityGroupRule` | 5000 | v1: `409 VPC.0602`; v3: `409 VPC.9905` | Yes |
+
 ## Error codes
 
 Errors of the v1 API (VPCs, subnets, ports, v1 security groups) are
@@ -135,6 +152,7 @@ Errors of the v3 API (security groups) are
 | Code | HTTP | When |
 | --- | --- | --- |
 | `VPC.0101` | 400 | Invalid body, field, ID, `limit` or `marker` |
+| `VPC.0114` | 409 | VPC quota exceeded |
 | `VPC.0115` | 400 | VPC name already used in the project |
 | `VPC.0105` | 404 | VPC does not exist |
 | `VPC.0103` | 409 | VPC is still being created |
@@ -149,14 +167,17 @@ Errors of the v3 API (security groups) are
 | `VPC.0202` | 404 | Subnet does not exist |
 | `VPC.0205` | 500 | Subnet is still being created |
 | `VPC.0208` | 500 | Deleting a subnet with private IPs in use |
+| `VPC.1207` | 400 | Unknown `type` query parameter on `ShowQuota` |
 | `VPC.2500` | 400 | Invalid port `limit` or `marker` |
 | `VPC.2502` | 404 | Port does not exist |
 | `VPC.0601` | 400 | Invalid v1 security group or rule request |
-| `VPC.0602` | 409 | v1: duplicate rule; deleting the default security group |
+| `VPC.0602` | 409 | v1: duplicate rule; deleting the default security group; security group rule quota exceeded |
 | `VPC.0603` | 404 | v1: security group or rule does not exist |
+| `VPC.0604` | 409 | v1: security group quota exceeded |
 | `VPC.9902` | 400 | Invalid security group or rule request |
 | `VPC.9902` | 409 | Duplicate rule; deleting the default security group |
 | `VPC.9904` | 404 | Security group, rule, remote group or address group does not exist |
+| `VPC.9905` | 409 | Subnet quota exceeded, or v3 security group or security group rule quota exceeded |
 
 ## Client compatibility
 
@@ -182,5 +203,3 @@ traffic. Known open points:
   conflicts (409); the emulator uses it for every invalid v3 request.
 - Whether real Huawei Cloud cascades the deletion of rules that reference a
   deleted group, as OpenStack Neutron does, is unverified.
-- Real Huawei Cloud enforces per-project quotas for VPCs (`VPC.0114`),
-  security groups and rules (`VPC.9905`); the emulator has none yet.

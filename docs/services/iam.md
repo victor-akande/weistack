@@ -69,7 +69,8 @@ Names follow Huawei's rules: a username has at most 64 letters, digits,
 spaces, `-`, `_` and `.`, and does not start with a digit or a space; a
 group name has at most 128 letters, digits, spaces, `-` and `_`.
 Descriptions have at most 255 characters and none of `@#%&<>\$^*`. An
-account has at most 50 IAM users besides the root user.
+account has at most 50 IAM users besides the root user by default; see
+[Quotas](#quotas).
 
 **Passwords** are stored only as a salted hash. A password may not be the
 username, or the username reversed. WeiStack also applies what it assumes
@@ -421,6 +422,23 @@ its reason: `{"decoded_message": "<JSON>"}`. It needs
 characters is `STS5.1301` (400). See [Checking credentials:
 denials](../enforce.md#denials).
 
+## Quotas
+
+| Operation | Method and path | Status | Notes |
+| --- | --- | --- | --- |
+| ShowDomainQuota | `GET /v3.0/OS-QUOTA/domains/{domain_id}` | Yes | No special permission needed (refuses another account's domain); reports `user`, `group` and `agency` |
+| ShowProjectQuota | `GET /v3.0/OS-QUOTA/projects/{project_id}` | Yes | No special permission needed (refuses a project outside the caller's account); reports `project` |
+
+Limits are configurable with `-quotas` (see [Quotas](../quotas.md)).
+Huawei documents no quota error for creating user groups or agencies, so the
+API reports usage and limit without refusing creates.
+
+| Key | Default | Error | Enforced |
+| --- | --- | --- | --- |
+| `iam.user` | 50 | `400 1115` | Yes |
+| `iam.group` | 20 | — | No |
+| `iam.agency` | 50 | — | No |
+
 ## Error codes
 
 Only codes from Huawei's published IAM error table are used. Classic IAM's
@@ -439,7 +457,7 @@ Classic IAM:
 | `1107` | 400 | Deleting the root user |
 | `1108` | 400 | A new password the same as the current one |
 | `1109` | 400 | The username is taken |
-| `1115` | 400 | The 50-user quota is reached (from IAM 5.0 too, which documents no code for it) |
+| `1115` | 400 | The user quota (`iam.user`) is reached (from IAM 5.0 too, which documents no code for it) |
 | `1117` | 400 | An invalid user description |
 | `1118` | 400 | A weak password |
 | `1120` | 400 | An `access_mode` other than `default`, `console` or `programmatic` |

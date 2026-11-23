@@ -106,6 +106,7 @@ type Deps struct {
 
 // Service is the NAT Gateway emulator.
 type Service struct {
+	quotas quota.Limits
 	store  store.Store
 	engine *lifecycle.Engine
 	ids    *ids.Generator
@@ -128,6 +129,7 @@ func New(d Deps) (*Service, error) {
 		d.Now = time.Now
 	}
 	return &Service{
+		quotas: d.Quotas,
 		store:  d.Store,
 		engine: d.Engine,
 		ids:    d.IDs,

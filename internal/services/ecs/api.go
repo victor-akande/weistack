@@ -25,6 +25,7 @@ func (s *Service) Routes(r chi.Router) {
 	act, server := authz.Action, authz.Param("instance", "server_id")
 	r.Use(authz.Service(authz.ServiceOptions{Name: "ecs", Style: apierr.StyleNested}))
 	r.With(act("ecs:cloudServerFlavors:get")).Get("/v1/{project_id}/cloudservers/flavors", s.handle("ListFlavors", s.handleListFlavors))
+	r.With(act("ecs:cloudServerQuotas:get")).Get("/v1/{project_id}/cloudservers/limits", s.handle("ShowServerLimits", s.handleShowLimits))
 
 	// Pay-per-use creation exists under two versions with one body.
 	r.With(act("ecs:cloudServers:createServers")).Post("/v1/{project_id}/cloudservers", s.handle("CreatePostPaidServers", s.handleCreateServers))
@@ -397,4 +398,12 @@ func (s *Service) handleListProjectTags(w http.ResponseWriter, r *http.Request, 
 		return err
 	}
 	return httpx.WriteJSON(w, http.StatusOK, projectTagsResponse{Tags: tags})
+}
+
+func (s *Service) handleShowLimits(w http.ResponseWriter, r *http.Request, t Tenant) error {
+	limits, err := s.ShowLimits(r.Context(), t)
+	if err != nil {
+		return err
+	}
+	return httpx.WriteJSON(w, http.StatusOK, showServerLimitsResponse{Absolute: limits})
 }

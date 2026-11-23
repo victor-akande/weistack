@@ -21,7 +21,7 @@ Legend: **Yes** implemented, **No** returns `501 WeiStack.0501`.
 | EnableKey, DisableKey | `POST .../enable-key`, `disable-key` | Yes | |
 | DeleteKey, CancelKeyDeletion | `POST .../schedule-key-deletion`, `cancel-key-deletion` | Yes | `pending_days` 7 to 1,096 |
 | UpdateKeyAlias, UpdateKeyDescription | `POST .../update-key-alias`, `update-key-description` | Yes | |
-| ShowUserInstances, ShowUserQuotas | `GET .../user-instances`, `user-quotas` | Yes | 100 keys per project |
+| ShowUserInstances, ShowUserQuotas | `GET .../user-instances`, `user-quotas` | Yes | 100 keys per project by default; see [Quotas](#quotas) |
 | Aliases, key policies, keystores, importing key material, replication | | No | |
 
 - **Specs.** `AES_256` (the default) and `SM4` keys encrypt;
@@ -155,6 +155,17 @@ Each checks that the key exists in the caller's project, is enabled and
 is a symmetric encryption key; with none named, OBS and ECS use the
 account's `obs/default` and `evs/default` keys, which KMS makes on first
 use.
+
+## Quotas
+
+`ShowUserQuotas` (`GET /v1.0/{project_id}/kms/user-quotas`, action
+`kms::getQuota`) reports the project's customer master key limit (`kms.CMK`)
+and usage, plus the fixed `grant_per_CMK` limit (100). `kms.CMK` is per
+project and configurable with `-quotas` (see [Quotas](../quotas.md)).
+
+| Key | Default | Error | Enforced |
+| --- | --- | --- | --- |
+| `kms.CMK` | 100 | `400 KMS.1105` | Yes |
 
 ## Errors
 

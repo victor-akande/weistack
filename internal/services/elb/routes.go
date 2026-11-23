@@ -108,6 +108,10 @@ func (s *Service) Routes(r chi.Router) {
 			r.With(act("elb:flavors:list")).Get("/flavors", s.handle("ListFlavors", s.handleListFlavors))
 			r.With(act("elb:flavors:show", flv)).Get("/flavors/{flavor_id}", s.handle("ShowFlavor", s.handleShowFlavor))
 			r.With(act("elb:availability-zones:list")).Get("/availability-zones", s.handle("ListAvailabilityZones", s.handleListAvailabilityZones))
+
+			// Quotas.
+			r.With(act("elb:quotas:show")).Get("/quotas", s.handle("ShowQuota", s.handleShowQuota))
+			r.With(act("elb:quotas:list")).Get("/quotas/details", s.handle("ListQuotaDetails", s.handleListQuotaDetails))
 		})
 
 		// §3.11 Tags under /v2.0/{project_id} (used by the Terraform provider).

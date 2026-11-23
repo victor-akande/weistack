@@ -13,6 +13,7 @@ Legend: **Yes** implemented, **Partial** implemented with the listed gaps,
 | --- | --- | --- | --- |
 | ListDatastores | `GET /v3/{project_id}/datastores/{database_name}` | Yes | MySQL and PostgreSQL |
 | ListFlavors | `GET /v3/{project_id}/flavors/{database_name}` | Yes | `version_name`, `spec_code` |
+| ShowQuotas | `GET /v3/{project_id}/quotas` | Yes | Instance quota and usage (`rds:instance:listQuotas`) |
 | CreateInstance | `POST /v3/{project_id}/instances` | Partial | See "Creating instances" |
 | ListInstances | `GET /v3/{project_id}/instances` | Yes | The way to read one instance, as in the real API |
 | DeleteInstance | `DELETE /v3/{project_id}/instances/{instance_id}` | Yes | |
@@ -73,7 +74,8 @@ A request is validated completely before anything is written.
   subnet cannot be deleted while the instance exists.
 - **Backups:** `backup_strategy.start_time` is a one-hour UTC window on a
   quarter hour (`08:15-09:15`); default `02:00-03:00`, keeping 7 days.
-- **Quota:** 20 instances per project (`-rds-max-instances`).
+- **Quota:** 20 instances per project by default (`-rds-max-instances`);
+  see [Quotas](#quotas).
 - Read replicas, restore, `dry_run`, `count` other than 1, yearly/monthly
   billing, SQL Server and MariaDB return `501` naming the gap.
 
@@ -141,6 +143,17 @@ another operation in flight (`DBS.200011`). A failed creation leaves it in
 are named `CreateMysqlInstance`, as in the API reference's example; the others
 `DeleteInstance`, `RestartInstance`, `ResizeFlavor`, `EnlargeVolume` and
 `CreateManualBackup`.
+
+## Quotas
+
+`ShowQuotas` (`GET /v3/{project_id}/quotas`, action
+`rds:instance:listQuotas`) reports the project's instance limit and usage.
+`rds.instance` is configured with `-rds-max-instances`
+(`WEISTACK_RDS_MAX_INSTANCES`, not `-quotas`). See [Quotas](../quotas.md).
+
+| Key | Default | Error | Enforced |
+| --- | --- | --- | --- |
+| `rds.instance` | 20 | `413 DBS.200046` | Yes |
 
 ## Error codes
 

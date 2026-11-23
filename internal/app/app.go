@@ -452,6 +452,7 @@ func buildServices(
 	if err != nil {
 		return nil, err
 	}
+	vpcSvc.Extend(elbSvc.VPCExtension())
 
 	obsSvc, err := obs.New(obs.Deps{Quotas: cfg.Quotas, Store: st, IDs: gen, Logger: log, DataDir: objectDir, Keys: kmsSvc, Budget: data})
 	if err != nil {

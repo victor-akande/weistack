@@ -148,3 +148,8 @@ func errSecGroupQuotaExceeded() *apierr.Error {
 func errSecGroupRuleQuotaExceeded() *apierr.Error {
 	return apierr.New(http.StatusConflict, "VPC.9905", "Quota exceeded for resources: ['security_group_rule'].")
 }
+
+// errInvalidQuotaType is VPC.1207 with 400: the quota type query parameter is unknown.
+func errInvalidQuotaType() *apierr.Error {
+	return apierr.New(http.StatusBadRequest, "VPC.1207", "Invalid resource type.")
+}

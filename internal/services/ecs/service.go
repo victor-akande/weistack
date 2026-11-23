@@ -31,6 +31,7 @@ type EIPs interface {
 	AttachToServer(ctx context.Context, t vpc.Tenant, portID, serverName string, ip eip.ServerIP) (string, error)
 	PortsRemoved(ctx context.Context, t vpc.Tenant, portIDs []string, release bool)
 	AddressesByPort(ctx context.Context, t vpc.Tenant) (map[string]string, error)
+	CountPublicIPs(ctx context.Context, t vpc.Tenant) (int, error)
 }
 
 // Tenant identifies whose resources a call operates on.

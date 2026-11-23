@@ -295,6 +295,21 @@ characters (`NAT.1015`). Unknown resources return `404 NAT.1002`, and
 malformed bodies, invalid actions or deleting a missing tag key on single
 delete return `400 NAT.1010`.
 
+## Quotas
+
+| Operation | Method and path | Status | Notes |
+| --- | --- | --- | --- |
+| ListNatGatewayQuotas | `GET /v2.0/{project_id}/nat_gateways/quotas` | Yes | Public route (no permission required); optional `type=nat_gateway` filter; counts public NAT gateways |
+
+Limits are per project and configurable with `-quotas` (see
+[Quotas](../quotas.md)). Huawei documents no quota error for public NAT
+gateway creation, so the API reports usage and limit without refusing
+creates.
+
+| Key | Default | Error | Enforced |
+| --- | --- | --- | --- |
+| `nat.nat_gateway` | 15 | — | No |
+
 ## Not emulated
 
 The following are outside scope; unsupported options or unregistered routes
@@ -304,7 +319,7 @@ return `501 WeiStack.0501`:
 - Global EIPs (`global_eip_id` on public SNAT and DNAT rules)
 - Cross-project transit subnets (`virsubnet_project_id` different from the
   project in the request path returns `400 NAT.1010`)
-- v2.0 quota and version APIs
+- v2.0 version APIs
 
 ## Error codes
 
@@ -399,8 +414,8 @@ documented alias (`nat:natGatewayTags:*`, `nat:privateNatGatewayTags:*`,
 `nat:transitSubnetTags:*`, `nat:transitIps:*`, `nat:transitIpTags:*`)
 against NAT resource URNs (`nat:<region>:<account-id>:gateway:<id>`,
 `privateGateway:<id>`, `transitSubnet:<id>` and `privateTransitIp:<id>`).
-`ListNatGatewaySpecs` and `ListSpecs` are public routes and require no
-permission. Under `-iam=enforce`, denials return `403 VPC.2201`
+`ListNatGatewayQuotas`, `ListNatGatewaySpecs` and `ListSpecs` are public
+routes and require no permission. Under `-iam=enforce`, denials return `403 VPC.2201`
 (`"Policy doesn't allow <action> to be performed."`) with an
 `encoded_authorization_message`. System roles `NAT FullAccess`,
 `NAT ReadOnlyAccess` and `NAT Administrator` grant the corresponding
