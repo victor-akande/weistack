@@ -1,12 +1,12 @@
 # Source from examples/web-app on the workstation to act as a role:
 #
-#   export WEISTACK=https://10.1.1.64:8781   # the cloud machine's -lan address
+#   export WEISTACK=https://192.168.1.20:8781   # the cloud machine's -lan address
 #   . ./use.sh deployer                       # or: operator
 #
 # It sets what each tool reads: the role's keys, the region, the proxy (the
 # tools keep Huawei Cloud's real endpoints) and the system CA bundle, which
 # holds WeiStack's CA after step 2.
-: "${WEISTACK:?set WEISTACK to the cloud machine, for example https://10.1.1.64:8781}"
+: "${WEISTACK:?set WEISTACK to the cloud machine, for example https://192.168.1.20:8781}"
 role="${1:?usage: . ./use.sh deployer|operator}"
 if [ ! -r "secrets/$role.csv" ]; then
 	echo "use.sh: no secrets/$role.csv; run step 3 first" >&2

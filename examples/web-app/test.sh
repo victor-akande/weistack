@@ -3,7 +3,7 @@
 # fails on the first step that does not do what the guide says. CI runs it
 # (ci/web-app.yml); you can run it on the workstation too.
 #
-#   WEISTACK=https://10.1.1.64:8781 ADMIN_AK=... ADMIN_SK=... ./test.sh
+#   WEISTACK=https://192.168.1.20:8781 ADMIN_AK=... ADMIN_SK=... ./test.sh
 #
 # Needs terraform, python with requirements.txt, the AWS CLI, curl and jq,
 # and bin/smoke (go build -o bin/smoke ./smoke). KooCLI (hcloud) is used

@@ -104,7 +104,7 @@ type clients struct {
 func newClients(region, project string) (*clients, error) {
 	proxy, err := url.Parse(os.Getenv("WEISTACK"))
 	if err != nil || proxy.Host == "" {
-		return nil, fmt.Errorf("set WEISTACK to the cloud machine, for example https://10.1.1.64:8781")
+		return nil, fmt.Errorf("set WEISTACK to the cloud machine, for example https://192.168.1.20:8781")
 	}
 	port, _ := strconv.Atoi(proxy.Port())
 	hc := config.DefaultHttpConfig().

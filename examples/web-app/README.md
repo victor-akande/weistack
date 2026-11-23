@@ -50,10 +50,13 @@ Three people share the work, each with only the permissions they need:
 
 ## Two machines
 
-| Machine | Role | Tested on |
-| --- | --- | --- |
-| the **cloud machine** | runs WeiStack as a service, as a cloud region would be | Ubuntu 24.04, a KVM virtual machine |
-| the **workstation** | where people run Terraform, the CLIs and the scripts | Ubuntu 24.04, an LXC container |
+| Machine | Role |
+| --- | --- |
+| the **cloud machine** | runs WeiStack as a service, as a cloud region would be |
+| the **workstation** | where people run Terraform, the CLIs and the scripts |
+
+The guide was written and tested on Ubuntu 24.04 for both, and works the
+same whether they are physical machines, virtual machines or containers.
 
 They reach each other over a private network. The workstation talks to
 WeiStack over HTTPS with [`-lan`](../../docs/lan.md), with credentials
@@ -64,7 +67,7 @@ In the commands, `$CLOUD` is the cloud machine's address. Set it in every
 shell on the workstation:
 
 ```bash
-export CLOUD=10.1.1.64
+export CLOUD=192.168.1.20      # your cloud machine's address
 ```
 
 The steps take about 30 minutes, most of it installing tools.
@@ -121,7 +124,7 @@ sudo -u weistack weistack ca -tls-dir /var/lib/weistack/tls | openssl x509 -noou
 ```
 
 If a firewall runs, open port 8781 to the workstation only, for example
-`sudo ufw allow from 10.1.1.0/24 to any port 8781 proto tcp`.
+`sudo ufw allow from 192.168.1.0/24 to any port 8781 proto tcp`.
 
 ## 2. The workstation: tools and trust
 
