@@ -237,6 +237,7 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		"lifecycle_delay", cfg.LifecycleDelay.String(),
 		"services", srv.ServiceNames(),
 	)
+	warnExposure(log, cfg)
 	if isTerminal(env.Stdout) {
 		printBanner(env.Stdout, cfg, ln.Addr().String(), projectID, account, admin)
 	}
@@ -562,6 +563,19 @@ func isTerminal(w io.Writer) bool {
 	}
 	info, err := f.Stat()
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
+// warnExposure says when other machines can reach WeiStack, or reach
+// other hosts through it.
+func warnExposure(log *slog.Logger, cfg config.Config) {
+	if !cfg.Loopback() && cfg.IAM != config.IAMEnforce {
+		log.Warn("WeiStack listens beyond this machine and accepts any credentials: whoever can reach it can change or delete everything in it",
+			"host", cfg.Host, "fix", "listen on 127.0.0.1, publish a container's port as 127.0.0.1:8780:8780, or use -iam=enforce")
+	}
+	if cfg.ProxyPassthrough == "all" {
+		log.Warn("any client may tunnel to other hosts through WeiStack (-proxy-passthrough all)",
+			"fix", "use -proxy-passthrough loopback unless other machines need it")
+	}
 }
 
 // printBanner tells a person at a terminal how to use the emulator that

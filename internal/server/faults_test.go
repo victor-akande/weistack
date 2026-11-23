@@ -35,6 +35,7 @@ func TestFaultInjection(t *testing.T) {
 	}
 	do := func(method, target, body string) (int, string) {
 		r := httptest.NewRequest(method, target, strings.NewReader(body))
+		r.Host = "localhost"
 		w := httptest.NewRecorder()
 		srv.Handler().ServeHTTP(w, r)
 		return w.Code, w.Body.String()

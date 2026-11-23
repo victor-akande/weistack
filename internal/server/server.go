@@ -120,6 +120,7 @@ type Server struct {
 	temporary auth.TemporaryResolver
 	faults    *faults.Registry
 	now       func() time.Time
+	hosts     *hostGuard // nil: any Host name
 }
 
 type mounted struct {
@@ -184,6 +185,10 @@ func New(opts Options) (*Server, error) {
 	if s.now == nil {
 		s.now = time.Now
 	}
+	var err error
+	if s.hosts, err = s.newHostGuard(); err != nil {
+		return nil, fmt.Errorf("server: %w", err)
+	}
 	if s.enforcing() && s.dir == nil {
 		return nil, errors.New("server: enforcing credentials needs a Directory")
 	}
@@ -240,7 +245,7 @@ func (s *Server) ServiceHandler(name string) (http.Handler, bool) {
 
 // wrap applies the middleware every request goes through.
 func (s *Server) wrap(h http.Handler) http.Handler {
-	return chain(h, s.requestContext, s.observe, s.recoverPanics, cors, auth.Middleware(s.log, s.resolver()))
+	return chain(h, s.requestContext, s.observe, s.recoverPanics, s.guard, cors, auth.Middleware(s.log, s.resolver()))
 }
 
 // ServiceNames returns the enabled services in alphabetical order.

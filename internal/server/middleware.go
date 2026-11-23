@@ -98,12 +98,13 @@ var corsExposed = strings.Join([]string{
 }, ", ")
 
 // cors lets browser-based tools (and a future dashboard) call the
-// emulator. It is wide open on purpose: the emulator holds no real data
-// and accepts any credentials anyway.
+// emulated services. It is wide open on purpose: the emulator holds no
+// real data. The admin API answers pages on this machine only: it can
+// wipe persisted data and mint credentials.
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if origin == "" {
+		if origin == "" || (isAdminPath(r.URL.Path) && !isLocalOrigin(origin)) {
 			next.ServeHTTP(w, r)
 			return
 		}
