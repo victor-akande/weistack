@@ -95,6 +95,9 @@ type Config struct {
 	// TLSDir holds the local CA, and the bootstrap administrator's
 	// credentials beside it. Empty means the default location.
 	TLSDir string
+	// VaultKeyFile keeps the key that seals secrets in the store away
+	// from the data. Empty keeps it in DataDir, with the data.
+	VaultKeyFile string
 	// AdminAccessKey and AdminSecretKey fix the bootstrap administrator's
 	// keys instead of the generated ones, for example in CI. Both or
 	// neither.
@@ -168,6 +171,7 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 	fs.StringVar(&cfg.AdminSecretKey, "admin-secret-key", env.str("ADMIN_SECRET_KEY", ""), "the administrator's secret key (prefer WEISTACK_ADMIN_SECRET_KEY: flags show in process lists)")
 	fs.StringVar(&cfg.IAM, "iam", env.str("IAM", IAMAccept), "credentials: accept (any, as before) or enforce (a valid signature or IAM token on every request)")
 	fs.StringVar(&cfg.TLSDir, "tls-dir", env.str("TLS_DIR", ""), "directory of the local CA (default: weistack/tls in the user config directory)")
+	fs.StringVar(&cfg.VaultKeyFile, "vault-key-file", env.str("VAULT_KEY_FILE", ""), "file of the key that seals stored secrets, kept apart from the data (default: vault-key.json in -data-dir)")
 	fs.StringVar(&servicePorts, "service-ports", env.str("SERVICE_PORTS", ""), "extra per-service listeners, for example obs=9000,ecs=9001")
 	fs.StringVar(&services, "services", env.str("SERVICES", ""), "comma-separated services to enable (default all)")
 	fs.BoolVar(&cfg.Metrics, "metrics", env.bool("METRICS", false), "serve Prometheus metrics at /_weistack/metrics")

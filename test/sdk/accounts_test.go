@@ -1,7 +1,6 @@
 package sdk
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/json"
 	"net/http"
@@ -29,10 +28,7 @@ type addedAccount struct {
 func addAccount(t *testing.T, name string) addedAccount {
 	t.Helper()
 	body, _ := json.Marshal(map[string]string{"name": name})
-	res, err := http.Post("http://"+emulatorAddr+"/_weistack/accounts", "application/json", bytes.NewReader(body))
-	if err != nil {
-		t.Fatal(err)
-	}
+	res := adminDo(t, http.MethodPost, "/_weistack/accounts", string(body))
 	defer res.Body.Close()
 	var out struct {
 		Account struct {

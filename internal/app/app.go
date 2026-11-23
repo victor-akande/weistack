@@ -79,6 +79,8 @@ func Run(ctx context.Context, env Env) error {
 			return printCA(env)
 		case "credentials":
 			return printCredentials(env)
+		case "admin":
+			return adminCommand(ctx, env)
 		}
 	}
 
@@ -678,11 +680,7 @@ func healthcheck(ctx context.Context, env Env) error {
 	if err != nil {
 		return err
 	}
-	host := cfg.Host
-	if ip := net.ParseIP(host); host == "" || (ip != nil && ip.IsUnspecified()) {
-		host = "127.0.0.1" // a wildcard bind is reached through loopback
-	}
-	url := "http://" + net.JoinHostPort(host, strconv.Itoa(cfg.Port)) + "/_weistack/health"
+	url := "http://" + net.JoinHostPort(clientHost(cfg), strconv.Itoa(cfg.Port)) + "/_weistack/health"
 
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
