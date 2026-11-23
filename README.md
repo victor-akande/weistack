@@ -54,7 +54,9 @@ curl http://localhost:8780/_weistack/health
 
 [docs/getting-started.md](docs/getting-started.md) walks through the rest:
 creating resources with `curl`, then with Huawei's Terraform provider, and
-keeping state across restarts.
+keeping state across restarts. [examples/web-app](examples/web-app/README.md)
+goes further: a production-style stack deployed, operated, broken,
+recovered and torn down, with every client WeiStack supports.
 
 With Docker:
 
