@@ -18,6 +18,7 @@ import (
 
 	"github.com/victor-akande/weistack/internal/core/cmk"
 	"github.com/victor-akande/weistack/internal/core/ids"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
@@ -30,6 +31,8 @@ const (
 
 // Deps are the dependencies of the service.
 type Deps struct {
+	// Quotas are the per-project limits (internal/core/quota).
+	Quotas quota.Limits
 	Store  store.Store
 	IDs    *ids.Generator
 	Logger *slog.Logger

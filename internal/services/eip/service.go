@@ -23,6 +23,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/pagination"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/reqctx"
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/services/vpc"
@@ -57,6 +58,8 @@ type PortLookup interface {
 
 // Deps are the dependencies of the service.
 type Deps struct {
+	// Quotas are the per-project limits (internal/core/quota).
+	Quotas        quota.Limits
 	Store         store.Store
 	Engine        *lifecycle.Engine
 	IDs           *ids.Generator

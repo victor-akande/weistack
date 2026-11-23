@@ -1,6 +1,8 @@
 package config
 
 import (
+	"github.com/victor-akande/weistack/internal/core/quota"
+
 	"errors"
 	"flag"
 	"io"
@@ -148,6 +150,8 @@ func TestLoadErrors(t *testing.T) {
 		{"negative delay", []string{"-lifecycle-delay", "-1s"}, nil, "negative"},
 		{"zero server quota", []string{"-ecs-max-servers", "0"}, nil, "ECS quotas"},
 		{"zero eip quota", []string{"-eip-max-per-project", "0"}, nil, "EIP quota"},
+		{"unknown quota", []string{"-quotas", "vpc.typo=1"}, nil, "unknown quota"},
+		{"quota with its own flag", nil, map[string]string{"WEISTACK_QUOTAS": "ecs.instances=5"}, "-ecs-max-servers"},
 		{"zero rds quota", []string{"-rds-max-instances", "0"}, nil, "RDS instance quota"},
 		{"zero vcpu quota", nil, map[string]string{"WEISTACK_ECS_MAX_VCPUS": "0"}, "ECS quotas"},
 		{"bad log level", []string{"-log-level", "loud"}, nil, "log level"},
@@ -292,5 +296,21 @@ func TestProxyBypass(t *testing.T) {
 	}
 	if _, err := Load([]string{"-proxy-bypass", "ex*mple.com"}, env(nil), io.Discard); err == nil || !strings.Contains(err.Error(), "proxy bypass") {
 		t.Fatalf("an invalid pattern: %v", err)
+	}
+}
+
+func TestLoadQuotas(t *testing.T) {
+	t.Parallel()
+	got, err := Load([]string{"-quotas", "vpc.vpc=5,elb.loadbalancer=-1", "-ecs-max-servers", "7"}, env(nil), io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k, want := range map[quota.Key]int{
+		quota.VPCVPC: 5, quota.ELBLoadBalancer: quota.Unlimited, quota.ECSInstances: 7,
+		quota.ECSCores: DefaultECSMaxVCPUs, quota.VPCSubnet: 400,
+	} {
+		if v := got.Quotas.Get(k); v != want {
+			t.Errorf("%s = %d, want %d", k, v, want)
+		}
 	}
 }
