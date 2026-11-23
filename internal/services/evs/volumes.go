@@ -13,6 +13,7 @@ import (
 
 	"github.com/victor-akande/weistack/internal/core/httpx"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/core/zones"
 )
@@ -223,6 +224,12 @@ func (s *Service) handleCreateVolume(w http.ResponseWriter, r *http.Request, t T
 		volIDs[i] = v.ID
 	}
 
+	s.mu.Lock()
+	if err := s.checkVolumeQuotaLocked(r.Context(), t, count, count*base.SizeGB); err != nil {
+		s.mu.Unlock()
+		return err
+	}
+
 	var j job
 	if count == 1 {
 		j, err = s.newVolumeJob(r.Context(), t, jobTypeCreateVolume, vols[0])
@@ -230,10 +237,10 @@ func (s *Service) handleCreateVolume(w http.ResponseWriter, r *http.Request, t T
 		j, err = s.newBatchCreateJob(r.Context(), t, vols)
 	}
 	if err != nil {
+		s.mu.Unlock()
 		return err
 	}
 
-	s.mu.Lock()
 	for i := range vols {
 		vols[i].Pending = &pending{
 			Op:       "create",
@@ -429,6 +436,24 @@ func (s *Service) scheduleDelete(t Tenant, volumeID, jobID string) {
 			s.finishJob(ctx, t, jobID, volumeID, "", "")
 		},
 	})
+}
+
+func (s *Service) checkVolumeQuotaLocked(ctx context.Context, t Tenant, wantCount, wantGB int) error {
+	vols, err := s.volumes(t).List(ctx, nil)
+	if err != nil {
+		return err
+	}
+	if !s.quotas.Allows(quota.EVSVolumes, len(vols), wantCount) {
+		return errQuotaCountExceeded
+	}
+	var usedGB int
+	for _, v := range vols {
+		usedGB += v.SizeGB
+	}
+	if !s.quotas.Allows(quota.EVSGigabytes, usedGB, wantGB) {
+		return errQuotaGigabytesExceeded
+	}
+	return nil
 }
 
 func (s *Service) getServers() Servers {

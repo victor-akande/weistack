@@ -43,6 +43,17 @@ func (s *Service) CreateForServer(ctx context.Context, t Tenant, d ServerDisks) 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	wantGB := d.Root.SizeGB
+	for _, dd := range d.Data {
+		wantGB += dd.SizeGB
+	}
+	if err := s.checkVolumeQuotaLocked(ctx, t, 1+len(d.Data), wantGB); err != nil {
+		if errors.Is(err, errQuotaCountExceeded) || errors.Is(err, errQuotaGigabytesExceeded) {
+			return ErrQuotaExceeded
+		}
+		return err
+	}
+
 	ep := d.EnterpriseProjectID
 	if ep == "" {
 		ep = "0"

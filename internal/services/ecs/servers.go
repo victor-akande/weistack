@@ -510,6 +510,9 @@ func (s *Service) CreateServers(ctx context.Context, t Tenant, opt CreateServerO
 			Data: dataDisks,
 		}); err != nil {
 			rollback()
+			if errors.Is(err, evs.ErrQuotaExceeded) {
+				return Job{}, nil, errEVSQuotaExceeded
+			}
 			return Job{}, nil, err
 		}
 		ids = append(ids, srv.ID)

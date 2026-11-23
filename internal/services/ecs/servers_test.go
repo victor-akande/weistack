@@ -1291,3 +1291,81 @@ func TestResumeDeleteHonoursDeletePublicIP(t *testing.T) {
 		t.Fatalf("EIP survived resumed delete with delete_publicip=true: %s", out)
 	}
 }
+
+func TestCreateServerEVSQuotaExceeded(t *testing.T) {
+	t.Parallel()
+	st := store.NewMemory()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	clock := lifecycle.NewFakeClock(testEpoch)
+	engine := lifecycle.New(lifecycle.Options{Delay: testDelay, Clock: clock, Logger: log})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); engine.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done; _ = st.Close() })
+
+	gen := ids.NewSeeded(22)
+	vpcSvc, err := vpc.New(vpc.Deps{Store: st, Engine: engine, IDs: gen, Logger: log, Now: clock.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	imsSvc, err := ims.New(ims.Deps{Store: st, Engine: engine, IDs: gen, Logger: log, Now: clock.Now, DefaultProjectID: testProject})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Allow 1 server's 40 GiB root disk (1 volume, 40 GiB), so a 2-server create fails on the second server.
+	evsSvc, err := evs.New(evs.Deps{
+		Quotas: quota.For(map[quota.Key]int{
+			quota.EVSVolumes:   1,
+			quota.EVSGigabytes: 40,
+		}),
+		Store: st, Engine: engine, IDs: gen, Logger: log, Images: imsSvc, Now: clock.Now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ecsSvc, err := New(Deps{
+		Store: st, Engine: engine, IDs: gen, Logger: log, Now: clock.Now,
+		Network: vpcSvc, Images: imsSvc, Volumes: evsSvc,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	evsSvc.SetServers(ecsSvc)
+
+	v, err := vpcSvc.CreateVPC(t.Context(), testTenant.vpc(), vpc.CreateVPCOption{CIDR: ptr("10.2.0.0/16")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sn, err := vpcSvc.CreateSubnet(t.Context(), testTenant.vpc(), vpc.CreateSubnetOption{
+		Name: "s1", CIDR: "10.2.1.0/24", GatewayIP: "10.2.1.1", VPCID: v.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock.Advance(testDelay)
+	_ = engine.WaitIdle(t.Context())
+
+	_, _, err = ecsSvc.CreateServers(t.Context(), testTenant, CreateServerOption{
+		Name:       "evs-quota-rollback",
+		ImageRef:   ubuntuImage,
+		FlavorRef:  "s6.large.2",
+		VPCID:      v.ID,
+		NICs:       []CreateNIC{{SubnetID: sn.ID}},
+		RootVolume: &CreateVolume{VolumeType: "GPSSD"},
+		Count:      ptr(2),
+	})
+	var ae *apierr.Error
+	if !errors.As(err, &ae) || ae.Status != http.StatusBadRequest || ae.Code != "Ecs.0021" ||
+		ae.Message != "Insufficient EVS disk quota. Contact customer service to increase quota." {
+		t.Fatalf("CreateServers err = %v, want 400 Ecs.0021", err)
+	}
+	if all, _ := ecsSvc.ListServers(t.Context(), testTenant, ListServersFilter{}); len(all) != 0 {
+		t.Fatalf("%d servers left after EVS quota rollback", len(all))
+	}
+	if disks, err := evsSvc.DisksByServer(t.Context(), testTenant.evs()); err != nil || len(disks) != 0 {
+		t.Fatalf("disks left after EVS quota rollback: %v, %v", disks, err)
+	}
+	if gotSN, err := vpcSvc.GetSubnet(t.Context(), testTenant.vpc(), sn.ID); err != nil || gotSN.AvailableIPAddressCount != 251 {
+		t.Fatalf("subnet after EVS quota rollback: %+v, %v", gotSN, err)
+	}
+}
