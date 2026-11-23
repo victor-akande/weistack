@@ -1,0 +1,64 @@
+# Step 9: test every change to the stack in CI. Copy this file to
+# .github/workflows/ in the repository that holds examples/web-app's files
+# (adjust the paths if they live elsewhere).
+#
+# On each pull request WeiStack starts inside the job with -iam=enforce,
+# the administrator creates the deployer and operator (iam/), the deployer
+# applies the stack (infra/) and releases the site, the operator runs the
+# smoke check, and everything is destroyed. A typo, a missing permission
+# or a resource that never becomes healthy fails the pull request.
+name: web-app
+
+on:
+  pull_request:
+    paths: ["examples/web-app/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  stack:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/web-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: examples/web-app/smoke/go.mod
+          cache-dependency-path: examples/web-app/smoke/go.sum
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # WeiStack for the rest of the job: credentials and permissions
+      # checked, other machines served over HTTPS on 8781, as in the guide.
+      - uses: victor-akande/weistack@v0.3.0
+        id: weistack
+        with:
+          iam: enforce
+          args: -lan
+          proxy: false
+
+      - name: Trust WeiStack's CA and install the tools
+        run: |
+          sudo cp "${{ steps.weistack.outputs.ca-file }}" /usr/local/share/ca-certificates/weistack.crt
+          sudo update-ca-certificates
+          python -m pip install -r requirements.txt
+          (cd smoke && go build -o ../bin/smoke .)
+          sudo tee -a /etc/hosts <<< "127.0.0.1 obs.ap-southeast-1.myhuaweicloud.com"
+
+      - name: Run the guide, steps 3 to 9 and 11
+        env:
+          WEISTACK: https://127.0.0.1:8781
+          ADMIN_AK: ${{ steps.weistack.outputs.access-key }}
+          ADMIN_SK: ${{ steps.weistack.outputs.secret-key }}
+        run: ./test.sh
+
+      - name: WeiStack's log
+        if: failure()
+        run: cat "${{ steps.weistack.outputs.log-file }}"

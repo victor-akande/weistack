@@ -1,0 +1,38 @@
+# WeiStack as a long-running service: state kept across restarts, every
+# request's credentials and permissions checked, other machines served over
+# HTTPS (-lan). Install: see examples/web-app/README.md, step 1.
+[Unit]
+Description=WeiStack, a local Huawei Cloud emulator
+Documentation=https://github.com/victor-akande/weistack
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=weistack
+Group=weistack
+ExecStart=/usr/local/bin/weistack -persist -iam=enforce -lan \
+    -data-dir /var/lib/weistack/data -tls-dir /var/lib/weistack/tls -log-format json
+Restart=on-failure
+RestartSec=2
+StateDirectory=weistack
+StateDirectoryMode=0700
+UMask=0077
+
+# Hardening: WeiStack needs only its state directory and the network.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target
