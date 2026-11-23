@@ -359,6 +359,28 @@ Behaviour:
   `VPC.0517`. Deleting the load balancer unbinds its EIPs without deleting
   them.
 
+## Quotas
+
+| Operation | Method and path | IAM action | Status | Notes |
+| --- | --- | --- | --- | --- |
+| ShowQuota | `GET /v3/{project_id}/elb/quotas` | `elb:quotas:show` | Yes | Returns `project_id` and the limits below; other SDK fields are `-1` |
+| ListQuotaDetails | `GET /v3/{project_id}/elb/quotas/details` | `elb:quotas:list` | Yes | Repeatable `quota_key` filter; reports `{quota_key, used, quota_limit, unit: "count"}` |
+
+Limits are per project and configurable with `-quotas` (see
+[Quotas](../quotas.md)). When ELB is enabled, `loadbalancer` and `listener`
+limits and usage are also reported by VPC's `GET /v1/{project_id}/quotas`
+(see [VPC quotas](vpc.md#quotas)).
+
+| Key | Default | Error | Enforced |
+| --- | --- | --- | --- |
+| `elb.loadbalancer` | 50 | `403 ELB.1091` | Yes |
+| `elb.listener` | 100 | `403 ELB.6091` | Yes |
+| `elb.l7policy` | 500 | `409 ELB.8905` | Yes |
+| `elb.pool` | 500 | `409 ELB.8905` | Yes |
+| `elb.member` | 500 | `403 ELB.2001` | Yes |
+| `elb.certificate` | 120 | `400 ELB.5151` | Yes |
+| `elb.l7policies_per_listener` | 100 | `409 ELB.8905` | Yes |
+
 ## Not emulated
 
 The following are outside scope; unsupported options or unregistered routes
@@ -366,7 +388,7 @@ return `501 WeiStack.0501`:
 
 - Shared ELB (v2 `lb` resources)
 - Log tanks (`log_group_id`, `log_topic_id`), recycle bin, clone, DNS,
-  async jobs, active-standby pools, quotas, feature configs, member
+  async jobs, active-standby pools, feature configs, member
   health-check jobs, private-key echo settings, charge-mode changes,
   prepaid billing (`prepaid_options`), upgrade, and batch APIs other than
   AZ add and remove
@@ -381,16 +403,21 @@ Every ELB route uses the flat request-ID envelope
 
 | Code | HTTP | When |
 | --- | --- | --- |
+| `ELB.1011` | 400 | Unparseable server certificate or private key PEM, or key does not match leaf certificate |
+| `ELB.1091` | 403 | Load balancer quota exceeded |
+| `ELB.2001` | 403 | Backend member quota exceeded |
+| `ELB.5051` | 400 | Unparseable CA certificate PEM or certificate is not a CA |
+| `ELB.5151` | 400 | Certificate quota exceeded |
+| `ELB.6091` | 403 | Listener quota exceeded |
 | `ELB.8902` | 400 | Malformed JSON body, missing required field, invalid parameter, invalid tag or tag action, or unsupported listener/pool pairing |
 | `ELB.8904` | 404 | Resource (`loadbalancer`, `listener`, `pool`, `member`, `healthmonitor`, `certificate`, `l7policy`, `l7rule`, `ipgroup`, `securityPolicy`, `flavor`, `subnet`, `vpc`, `publicip`, `bandwidth`) does not exist |
+| `ELB.8905` | 409 | Pool, L7 policy, or per-listener L7 policy quota exceeded |
 | `ELB.8907` | 409 | Conflict: resource in use, duplicate port/member/priority/rule type, VIP or EIP already bound, or deletion protection enabled |
-| `ELB.8959` | 400 | Changing a load balancer's L4 or L7 flavor across flavor types |
-| `ELB.8938` | 400 | Adding an IP member to a pool whose protocol does not support IP members |
-| `ELB.8939` | 400 | Adding an IP member when the load balancer has `ip_target_enable: false` |
-| `ELB.1011` | 400 | Unparseable server certificate or private key PEM, or key does not match leaf certificate |
-| `ELB.5051` | 400 | Unparseable CA certificate PEM or certificate is not a CA |
 | `ELB.8909` | 400 | Certificate with multiple domains where a single domain is required |
 | `ELB.8934` | 400 | No free IP addresses remaining in the VIP subnet |
+| `ELB.8938` | 400 | Adding an IP member to a pool whose protocol does not support IP members |
+| `ELB.8939` | 400 | Adding an IP member when the load balancer has `ip_target_enable: false` |
+| `ELB.8959` | 400 | Changing a load balancer's L4 or L7 flavor across flavor types |
 | `WeiStack.0403` | 403 | IAM policy denial under `-iam=enforce` |
 | `WeiStack.0501` | 501 | Unimplemented route or out-of-scope option |
 
@@ -400,7 +427,7 @@ Every route checks Huawei's ELB IAM actions (`elb:loadbalancers:*`,
 `elb:listeners:*`, `elb:pools:*`, `elb:members:*`, `elb:healthmonitors:*`,
 `elb:certificates:*`, `elb:l7policies:*`, `elb:l7rules:*`,
 `elb:ipgroups:*`, `elb:security-policies:*`, `elb:flavors:*`,
-`elb:availability-zones:list`, `elb:loadbalancerTags:*`,
+`elb:availability-zones:list`, `elb:quotas:*`, `elb:loadbalancerTags:*`,
 `elb:listenerTags:*`) and their documented classic aliases (`:get` for
 `:show`, `:put` for `:update`) against ELB resource URNs
 (`elb:<region>:<account-id>:<type>:<id>`). `ListAllL7Rules` checks

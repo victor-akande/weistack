@@ -212,6 +212,18 @@ files, streamed to and from disk: under `{data-dir}/objects` with
 `-persist`, otherwise in a temporary directory removed when the emulator
 stops. `POST /_weistack/reset` removes them.
 
+## Quotas
+
+Bucket count is enforced per account across all regions and configurable
+with `-quotas` (see [Quotas](../quotas.md)). OBS has no quota API for
+account bucket counts (the per-bucket `?quota` subresource reports storage
+quota). Re-creating a bucket the account already owns keeps its existing
+`409 BucketAlreadyOwnedByYou` response.
+
+| Key | Default | Error | Enforced |
+| --- | --- | --- | --- |
+| `obs.buckets` | 100 | `400 TooManyBuckets` | Yes |
+
 ## Error codes
 
 Errors are S3-style XML: `<Error><Code>..</Code><Message>..</Message>
@@ -223,6 +235,7 @@ A `HEAD` error has no body; the code and message are in the
 | --- | --- | --- |
 | `InvalidBucketName` | 400 | Name breaks the naming rules |
 | `InvalidLocationConstraint` | 400 | Location differs from the endpoint's region |
+| `TooManyBuckets` | 400 | Account has reached its bucket quota (`obs.buckets`) |
 | `MalformedXML` | 400 | Request body is not valid XML, or a batch delete names no key or more than 1000 |
 | `InvalidArgument` | 400 | Bad `max-keys`, `encoding-type`, continuation token, copy source or metadata directive |
 | `InvalidRequest` | 400 | Copying an object onto itself without `REPLACE` |

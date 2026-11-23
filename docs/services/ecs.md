@@ -12,6 +12,7 @@ Legend: **Yes** implemented, **Partial** implemented with the listed gaps,
 | Operation | Method and path | Status | Notes |
 | --- | --- | --- | --- |
 | ListFlavors | `GET /v1/{project_id}/cloudservers/flavors` | Yes | `availability_zone`, `flavor_id`, `marker`, `limit` |
+| ShowServerLimits | `GET /v1/{project_id}/cloudservers/limits` | Yes | Server, vCPU, RAM, EIP and security group limits and usage (`ecs:cloudServerQuotas:get`) |
 | NovaListAvailabilityZones | `GET /v2.1/{project_id}/os-availability-zone` | Yes | |
 | CreatePostPaidServers | `POST /v1/{project_id}/cloudservers` | Partial | See "Creating servers" |
 | CreateServers | `POST /v1.1/{project_id}/cloudservers` | Partial | Same body and behaviour; pay-per-use only |
@@ -62,7 +63,7 @@ rejected request creates no server and consumes no address.
 - **Tags:** `server_tags` (`key`/`value`) or the older `tags` (`key.value`),
   at most 10, shown as `key=value`.
 - **Quota:** 20 servers and 80 vCPUs per project by default
-  (`-ecs-max-servers`, `-ecs-max-vcpus`).
+  (`-ecs-max-servers`, `-ecs-max-vcpus`); see [Quotas](#quotas).
 - `dry_run` is not emulated (`501`).
 
 The response carries a `job_id` and the `serverIds`. Each server is `BUILD`
@@ -182,6 +183,24 @@ flavors:
     # arch: x86 | arm            (default x86)
 ```
 
+## Quotas
+
+`ShowServerLimits` (`GET /v1/{project_id}/cloudservers/limits`, action
+`ecs:cloudServerQuotas:get`) reports server, vCPU, RAM, EIP and security
+group limits and usage. Limits are per project; `-ecs-max-servers`
+(`WEISTACK_ECS_MAX_SERVERS`) and `-ecs-max-vcpus` (`WEISTACK_ECS_MAX_VCPUS`)
+configure `ecs.instances` and `ecs.cores` (neither key is accepted by
+`-quotas`). See [Quotas](../quotas.md).
+
+| Key | Default | Error | Enforced |
+| --- | --- | --- | --- |
+| `ecs.instances` | 20 | `400 Ecs.0001` | Yes |
+| `ecs.cores` | 80 | `400 Ecs.0001` | Yes |
+
+Creating a server whose system and data disks exceed [EVS](evs.md#quotas)
+volume count or gigabyte quotas (`evs.volumes`, `evs.gigabytes`) fails with
+`400 Ecs.0021`.
+
 ## Error codes
 
 ECS errors are `{"error": {"code": "...", "message": "..."}}`.
@@ -195,6 +214,7 @@ ECS errors are `{"error": {"code": "...", "message": "..."}}`.
 | `Ecs.0011` | 400 | `adminPass` too simple |
 | `Ecs.0012` | 400 | Subnet has too few free addresses |
 | `Ecs.0014` | 400 | VPC or security group does not exist |
+| `Ecs.0021` | 400 | Insufficient EVS disk quota when creating a server |
 | `Ecs.0029` | 400 | Flavor does not exist |
 | `Ecs.0031` | 400 | Image does not exist |
 | `Ecs.0032` | 400 | Image is not `active` |

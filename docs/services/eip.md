@@ -45,8 +45,8 @@ Behaviour:
   as `"key=value"` strings, and `port_id` and `private_ip_address` when
   bound.
 - **Quota.** 50 EIPs per project by default, configured with
-  `-eip-max-per-project` (`WEISTACK_EIP_MAX_PER_PROJECT`). Reaching the
-  limit returns `VPC.0521`.
+  `-eip-max-per-project` (`WEISTACK_EIP_MAX_PER_PROJECT`); see
+  [Quotas](#quotas). Reaching the limit returns `VPC.0521`.
 
 ## Address pool
 
@@ -80,10 +80,10 @@ Behaviour:
   Mbit/s) is created and deleted with its single EIP and cannot be deleted
   directly (`VPC.0323`). A `WHOLE` bandwidth (`bandwidth_type: "share"`,
   size 5 to 2000 Mbit/s) is created independently and holds up to 20 EIPs
-  (`VPC.0323`).
+  by default (`VPC.0323`).
 - **Quota and deletion.** A project may hold at most 5 shared bandwidths
-  (`VPC.0310`). Deleting a shared bandwidth that still contains EIPs
-  returns `VPC.0304`.
+  by default (`VPC.0310`); see [Quotas](#quotas). Deleting a shared
+  bandwidth that still contains EIPs returns `VPC.0304`.
 - **Names and charge modes.** Names are 1 to 64 characters from
   `[A-Za-z0-9_.-]`. `charge_mode` is `bandwidth` (the default) or
   `traffic`. Responses report `status: "NORMAL"`,
@@ -153,6 +153,21 @@ Behaviour:
   `delete_on_termination` was set when the server was created; otherwise
   the EIP is unbound and returns to `DOWN`.
 
+## Quotas
+
+EIP quotas are per project and reported on the shared [VPC](vpc.md#quotas)
+host via `GET /v1/{project_id}/quotas` (`vpc:quotas:list`, types `publicIp`,
+`shareBandwidth` and `shareBandwidthIP`). `vpc.shareBandwidth` and
+`vpc.shareBandwidthIP` are configured with `-quotas`; `vpc.publicIp` is
+configured with `-eip-max-per-project` (`WEISTACK_EIP_MAX_PER_PROJECT`, not
+`-quotas`). See [Quotas](../quotas.md).
+
+| Key | Default | Error | Enforced |
+| --- | --- | --- | --- |
+| `vpc.publicIp` | 50 | `409 VPC.0521` | Yes |
+| `vpc.shareBandwidth` | 5 | `400 VPC.0310` | Yes |
+| `vpc.shareBandwidthIP` | 20 | `400 VPC.0323` | Yes |
+
 ## Not emulated
 
 The following are outside scope; unregistered routes fall through to
@@ -179,8 +194,8 @@ Errors on v3 routes use
 | `VPC.0301` | 400 | Invalid bandwidth request, name, size, `charge_mode`, `limit`, or unknown `publicip_id` on insert |
 | `VPC.0304` | 409 | Deleting a shared bandwidth that still has EIPs |
 | `VPC.0306` | 404 | Bandwidth does not exist (or is not `WHOLE` on EIP create) |
-| `VPC.0310` | 400 | Shared bandwidth quota exceeded (5 per project) |
-| `VPC.0323` | 400 | Deleting a `PER` bandwidth, or invalid insert/remove (not `WHOLE`, EIP already shared or not in bandwidth, or more than 20 EIPs) |
+| `VPC.0310` | 400 | Shared bandwidth quota exceeded (`vpc.shareBandwidth`) |
+| `VPC.0323` | 400 | Deleting a `PER` bandwidth, or invalid insert/remove (not `WHOLE`, EIP already shared or not in bandwidth, or shared bandwidth IP quota `vpc.shareBandwidthIP` exceeded) |
 | `VPC.0501` | 400 | Invalid EIP or tag request, type, `ip_version`, `alias`, `port_id` on v1 update, or `limit` |
 | `VPC.0504` | 404 | EIP does not exist, or unknown list `marker` |
 | `VPC.0508` | 500 | Port does not exist on create or v3 associate |

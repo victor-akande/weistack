@@ -66,8 +66,6 @@ Behaviour:
 - **Delete.** Only `available`, `error`, `error_extending`, `error_restoring`
   and `error_rollbacking` volumes with no operation in flight can be deleted
   (`EVS.1046`).
-- **No quotas.** Neither volume count nor capacity quotas are checked
-  (`EVS.5413` is never returned).
 
 ## Snapshots (v2)
 
@@ -145,6 +143,25 @@ detaching existing volumes run ECS tasks (`ecs.volume.attach`,
   `error_restoring` accepted on delete).
 - **Snapshot statuses:** `creating`, `available`, `error`.
 
+## Quotas
+
+| Operation | Method and path | Status | Notes |
+| --- | --- | --- | --- |
+| CinderListQuotas | `GET /v2/{project_id}/os-quota-sets/{target_project_id}` | Yes | Reports `volumes`, `gigabytes`, `snapshots` and per-type usage (`limit: -1`); `backups` and `backup_gigabytes` omitted (`evs:quotas:get`) |
+
+Limits are per project and configurable with `-quotas` (see
+[Quotas](../quotas.md)).
+
+| Key | Default | Error | Enforced |
+| --- | --- | --- | --- |
+| `evs.volumes` | -1 (unlimited) | `400 EVS.1034` | Yes |
+| `evs.gigabytes` | 42790 | `400 EVS.1042` | Yes |
+| `evs.snapshots` | 10 | `400 EVS.1034` | Yes |
+
+Extending a volume checks the added GiB against `evs.gigabytes`
+(`400 EVS.1042`). Disks created with an [ECS](ecs.md#quotas) server check
+`evs.volumes` and `evs.gigabytes`, which ECS maps to `400 Ecs.0021`.
+
 ## Not emulated
 
 The following are outside scope and return `501 WeiStack.0501` unless noted:
@@ -152,7 +169,7 @@ The following are outside scope and return `501 WeiStack.0501` unless noted:
 - v3 and v5 EVS APIs
 - Cinder-native `/v2/{project_id}/volumes...` and `/v2/{project_id}/snapshots...` routes
 - Volume retype, QoS change, and batch expand
-- Recycle bin, volume transfers, and quotas (`EVS.5413` is never returned)
+- Recycle bin and volume transfers
 - Charge mode (`prePaid` `bssParam` on create returns `400 EVS.2147`; `bssParam` on resize is ignored)
 - Volume metadata APIs (`/v2/{project_id}/cloudvolumes/{volume_id}/metadata`)
 - Tag-filtered resource queries (`resource_instances/action`)
@@ -182,7 +199,9 @@ Every EVS route uses the nested error envelope
 | `EVS.1023` | 400 | `limit` is not a positive integer |
 | `EVS.1031` | 400 | Volume or snapshot state/name does not allow snapshot create or rollback |
 | `EVS.1032` | 400 | Rollback `volume_id` does not match the snapshot's source volume |
+| `EVS.1034` | 400 | Volume or snapshot count quota exceeded |
 | `EVS.1036` | 400 | Invalid `availability_zone` |
+| `EVS.1042` | 400 | Total volume gigabytes quota exceeded |
 | `EVS.1043` | 400 | Encryption metadata specified with `imageRef` or `snapshot_id` |
 | `EVS.1046` | 400 | Volume status does not allow deletion |
 | `EVS.1047` | 400 | Snapshot status does not allow deletion |
@@ -216,8 +235,8 @@ Every EVS route uses the nested error envelope
 ## Permissions
 
 Each route checks Huawei's EVS IAM 5.0 action (`evs:volumes:*`,
-`evs:snapshots:*`, `evs:types:get`) and its classic alias (`evs:volumes:extend`,
-`evs:volumeTags:*`) against `evs:<region>:<account-id>:volume:<id>` or
+`evs:snapshots:*`, `evs:types:get`, `evs:quotas:get`) and its classic alias
+(`evs:volumes:extend`, `evs:volumeTags:*`) against `evs:<region>:<account-id>:volume:<id>` or
 `snapshot:<id>` where resource-scoped. `BatchCreateVolumeTags` and
 `BatchDeleteVolumeTags` defer authorization until the request body names
 `create` or `delete`. `CinderListAvailabilityZones` and `ShowJob` are public
