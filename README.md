@@ -1,359 +1,297 @@
 # WeiStack
 
 [![CI](https://github.com/victor-akande/weistack/actions/workflows/ci.yml/badge.svg)](https://github.com/victor-akande/weistack/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/victor-akande/weistack)](https://github.com/victor-akande/weistack/releases)
+[![Docker image](https://img.shields.io/docker/image-size/victhedev/weistack/latest?label=image)](https://hub.docker.com/r/victhedev/weistack)
+[![Licence](https://img.shields.io/github/license/victor-akande/weistack)](LICENSE)
 
-A lightweight, local emulator of core Huawei Cloud services, written in Go and
-shipped as a single binary and Docker image. Huawei's own tools (KooCLI, the
-official SDKs, the Terraform provider) use it unchanged: they keep the real
-endpoints and reach WeiStack as an HTTPS proxy.
+**Huawei Cloud on your own machine.** WeiStack is a local emulator of core
+Huawei Cloud services, for development, tests and CI. Huawei's own
+Terraform provider, SDKs and KooCLI work against it unchanged: they keep
+the real endpoints and reach WeiStack as an HTTPS proxy, so nothing you run
+can reach the real cloud by mistake, and nothing costs money.
 
-WeiStack is an independent project. It is not affiliated with, endorsed by, or
-sponsored by Huawei.
+```bash
+weistack                                 # start it
+export HTTPS_PROXY=http://127.0.0.1:8780 # send Huawei Cloud's endpoints to it
+terraform apply                          # your real configuration, unchanged
+```
 
-## Status
+WeiStack is an independent project. It is not affiliated with, endorsed
+by, or sponsored by Huawei.
 
-Early development. The **core framework** (M1) and **VPC** (M2) are in
-place, and so are **IMS** (M3), **ECS** (M4), **OBS** (M5) and **RDS**
-(M6). Per-service coverage tables: [VPC](docs/services/vpc.md),
-[IMS](docs/services/ims.md), [ECS](docs/services/ecs.md),
-[OBS](docs/services/obs.md), [RDS](docs/services/rds.md),
-[EVS](docs/services/evs.md) volumes and snapshots, and [IAM](docs/services/iam.md):
-discovery (so clients need no project or domain ID), users and groups,
-access keys, classic permissions with their assignments (including the
-default [enterprise project](docs/services/eps.md)), IAM 5.0 identity
-policies, agencies, and temporary credentials (IAM's securitytokens and
-STS's AssumeAgency), [KMS](docs/services/kms.md) keys with real
-cryptography, [EIP](docs/services/eip.md) elastic IPs and bandwidths,
-[NAT](docs/services/nat.md) public and private NAT gateways, and
-[ELB](docs/services/elb.md) dedicated load balancers.
-[Coverage](docs/coverage.md) lists every operation served, with the IAM
-action that authorizes it.
+## Contents
 
-| Milestone | Scope | State |
+- [Why WeiStack](#why-weistack)
+- [What it emulates](#what-it-emulates)
+- [Quick start](#quick-start)
+- [Connecting your tools](#connecting-your-tools)
+- [Ways to run it](#ways-to-run-it)
+- [Examples](#examples)
+- [Documentation](#documentation)
+- [Upgrades and your data](#upgrades-and-your-data)
+- [Security](#security)
+- [Contributing](#contributing)
+
+## Why WeiStack
+
+- **Your real tools, unchanged.** Terraform's `huaweicloud` provider, the
+  Go and Python SDKs, the OBS SDKs, KooCLI and S3 tools speak to WeiStack
+  exactly as they speak to Huawei Cloud. You test the code you ship.
+- **It behaves like the cloud.** Resources move through the same states
+  (`CREATING`, then `ACTIVE`), quotas start at a new Huawei account's
+  defaults, and errors carry Huawei's documented codes and shapes. An
+  operation WeiStack does not emulate answers `501 WeiStack.0501` and names
+  itself, so a gap is never mistaken for a bug in your code.
+- **Real identity, when you want it.** By default any credentials work.
+  With `-iam=enforce`, every request must be signed with known keys and is
+  allowed only what the caller's IAM permissions allow, with the denials
+  Huawei returns. Users, groups, roles, policies, agencies, temporary
+  credentials and KMS keys are all real.
+- **Small and fast.** One static binary with no dependencies, for Linux,
+  macOS and Windows on amd64 and arm64, and a multi-architecture Docker
+  image of about 5 MB. CI checks on every change that it starts in under a
+  second and idles in under 50 MB of memory.
+- **Built for CI.** The repository is also a GitHub Action: one line gives
+  a job a running WeiStack and credentials for every client.
+- **Safe by default.** It listens only on loopback, never passes an API
+  request on to the real cloud, and its local certificate authority can
+  sign only for the names WeiStack answers.
+
+## What it emulates
+
+WeiStack emulates the **control plane**: the APIs that create, change,
+list and delete resources. Every resource is tracked and reported as
+Huawei Cloud would, but no virtual machine boots and no database serves
+queries. OBS is the exception: objects are stored and served.
+
+| Area | Service | What you get |
 | --- | --- | --- |
-| M1 | Core framework: server, routing, errors, store, lifecycle, admin API, CI, image | Done |
-| M2 | VPC: VPCs, subnets, security groups and rules | Done |
-| M3 | IMS: images | Done |
-| M4 | ECS: servers, flavors, jobs | Done |
-| M5 | OBS: buckets, objects, multipart | Done |
-| M6 | RDS: MySQL/PostgreSQL instances | Done |
+| Compute | [ECS](docs/services/ecs.md) | Servers, flavors, actions (start, stop, reboot, resize), jobs, tags |
+| | [IMS](docs/services/ims.md) | Public images, and private images of your servers |
+| | [EVS](docs/services/evs.md) | Volumes, attachments, resizing and snapshots; every server disk is a volume |
+| Networking | [VPC](docs/services/vpc.md) | VPCs, subnets, security groups and rules, ports |
+| | [EIP](docs/services/eip.md) | Elastic IPs and shared bandwidths |
+| | [NAT](docs/services/nat.md) | Public and private NAT gateways, SNAT and DNAT rules |
+| | [ELB](docs/services/elb.md) | Dedicated load balancers: listeners, pools, members, health checks |
+| Storage | [OBS](docs/services/obs.md) | Buckets, objects, multipart uploads, server-side encryption, over the OBS and S3 APIs |
+| Database | [RDS](docs/services/rds.md) | MySQL and PostgreSQL instances |
+| Security | [IAM](docs/services/iam.md) | Users, groups, access keys, tokens, roles, custom and IAM 5.0 policies, agencies, temporary credentials |
+| | [STS](docs/services/iam.md#caller-identity) | Caller identity, authorization messages, assuming agencies |
+| | [KMS](docs/services/kms.md) | Keys with real cryptography, data keys, rotation, grants, tags |
+| Management | [EPS](docs/services/eps.md) | The default enterprise project |
+
+[Coverage](docs/coverage.md) lists every operation served, by service and
+API version, with the IAM action that authorizes it. Each service's page
+describes how it behaves and what it does not do yet.
 
 ## Quick start
 
-```bash
-make build
-./bin/weistack
-```
+**1. Install.** Download a binary from the
+[releases](https://github.com/victor-akande/weistack/releases), or build
+from source with `make build`. [Installing](docs/install.md) has each way,
+with checksums.
 
-At a terminal it prints the project ID, the proxy setting and how to trust
-its CA. Then, in another terminal:
-
-```bash
-curl http://localhost:8780/_weistack/health
-```
-
-[docs/getting-started.md](docs/getting-started.md) walks through the rest:
-creating resources with `curl`, then with Huawei's Terraform provider, and
-keeping state across restarts. [examples/web-app](examples/web-app/README.md)
-goes further: a production-style stack deployed, operated, broken,
-recovered and torn down, with every client WeiStack supports.
-
-With Docker:
+**2. Start it.** At a terminal, WeiStack prints its address, the project
+ID, and how to point clients at it:
 
 ```bash
-docker compose up --build
+weistack
 ```
 
-## Install
-
-Each [release](https://github.com/victor-akande/weistack/releases) has
-binaries for Linux, macOS and Windows on amd64 and arm64, with a
-`checksums.txt`. They have no dependencies:
+Or run the image. As a proxy for the host, it needs
+`WEISTACK_PROXY_PASSTHROUGH=all` to relay downloads such as Terraform's
+providers (see [Installing](docs/install.md#the-docker-image)):
 
 ```bash
-tar -xzf weistack_<version>_linux_amd64.tar.gz
-./weistack version
+docker run -it --rm -p 127.0.0.1:8780:8780 \
+  -e WEISTACK_PROXY_PASSTHROUGH=all victhedev/weistack:latest
 ```
 
-The image is multi-architecture (linux/amd64 and linux/arm64) and about
-5 MB:
-
-```bash
-docker run -it --rm -p 127.0.0.1:8780:8780 victhedev/weistack:latest
-```
-
-With `-it` WeiStack sees a terminal: it prints its banner with the project
-ID and writes readable logs. Detached (`-d`), it logs JSON for log
-collectors; add `-e WEISTACK_LOG_FORMAT=text` to read `docker logs` more
-easily. Other things to know when running the image:
-
-- **Keep state** across restarts with a volume:
-  `-e WEISTACK_PERSIST=1 -v weistack-data:/data`. The project ID and the
-  proxy's CA are kept there too, so clients keep working after
-  `docker restart`.
-- **As a proxy**, requests from the host reach the container from another
-  address, not the loopback, so by default WeiStack refuses to relay them
-  to hosts it does not emulate (such as Terraform's provider registry).
-  Add `-e WEISTACK_PROXY_PASSTHROUGH=all`; publishing the port on
-  `127.0.0.1` keeps other machines out. A refused request names this
-  setting in its response.
-- **The CA** is served by the running container:
-  `curl -o weistack-ca.pem http://127.0.0.1:8780/_weistack/ca`.
-
-Or build from source with `make build` (Go 1.26 or later).
-
-### In GitHub Actions
-
-The repository is also a GitHub Action. It starts WeiStack for the rest of
-the job and exports credentials for the SDKs and Terraform; see
-[In GitHub Actions](docs/github-action.md).
-
-```yaml
-- uses: victor-akande/weistack@v0.2.0
-```
-
-## Releasing
-
-Pushing a version tag such as `v0.1.0` runs
-[.github/workflows/release.yml](.github/workflows/release.yml): GoReleaser
-publishes the binaries and release notes as a GitHub Release, and the image
-is built for both architectures and pushed to Docker Hub. That needs the
-variable `DOCKERHUB_REPOSITORY` and the secrets `DOCKERHUB_USERNAME` and
-`DOCKERHUB_TOKEN` in the repository's Actions settings. `goreleaser release
---snapshot --clean` builds every archive locally without publishing.
-
-After a release, add its data fixture for the upgrade test:
-`internal/app/testdata/upgrade/generate.sh <version>` (see the README there).
-
-## How requests are routed
-
-One listener (default port `8780`) serves every service. A request is matched,
-in order, by:
-
-1. **Host header**, in Huawei's endpoint form `{service}.{region}.myhuaweicloud.com`
-   (also `{bucket}.obs.{region}...` and, for convenience, `{service}.localhost`).
-   The region in the host name scopes the request.
-2. **Path prefix** `/{service}/...`, for clients that only accept a base URL.
-   The prefix is stripped, so the service sees the real API path.
-
-Anything else gets the API gateway's own `APIGW.0101` 404. An operation that
-a service does not emulate yet returns `501` with code `WeiStack.0501` and a
-message naming the operation, so a gap is never mistaken for a bug.
-
-## Pointing a client at WeiStack
-
-[docs/clients.md](docs/clients.md) has a set-up for each client: Terraform,
-the Go and Python SDKs, the OBS SDKs, the AWS CLI and KooCLI.
-
-### As an HTTPS proxy (recommended)
-
-WeiStack is also an HTTP proxy. A client keeps Huawei Cloud's real
-endpoints and sends its traffic through WeiStack, which answers for every
-host under `myhuaweicloud.com` itself. Nothing needs DNS changes, no
-service can leak to the real cloud by being left unconfigured, and
-virtual-hosted OBS buckets work as they do in the cloud.
+**3. Point your tools at it**, in another terminal. Send Huawei Cloud's
+endpoints through WeiStack, trust its certificate authority, and load the
+administrator's keys:
 
 ```bash
 export HTTPS_PROXY=http://127.0.0.1:8780
+curl -s -o ~/weistack-ca.pem http://127.0.0.1:8780/_weistack/ca
+export SSL_CERT_FILE=~/weistack-ca.pem
+export HW_REGION_NAME=ap-southeast-1 HW_ACCESS_KEY=any HW_SECRET_KEY=any
+export TF_VAR_project_id=$(curl -s http://127.0.0.1:8780/_weistack/services \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["project_id"])')
 ```
 
-For HTTPS, WeiStack presents certificates from a local certificate
-authority it creates on first start. Either tell the client to skip
-verification (most have an `insecure` option), or trust the CA:
+Any keys work by default. With `-iam=enforce`, load the administrator's
+keys with `eval "$(weistack credentials)"`, and read the project ID with
+`weistack admin GET services`, since the admin API then needs them too.
+
+**4. Use it.** A Terraform configuration for Huawei Cloud needs only its
+project ID and two settings that skip calls to the real cloud's website:
+
+```hcl
+terraform {
+  required_providers {
+    huaweicloud = { source = "huaweicloud/huaweicloud", version = "1.100.0" }
+  }
+}
+
+variable "project_id" { type = string }
+
+provider "huaweicloud" {
+  project_id              = var.project_id
+  skip_check_website_type = true
+  skip_check_upgrade      = true
+}
+
+resource "huaweicloud_vpc" "app" {
+  name = "app-vpc"
+  cidr = "10.10.0.0/16"
+}
+
+resource "huaweicloud_obs_bucket" "assets" {
+  bucket = "my-app-assets"
+}
+```
 
 ```bash
-./bin/weistack ca > weistack-ca.pem   # prints the certificate, and where it lives
-export SSL_CERT_FILE=$PWD/weistack-ca.pem   # Go and OpenSSL-based clients
+terraform init && terraform apply
+terraform plan      # "No changes": WeiStack reports what was written
 ```
 
-The CA is kept in `~/.config/weistack/tls` (`-tls-dir` changes it;
-`/data/tls` in the image), with or without `-persist`, so clients trust it
-once. Its key never leaves that directory and is readable only by you.
-Since v0.3 a new CA can sign only for the names WeiStack answers:
-`myhuaweicloud.com` and the other `-proxy-domains` it was created with,
-`localhost`, names under `.local`, `.lan`, `.internal` and `.home.arpa`,
-and loopback and private addresses. Clients refuse its certificates for
-any other site, so even its key could not be used to impersonate one. A CA
-created by an earlier release has no such limit and still works; WeiStack
-warns about it at start. To replace it, delete `ca.pem` and `ca-key.pem`
-from that directory, restart, and trust the new CA in place of the old
-one. Do the same after adding a `-proxy-domains` domain the CA was not
-created with. A running emulator also serves the certificate, which is
-the easy way to get it out of a container:
+[Getting started](docs/getting-started.md) goes through the same steps
+in more detail, with `curl` first and then keeping state across restarts.
 
-```bash
-curl -o weistack-ca.pem http://127.0.0.1:8780/_weistack/ca
-```
+## Connecting your tools
 
-Requests to hosts outside `myhuaweicloud.com` are relayed unchanged, but
-only for clients on the loopback interface; `-proxy-passthrough` changes
-that. The same goes for the few hosts under `myhuaweicloud.com` that
-Huawei's tools download from before calling any API (KooCLI's metadata and
-API Explorer's catalogue, see `-proxy-bypass`), so those tools start
-normally. No API request is ever passed on. When WeiStack runs in a container, clients reach it from another
-address, so either set `NO_PROXY` for the hosts they need directly or run
-the container with `-proxy-passthrough all`.
+There are two ways to reach WeiStack:
 
-The official Go SDK does not read `HTTPS_PROXY`; set it in code:
+- **As an HTTPS proxy (recommended).** Clients keep Huawei Cloud's real
+  endpoints and send their traffic through WeiStack, which answers every
+  host under `myhuaweicloud.com` itself. Nothing is configured per
+  service, virtual-hosted OBS buckets work as in the cloud, and a service
+  WeiStack does not emulate fails instead of reaching the real one.
+- **By endpoint.** Clients that let you override endpoints but not set a
+  proxy send plain HTTP to a path prefix, such as
+  `http://127.0.0.1:8780/vpc`.
 
-```go
-hc := config.DefaultHttpConfig().
-    WithIgnoreSSLVerification(true).
-    WithProxy(config.NewProxy().WithSchema("http").WithHost("127.0.0.1").WithPort(8780))
-client := vpc.NewVpcClient(vpc.VpcClientBuilder().
-    WithEndpoints([]string{"https://vpc.ap-southeast-1.myhuaweicloud.com"}).
-    WithCredential(credentials). // any AK/SK; project ID from /_weistack/services
-    WithHttpConfig(hc).
-    Build())
-```
-
-### By endpoint
-
-Clients that let you override endpoints can address WeiStack directly:
-
-| Client can set | Use | Example |
-| --- | --- | --- |
-| A full endpoint per service | Path prefix, or a host name that resolves to WeiStack | `http://127.0.0.1:8780/vpc` |
-| Only a base URL, path kept | Path prefix | `http://localhost:8780/vpc` |
-| A different port per service | `-service-ports` | `-service-ports obs=9000` |
-
-`{service}.localhost` host names also route, but whether they resolve to
-the loopback depends on the system resolver (it does not in WSL, for
-example), so prefer the proxy. The official Go SDK discards any path in
-its endpoint, so use the proxy or a dial override with it.
-
-## Configuration
-
-Flags take precedence over environment variables, which take precedence over
-defaults. Run `weistack -h` for the full list.
-
-| Flag | Environment variable | Default | Meaning |
-| --- | --- | --- | --- |
-| `-host` | `WEISTACK_HOST` | `127.0.0.1` (`0.0.0.0` in the image) | Address to bind. The default also listens on `::1`. Addresses beyond loopback are refused outside a container (the image sets `WEISTACK_IN_CONTAINER=1`): use `-lan` |
-| `-port` | `WEISTACK_PORT` | `8780` | Port to listen on |
-| `-lan` | `WEISTACK_LAN` | off | Serve other machines over HTTPS on `-lan-port`, always checking credentials (see [Other machines](docs/lan.md)) |
-| `-lan-port` | `WEISTACK_LAN_PORT` | `8781` | The HTTPS port `-lan` opens on every interface |
-| `-lan-clients` | `WEISTACK_LAN_CLIENTS` | private and loopback ranges | Address ranges `-lan` admits, for example `192.168.1.0/24` |
-| `-region` | `WEISTACK_REGION` | `ap-southeast-1` | Region when a request names none |
-| `-project-id` | `WEISTACK_PROJECT_ID` | generated | Default project, 32 hex characters |
-| `-persist` | `WEISTACK_PERSIST` | off | Keep state on disk across restarts |
-| `-data-dir` | `WEISTACK_DATA_DIR` | `~/.local/share/weistack` (`/data` in the image) | Where `-persist` keeps state and object data. macOS: `~/Library/Application Support/weistack`; Windows: `%LocalAppData%\weistack` |
-| `-seed-dir` | `WEISTACK_SEED_DIR` | none | Directory of YAML files extending built-in seed data ([images](docs/services/ims.md#adding-your-own), [flavors](docs/services/ecs.md#adding-your-own)) |
-| `-ecs-max-servers` | `WEISTACK_ECS_MAX_SERVERS` | `20` | ECS server quota per project |
-| `-ecs-max-vcpus` | `WEISTACK_ECS_MAX_VCPUS` | `80` | ECS vCPU quota per project |
-| `-eip-max-per-project` | `WEISTACK_EIP_MAX_PER_PROJECT` | `50` | EIP quota per project |
-| `-rds-max-instances` | `WEISTACK_RDS_MAX_INSTANCES` | `20` | RDS instance quota per project |
-| `-lifecycle-delay` | `WEISTACK_LIFECYCLE_DELAY` | `2s` | Duration of async transitions; `0` is instant |
-| `-log-level` | `WEISTACK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
-| `-log-format` | `WEISTACK_LOG_FORMAT` | `auto` | `json`, `text`, or `auto`: text at a terminal, JSON otherwise |
-| `-services` | `WEISTACK_SERVICES` | all | Comma-separated subset to enable |
-| `-service-ports` | `WEISTACK_SERVICE_PORTS` | none | Extra listeners that each serve one service, for example `obs=9000` |
-| `-proxy-domains` | `WEISTACK_PROXY_DOMAINS` | `myhuaweicloud.com` | Domains the proxy answers for itself |
-| `-proxy-bypass` | `WEISTACK_PROXY_BYPASS` | KooCLI's downloads and API Explorer | Hosts inside the proxy domains that are passed on instead of answered: `*` is one label, `{region}` the same label everywhere. Empty turns it off |
-| `-proxy-passthrough` | `WEISTACK_PROXY_PASSTHROUGH` | `loopback` | Which proxy clients may reach other hosts: `loopback`, `all` or `none` |
-| `-allowed-hosts` | `WEISTACK_ALLOWED_HOSTS` | none | Extra host names a loopback-bound WeiStack answers; `localhost`, IP addresses and the proxy domains always work, others are refused against DNS rebinding. `*` is one label |
-| `-quotas` | `WEISTACK_QUOTAS` | a new Huawei account's | Per-project limits as `key=value,...`, `-1` unlimited, for example `vpc.vpc=500` (see [Quotas](docs/quotas.md)) |
-| `-iam` | `WEISTACK_IAM` | `accept` | `accept` takes any credentials; `enforce` requires a valid signature or IAM token, and permissions (see [Checking credentials](docs/enforce.md)) |
-| `-admin-access-key`, `-admin-secret-key` | `WEISTACK_ADMIN_ACCESS_KEY`, `WEISTACK_ADMIN_SECRET_KEY` | generated | Fix the administrator's keys, for example in CI. Prefer the environment variables for the secret: flags show in process lists |
-| `-tls-dir` | `WEISTACK_TLS_DIR` | see above | Where the local CA is kept |
-| `-vault-key-file` | `WEISTACK_VAULT_KEY_FILE` | `vault-key.json` in `-data-dir` | With `-persist`, the key that seals stored secret keys and KMS key material, kept apart from the data. Move the existing file there; WeiStack refuses to start while a key is also left in the data directory |
-| `-metrics` | `WEISTACK_METRICS` | off | Serve Prometheus metrics |
-| `-max-body-bytes` | `WEISTACK_MAX_BODY_BYTES` | `10485760` | Body limit for JSON APIs |
-| `-max-data-bytes` | `WEISTACK_MAX_DATA_BYTES` | `21474836480` (20 GiB) | Most data WeiStack keeps: records and object data, on disk or in memory. Past it, new resources and uploads get 507 `WeiStack.0507`; changes and deletes still work. `0` is no limit. Reset backups are not counted |
-| `-shutdown-timeout` | `WEISTACK_SHUTDOWN_TIMEOUT` | `10s` | Drain time on SIGTERM |
-
-## Admin API
-
-| Endpoint | Purpose |
+| Client | Set-up |
 | --- | --- |
-| `GET /_weistack/health` | Liveness and version |
-| `GET /_weistack/services` | Enabled services, default region, project ID and account |
-| `GET /_weistack/state` | Dump of every stored resource as JSON |
-| `POST /_weistack/reset` | Wipe all state, pending transitions and injected faults; with `-persist`, after keeping a backup in `backups/` in the data directory |
-| `GET /_weistack/backup` | A backup of the persisted data, as `.tar.gz` (only with `-persist`; `weistack backup` fetches it, and `weistack restore` restores it) |
-| `GET /_weistack/ca` | The proxy's CA certificate, as PEM |
-| `GET /_weistack/accounts` | Every account: the primary one and those added |
-| `POST /_weistack/accounts` | Add an account, `{"name": "partner"}`; returns its root user's keys |
-| `GET /_weistack/metrics` | Prometheus metrics (only with `-metrics`) |
-| `GET`, `POST`, `DELETE /_weistack/faults` | List, add and clear injected faults; `DELETE /_weistack/faults/{id}` removes one (see [Injecting faults](docs/faults.md)) |
+| Terraform (`huaweicloud` provider) | [Proxy](docs/clients.md#terraform) |
+| Go SDK | [Proxy, set in code](docs/clients.md#go-sdk): it does not read `HTTPS_PROXY` |
+| Python SDK | [Proxy](docs/clients.md#python-sdk) |
+| OBS SDKs for Go and Python | [Proxy](docs/clients.md#obs-sdk-for-go) |
+| AWS CLI and S3 SDKs | [Endpoint](docs/clients.md#aws-cli-and-s3-sdks) |
+| KooCLI (`hcloud`) | [Proxy](docs/clients.md#koocli) |
+| `curl` and scripts | Either |
 
-Under `-iam=enforce` every endpoint but `health` and `ca` needs the
-administrator's credentials. `weistack admin` calls one signed with them,
-for example `weistack admin POST reset` or `weistack admin GET services`
-(see [Checking credentials](docs/enforce.md)).
+[Connecting clients](docs/clients.md) has the exact set-up for each, and
+how each one was checked.
 
-## Authentication
+## Ways to run it
 
-WeiStack has a primary account (Huawei Cloud's "domain") and an
-administrator. More accounts can be added through the admin API, to try
-what one account may do in another (see
-[IAM: accounts](docs/services/iam.md#accounts)).
-The administrator's keys are generated on first start and kept beside the
-CA (`~/.config/weistack/tls/admin-credentials.json`, readable only by you),
-so they stay the same across restarts. The banner shows them, and
-`weistack credentials` prints them for the SDKs and Terraform:
+The defaults suit one developer on one machine: everything in memory, any
+credentials accepted, loopback only. Each of these changes one thing, and
+they combine.
 
-```bash
-eval "$(./bin/weistack credentials)"
+| You want to | Run | Read |
+| --- | --- | --- |
+| Keep state across restarts | `weistack -persist` | [Getting started](docs/getting-started.md#5-keep-state-across-restarts) |
+| Check signatures and permissions as Huawei Cloud does | `weistack -iam=enforce` | [Checking credentials](docs/enforce.md) |
+| Serve other machines on your network, over HTTPS | `weistack -lan` | [Other machines](docs/lan.md) |
+| Test how your code handles failures and slow responses | `weistack admin POST faults ...` | [Injecting faults](docs/faults.md) |
+| Hit a quota on purpose, or lift one | `weistack -quotas vpc.vpc=1` | [Quotas](docs/quotas.md) |
+| Back up and restore the data | `weistack backup`, `weistack restore` | [Getting started](docs/getting-started.md#5-keep-state-across-restarts) |
+| Run it in a GitHub Actions job | `uses: victor-akande/weistack@v0.2.0` | [In GitHub Actions](docs/github-action.md) |
+| Run it as a service for a team | the hardened systemd unit | [Web-app example, step 1](examples/web-app/README.md#1-the-cloud-machine-weistack-as-a-service) |
+
+In a workflow:
+
+```yaml
+steps:
+  - uses: actions/checkout@v4
+  - uses: victor-akande/weistack@v0.2.0
+    with:
+      iam: enforce
+  - run: terraform init && terraform apply -auto-approve
 ```
 
-`/_weistack/services` reports the account's ID and name. Keys WeiStack
-knows, the administrator's and IAM users' (see
-[IAM: access keys](docs/services/iam.md#access-keys)), act for the
-account: their OBS buckets belong to it, as on Huawei Cloud. So do
-temporary credentials, with their security token (see
-[IAM: temporary credentials](docs/services/iam.md#temporary-credentials)):
-another account that assumes one of the account's agencies acts in it.
+The action starts WeiStack for the rest of the job and exports the
+proxy, the region, the project ID and the administrator's keys for
+Terraform and the SDKs.
 
-**By default WeiStack accepts any credentials**: signatures and tokens are
-parsed but not checked, so any access key and secret key work, and any
-other key is an owner of its own.
+Every flag also has an environment variable, such as `WEISTACK_PERSIST=1`;
+[Configuration](docs/configuration.md) lists them all, with the commands
+and the admin API.
 
-**With `-iam=enforce`** (or `WEISTACK_IAM=enforce`) it checks them as
-Huawei Cloud does. Every request needs a valid signature by a key WeiStack
-knows (`SDK-HMAC-SHA256` from the SDKs, Terraform and KooCLI; OBS, S3 v2 or
-S3 v4 for OBS) or a valid IAM token, and failures get the errors Huawei
-documents. It also checks what the caller may do: IAM users hold what
-their groups' permissions and their IAM 5.0 policies allow, and get each
-service's 403 for the rest. See [Checking credentials](docs/enforce.md)
-for what is checked, the errors, and what is not covered yet. The admin API (`/_weistack/*`) is not
-protected by `-iam`: keep the emulator's port to yourself.
+## Examples
 
-## Quotas
+- **[A production-style web app](examples/web-app/README.md):** a
+  three-tier stack with load balancer, servers, database, bucket, NAT and
+  encryption keys, deployed step by step on a WeiStack shared by a team,
+  with IAM enforced. Each person uses a different tool: Terraform, `curl`,
+  KooCLI, the Python and Go SDKs, the AWS CLI and the GitHub Action. The
+  stack is then operated, broken, recovered, tested in CI and torn down.
+  CI runs the whole guide on every change.
+- **[The Terraform scenario](test/terraform):** the stack CI applies,
+  re-plans and destroys on every change, with the provider settings
+  WeiStack needs.
 
-Every service enforces per-project limits (account-wide across regions for
-OBS buckets) matching the defaults of a new Huawei Cloud account. Override
-limits with `-quotas` or `WEISTACK_QUOTAS` (for example
-`-quotas vpc.vpc=500,elb.loadbalancer=-1`, where `-1` means unlimited);
-`-ecs-max-servers`, `-ecs-max-vcpus`, `-eip-max-per-project` and
-`-rds-max-instances` configure their respective keys. Lowering a limit never
-deletes existing persisted resources: only new creates are refused, and
-quota APIs report current usage alongside the limit. See
-[docs/quotas.md](docs/quotas.md) for the full key table.
+## Documentation
 
-## Development
+| Guide | What it covers |
+| --- | --- |
+| [Getting started](docs/getting-started.md) | From a fresh clone to Terraform creating resources, in ten minutes |
+| [Installing](docs/install.md) | Release binaries, the Docker image, building from source, running as a service |
+| [Connecting clients](docs/clients.md) | The set-up for each SDK and tool, and trusting WeiStack's CA |
+| [Configuration](docs/configuration.md) | Every flag and environment variable, the commands, routing, and the admin API |
+| [Checking credentials](docs/enforce.md) | `-iam=enforce`: signatures, tokens, permissions, and the errors |
+| [Other machines](docs/lan.md) | `-lan`: serving your network over HTTPS |
+| [Injecting faults](docs/faults.md) | Failing lifecycles and requests on purpose |
+| [Quotas](docs/quotas.md) | Every limit, its default, and how to change it |
+| [In GitHub Actions](docs/github-action.md) | The action's inputs, outputs and examples |
+| [Coverage](docs/coverage.md) | Every operation served, with its IAM action |
+| [Services](docs/services) | How each service behaves, and its gaps |
+| [Architecture](docs/architecture.md) | How WeiStack is put together |
+| [Threat model](docs/threat-model.md) | What WeiStack protects, and what it leaves to you |
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow (GitHub flow,
-Conventional Commits), [docs/architecture.md](docs/architecture.md) for how
-WeiStack is put together, and [docs/adding-a-service.md](docs/adding-a-service.md)
-for how a service plugs into the core.
+## Upgrades and your data
 
-```bash
-make check      # gofmt, vet, golangci-lint, tests with the race detector
-make test-sdk   # drive a real emulator with Huawei's official Go SDK
-make test-terraform  # apply, re-plan and destroy a stack with the Terraform provider
-make fuzz       # every fuzz target for FUZZTIME each (default 10s)
-```
+Data kept with `-persist` by any release opens in every later release,
+which upgrades it on start. CI checks this on every change against data
+written by each released version's own binary. A release refuses data
+written by a newer one and leaves it untouched, so going back never
+damages it. Take a copy before upgrading with `weistack backup`.
 
-The Terraform scenario ([test/terraform](test/terraform)) also shows the
-provider settings WeiStack needs.
+Releases follow [semantic versioning](https://semver.org). Until 1.0, a
+minor release can change behaviour to match Huawei Cloud more closely;
+its release notes say what changed and what to do.
 
 ## Security
 
-WeiStack is for development and tests. [docs/threat-model.md](docs/threat-model.md)
-says what it protects and what it leaves to you; report vulnerabilities
-privately as [SECURITY.md](SECURITY.md) explains.
+WeiStack is for development and tests, not for production data. It
+listens only on loopback unless you ask for more, and `-lan` serves other
+machines only over HTTPS, checking every request's credentials.
+[The threat model](docs/threat-model.md) says what WeiStack protects and
+what it leaves to you. Report vulnerabilities privately, as
+[SECURITY.md](SECURITY.md) explains.
+
+## Contributing
+
+Issues and pull requests are welcome. Anywhere WeiStack knowingly behaves
+differently from Huawei Cloud is a bug: please open an issue.
+[CONTRIBUTING.md](CONTRIBUTING.md) describes the workflow and conventions,
+[Architecture](docs/architecture.md) how the code fits together, and
+[Adding a service](docs/adding-a-service.md) how a service plugs in.
+
+```bash
+make check           # formatting, vet, lint, and tests with the race detector
+make test-sdk        # drive a real emulator with Huawei's official Go SDK
+make test-terraform  # apply, re-plan and destroy a stack with the Terraform provider
+make help            # every target
+```
 
 ## Licence
 
-[Apache-2.0](LICENSE)
+[Apache-2.0](LICENSE). Huawei, Huawei Cloud and the names of its services
+are trademarks of Huawei Technologies Co., Ltd., used here only to say
+what WeiStack is compatible with.

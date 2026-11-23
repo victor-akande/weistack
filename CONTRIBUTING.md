@@ -16,6 +16,20 @@
 
 Releases are cut by tagging `main` (`vMAJOR.MINOR.PATCH`, semantic versioning).
 
+## Releasing
+
+Pushing a version tag such as `v0.3.0` runs
+[.github/workflows/release.yml](.github/workflows/release.yml): GoReleaser
+publishes the binaries and release notes as a GitHub Release, and the image
+is built for both architectures and pushed to Docker Hub. That needs the
+variable `DOCKERHUB_REPOSITORY` and the secrets `DOCKERHUB_USERNAME` and
+`DOCKERHUB_TOKEN` in the repository's Actions settings. `goreleaser release
+--snapshot --clean` builds every archive locally without publishing.
+
+After a release, add its data fixture for the upgrade test:
+`internal/app/testdata/upgrade/generate.sh <version>` (see the
+[README there](internal/app/testdata/upgrade/README.md)).
+
 ## Local setup
 
 Requirements: Go (version in `go.mod`), `make`, and optionally

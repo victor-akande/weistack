@@ -31,8 +31,28 @@ can do one or the other. To fetch the CA:
 curl -s -o ~/weistack-ca.pem http://localhost:8780/_weistack/ca
 ```
 
-The CA is created once and kept in `~/.config/weistack/tls` (`/data/tls` in
-the image), so you only fetch it once.
+The CA is created once and kept in `~/.config/weistack/tls` (`-tls-dir`
+changes it; `/data/tls` in the image), with or without `-persist`, so you
+only fetch it once. `weistack ca` prints it too. Its key never leaves that
+directory and is readable only by you.
+
+Since v0.3 a new CA can sign only for the names WeiStack answers:
+`myhuaweicloud.com` and the other `-proxy-domains` it was created with,
+`localhost`, names under `.local`, `.lan`, `.internal` and `.home.arpa`,
+and loopback and private addresses. Clients refuse its certificates for
+any other site, so even its key could not be used to impersonate one. A CA
+created by an earlier release has no such limit and still works; WeiStack
+warns about it at start. To replace it, delete `ca.pem` and `ca-key.pem`
+from that directory, restart, and trust the new CA in place of the old
+one. Do the same after adding a `-proxy-domains` domain the CA was not
+created with.
+
+Through the proxy, requests to hosts outside `myhuaweicloud.com` are
+relayed unchanged, but only for clients on the loopback interface;
+`-proxy-passthrough` changes that. The same goes for the few hosts under
+`myhuaweicloud.com` that Huawei's tools download from before calling any
+API (KooCLI's metadata and API Explorer's catalogue, see `-proxy-bypass`),
+so those tools start normally. No API request is ever passed on.
 
 ## How each guide was checked
 
