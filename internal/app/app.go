@@ -21,6 +21,7 @@ import (
 
 	"github.com/victor-akande/weistack/internal/core/auth"
 	"github.com/victor-akande/weistack/internal/core/authz"
+	"github.com/victor-akande/weistack/internal/core/budget"
 	"github.com/victor-akande/weistack/internal/core/config"
 	"github.com/victor-akande/weistack/internal/core/faults"
 	"github.com/victor-akande/weistack/internal/core/hostpattern"
@@ -161,7 +162,13 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 	if err != nil {
 		return err
 	}
-	services, err := buildServices(ctx, cfg, projectID, objectDir, st, engine, gen, log, directory, vlt)
+	// Services write through the data budget; the server's own uses
+	// (reset, dumps, backups) bypass it.
+	data := budget.New(cfg.MaxDataBytes)
+	if sized, ok := st.(interface{ Size() int64 }); ok {
+		data.Track(sized.Size)
+	}
+	services, err := buildServices(ctx, cfg, projectID, objectDir, budget.Store(st, data), data, engine, gen, log, directory, vlt)
 	if err != nil {
 		return err
 	}
@@ -363,7 +370,7 @@ func tokenChecker(services []server.Service) auth.TokenChecker {
 // added here.
 func buildServices(
 	ctx context.Context, cfg config.Config, projectID, objectDir string,
-	st store.Store, engine *lifecycle.Engine, gen *ids.Generator, log *slog.Logger, directory *identity.Directory,
+	st store.Store, data *budget.Budget, engine *lifecycle.Engine, gen *ids.Generator, log *slog.Logger, directory *identity.Directory,
 	vlt *vault.Vault,
 ) ([]server.Service, error) {
 	// KMS keys encrypt for OBS, ECS disks and RDS: it comes first.
@@ -446,7 +453,7 @@ func buildServices(
 		return nil, err
 	}
 
-	obsSvc, err := obs.New(obs.Deps{Quotas: cfg.Quotas, Store: st, IDs: gen, Logger: log, DataDir: objectDir, Keys: kmsSvc})
+	obsSvc, err := obs.New(obs.Deps{Quotas: cfg.Quotas, Store: st, IDs: gen, Logger: log, DataDir: objectDir, Keys: kmsSvc, Budget: data})
 	if err != nil {
 		return nil, err
 	}

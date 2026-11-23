@@ -34,8 +34,10 @@ const (
 	DefaultRegion         = "ap-southeast-1"
 	DefaultLifecycleDelay = 2 * time.Second
 	// DefaultLogFormat picks text at a terminal and JSON otherwise.
-	DefaultLogFormat        = "auto"
-	DefaultMaxBodyBytes     = 10 << 20 // 10 MiB; services that stream (OBS) opt out per route.
+	DefaultLogFormat    = "auto"
+	DefaultMaxBodyBytes = 10 << 20 // 10 MiB; services that stream (OBS) opt out per route.
+	// DefaultMaxDataBytes is how much data WeiStack keeps: 20 GiB.
+	DefaultMaxDataBytes     = 20 << 30
 	DefaultShutdownTimeout  = 10 * time.Second
 	DefaultECSMaxServers    = 20
 	DefaultECSMaxVCPUs      = 80
@@ -147,6 +149,9 @@ type Config struct {
 	Metrics bool
 	// MaxBodyBytes caps request bodies on JSON APIs.
 	MaxBodyBytes int64
+	// MaxDataBytes caps the data WeiStack keeps: records and object
+	// data, on disk or in memory. 0 is no limit.
+	MaxDataBytes int64
 	// ShutdownTimeout bounds how long in-flight requests may drain.
 	ShutdownTimeout time.Duration
 }
@@ -212,6 +217,7 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 	fs.StringVar(&services, "services", env.str("SERVICES", ""), "comma-separated services to enable (default all)")
 	fs.BoolVar(&cfg.Metrics, "metrics", env.bool("METRICS"), "serve Prometheus metrics at /_weistack/metrics")
 	fs.Int64Var(&cfg.MaxBodyBytes, "max-body-bytes", env.int64("MAX_BODY_BYTES", DefaultMaxBodyBytes), "maximum request body size for JSON APIs")
+	fs.Int64Var(&cfg.MaxDataBytes, "max-data-bytes", env.int64("MAX_DATA_BYTES", DefaultMaxDataBytes), "most bytes of records and object data WeiStack keeps (0: no limit)")
 	fs.DurationVar(&cfg.ShutdownTimeout, "shutdown-timeout", env.duration("SHUTDOWN_TIMEOUT", DefaultShutdownTimeout), "time allowed for in-flight requests to finish on shutdown")
 
 	err := fs.Parse(args)
@@ -310,6 +316,9 @@ func (c Config) Validate() error {
 	}
 	if c.EIPMaxPerProject < 1 {
 		errs = append(errs, fmt.Errorf("EIP quota %d must be positive", c.EIPMaxPerProject))
+	}
+	if c.MaxDataBytes < 0 {
+		errs = append(errs, fmt.Errorf("data limit %d must not be negative (0 is no limit)", c.MaxDataBytes))
 	}
 	if c.LifecycleDelay < 0 {
 		errs = append(errs, fmt.Errorf("lifecycle delay %s must not be negative", c.LifecycleDelay))

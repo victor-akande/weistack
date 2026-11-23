@@ -43,7 +43,14 @@ const (
 const (
 	CodeInternal       = "WeiStack.0500"
 	CodeNotImplemented = "WeiStack.0501"
+	CodeDataFull       = "WeiStack.0507"
 )
+
+// ErrDataFull refuses a write once WeiStack's data has reached
+// -max-data-bytes (internal/core/budget). Internal passes it through, so
+// every service answers it as it is.
+var ErrDataFull = New(http.StatusInsufficientStorage, CodeDataFull,
+	"WeiStack's data has reached its limit (-max-data-bytes): delete resources or objects, or start WeiStack with a higher limit")
 
 // Error is an API error with the HTTP status and service error code that
 // the client will see.
@@ -74,6 +81,9 @@ func NotImplemented(service, operation string) *Error {
 // Internal wraps an unexpected failure. The cause is kept for logs but is
 // never sent to the client.
 func Internal(cause error) *Error {
+	if errors.Is(cause, ErrDataFull) {
+		return ErrDataFull
+	}
 	e := New(http.StatusInternalServerError, CodeInternal, "internal error in weistack")
 	e.cause = cause
 	return e

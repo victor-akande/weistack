@@ -45,6 +45,7 @@ func TestLoadDefaults(t *testing.T) {
 		LogLevel:         slog.LevelInfo,
 		LogFormat:        "auto",
 		MaxBodyBytes:     10 << 20,
+		MaxDataBytes:     20 << 30,
 		ShutdownTimeout:  10 * time.Second,
 	}
 	if !reflect.DeepEqual(got, want) {

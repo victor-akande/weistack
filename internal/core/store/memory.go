@@ -11,6 +11,7 @@ type Memory struct {
 	mu     sync.RWMutex
 	scopes map[string]map[string]*memEntry
 	seq    uint64
+	bytes  int64 // the size of every record's data
 	closed bool
 }
 
@@ -100,6 +101,7 @@ func (m *Memory) Put(ctx context.Context, scope Scope, id string, data []byte) (
 		return Record{}, err
 	}
 	if e, ok := m.scopes[key][id]; ok {
+		m.bytes += int64(len(data) - len(e.data))
 		e.version++
 		e.data = clone(data)
 		return e.record(id), nil
@@ -113,6 +115,7 @@ func (m *Memory) insert(key, id string, data []byte) Record {
 		m.scopes[key] = make(map[string]*memEntry)
 	}
 	m.seq++
+	m.bytes += int64(len(data))
 	e := &memEntry{seq: m.seq, version: 1, data: clone(data)}
 	m.scopes[key][id] = e
 	return e.record(id)
@@ -133,6 +136,7 @@ func (m *Memory) CompareAndSwap(ctx context.Context, scope Scope, id string, ver
 	if e.version != version {
 		return Record{}, ErrConflict
 	}
+	m.bytes += int64(len(data) - len(e.data))
 	e.version++
 	e.data = clone(data)
 	return e.record(id), nil
@@ -146,9 +150,11 @@ func (m *Memory) Delete(ctx context.Context, scope Scope, id string) error {
 	if err != nil {
 		return err
 	}
-	if _, ok := m.scopes[key][id]; !ok {
+	e, ok := m.scopes[key][id]
+	if !ok {
 		return ErrNotFound
 	}
+	m.bytes -= int64(len(e.data))
 	delete(m.scopes[key], id)
 	if len(m.scopes[key]) == 0 {
 		delete(m.scopes, key)
@@ -167,7 +173,15 @@ func (m *Memory) Reset(ctx context.Context) error {
 		return ErrClosed
 	}
 	m.scopes = make(map[string]map[string]*memEntry)
+	m.bytes = 0
 	return nil
+}
+
+// Size returns the size of the records' data.
+func (m *Memory) Size() int64 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.bytes
 }
 
 // Dump implements Store.

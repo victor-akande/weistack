@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/victor-akande/weistack/internal/core/budget"
 	"github.com/victor-akande/weistack/internal/core/cmk"
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/quota"
@@ -40,6 +41,9 @@ type Deps struct {
 	DataDir string
 	// Keys are KMS's, for SSE-KMS. Nil leaves SSE-KMS unimplemented.
 	Keys cmk.Keys
+	// Budget limits the data WeiStack keeps (-max-data-bytes); uploads
+	// stop when they would pass it. Nil is no limit.
+	Budget *budget.Budget
 	// Now defaults to time.Now.
 	Now func() time.Time
 }
@@ -79,7 +83,7 @@ func New(d Deps) (*Service, error) {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	blobs, err := newBlobStore(d.DataDir)
+	blobs, err := newBlobStore(d.DataDir, d.Budget)
 	if err != nil {
 		return nil, err
 	}
