@@ -1,6 +1,8 @@
 package nat
 
 import (
+	"context"
+
 	"github.com/go-chi/chi/v5"
 
 	"github.com/victor-akande/weistack/internal/core/apierr"
@@ -36,3 +38,7 @@ func (e vpcExtension) RoutesV20(r chi.Router) {
 }
 
 func (vpcExtension) Routes(chi.Router) {}
+
+func (vpcExtension) Quotas(context.Context, vpc.Tenant) ([]vpc.QuotaResource, error) {
+	return nil, nil
+}

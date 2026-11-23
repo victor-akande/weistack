@@ -31,6 +31,7 @@ var all = []Action{
 	{"vpc:securityGroupRules:delete", nil, Write, "securityGroupRule"},
 	{"vpc:ports:get", nil, Read, "port"},
 	{"vpc:ports:list", []string{"vpc:ports:get"}, List, "port"},
+	{"vpc:quotas:list", []string{"vpc:quotas:get"}, List, ""},
 
 	// EIP: support.huaweicloud.com/intl/en-us/usermanual-permissions/iam_11_0018.html
 	{"eip:publicIps:create", []string{"vpc:publicIps:create"}, Write, "publicip"},
@@ -164,6 +165,8 @@ var all = []Action{
 	{"elb:listenerTags:get", nil, List, "listener"},
 	{"elb:listenerTags:create", nil, Tagging, "listener"},
 	{"elb:listenerTags:delete", nil, Tagging, "listener"},
+	{"elb:quotas:show", []string{"elb:quotas:get"}, Read, ""},
+	{"elb:quotas:list", nil, List, ""},
 
 	// ECS: support.huaweicloud.com/intl/en-us/usermanual-permissions/iam_11_0007.html
 	{"ecs:cloudServers:createServers", []string{"ecs:cloudServers:create"}, Write, ""},
@@ -185,6 +188,7 @@ var all = []Action{
 	{"ecs:cloudServers:showServerTags", []string{"ecs:cloudServers:get"}, List, "instance"},
 	{"ecs:cloudServers:batchCreateServerTags", []string{"ecs:cloudServers:put", "ecs:cloudServers:batchSetServerTags"}, Write, "instance"},
 	{"ecs:cloudServers:batchDeleteServerTags", []string{"ecs:cloudServers:put", "ecs:cloudServers:batchSetServerTags"}, Write, "instance"},
+	{"ecs:cloudServerQuotas:get", nil, Read, ""},
 
 	// EVS: support.huaweicloud.com/intl/en-us/api-evs (Permission: IAM 5.0 actions; evs_04_0045: classic)
 	{"evs:volumes:create", nil, Write, "volume"},
@@ -204,6 +208,7 @@ var all = []Action{
 	{"evs:snapshots:delete", nil, Write, ""},
 	{"evs:snapshots:rollback", nil, Write, ""},
 	{"evs:types:get", nil, Read, ""},
+	{"evs:quotas:get", nil, Read, ""},
 
 	// IMS: support.huaweicloud.com/intl/en-us/usermanual-permissions/iam_11_0008.html
 	{"ims:images:list", nil, List, ""},
@@ -212,6 +217,7 @@ var all = []Action{
 	{"ims:images:deleteImage", []string{"ims:images:delete"}, Write, "image"},
 	{"ims:serverImages:create", nil, Write, ""},
 	{"ims:images:getJob", []string{"ims:images:list"}, Read, ""},
+	{"ims:quotas:get", nil, Read, ""},
 
 	// RDS: support.huaweicloud.com/intl/en-us/usermanual-permissions/iam_11_0033.html
 	{"rds:instance:listAll", []string{"rds:instance:list"}, Read, ""},
@@ -226,6 +232,7 @@ var all = []Action{
 	{"rds:backup:list", nil, List, ""},
 	{"rds:backup:delete", nil, Write, ""},
 	{"rds:task:listAll", []string{"rds:task:list"}, List, ""},
+	{"rds:instance:listQuotas", []string{"rds:instance:list"}, Read, ""},
 
 	// OBS: support.huaweicloud.com/intl/en-us/usermanual-permissions/iam_11_0011.html
 	{"obs:bucket:listAllMyBuckets", nil, List, "bucket"},
