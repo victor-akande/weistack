@@ -25,7 +25,7 @@ as_admin() { (export HW_ACCESS_KEY="$ADMIN_AK" HW_SECRET_KEY="$ADMIN_SK" HTTPS_P
 step "3. The administrator creates the deployer and the operator"
 install -d -m 700 secrets
 [ -s secrets/operator-password ] || (umask 077; echo "Ops-1$(openssl rand -hex 8)" >secrets/operator-password)
-HTTPS_PROXY= terraform -chdir=iam init >/dev/null
+env -u HTTPS_PROXY -u https_proxy terraform -chdir=iam init >/dev/null
 TF_VAR_operator_password="$(cat secrets/operator-password)" as_admin terraform -chdir=iam apply -auto-approve >/dev/null
 PROJECT="$(terraform -chdir=iam output -raw project_id)"
 [ -s secrets/deployer.csv ] && [ -s secrets/operator.csv ] || fail "the access keys were not saved"
