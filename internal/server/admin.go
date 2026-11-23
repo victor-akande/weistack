@@ -33,8 +33,11 @@ func (s *Server) newAdmin() http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(s.adminAuth)
 			r.Get("/services", s.adminOp("ListServices", s.handleServices))
-			r.Get("/state", s.adminOp("DumpState", s.handleState))
-			r.Post("/reset", s.adminOp("Reset", s.handleReset))
+			r.With(s.localOnly).Get("/state", s.adminOp("DumpState", s.handleState))
+			r.With(s.localOnly).Post("/reset", s.adminOp("Reset", s.handleReset))
+			if s.backups != nil {
+				r.With(s.localOnly).Get("/backup", s.adminOp("Backup", s.handleBackup))
+			}
 			if s.accounts != nil {
 				r.Get("/accounts", s.adminOp("ListAccounts", s.handleListAccounts))
 				r.Post("/accounts", s.adminOp("NewAccount", s.handleNewAccount))
@@ -148,11 +151,24 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) error {
 type resetResponse struct {
 	Status         string `json:"status"`
 	CancelledTasks int    `json:"cancelled_tasks"`
+	// Backup is where the wiped data was archived, under -persist.
+	Backup string `json:"backup,omitempty"`
 }
 
 // handleReset returns the emulator to its just-started state: pending
 // transitions are dropped, the store is wiped and services re-seed.
 func (s *Server) handleReset(w http.ResponseWriter, r *http.Request) error {
+	// Persisted data is archived first; without the archive, nothing is
+	// wiped.
+	var backup string
+	if s.backups != nil {
+		var err error
+		if backup, err = s.backups.BeforeReset(r.Context()); err != nil {
+			s.log.ErrorContext(r.Context(), "not resetting: archiving the data first failed", "error", err)
+			return apierr.New(http.StatusInternalServerError, "WeiStack.0500",
+				"not resetting: archiving the data first failed, so nothing was wiped: %v", err)
+		}
+	}
 	cancelled := s.engine.CancelAll()
 	if s.faults != nil {
 		s.faults.Clear()
@@ -167,8 +183,21 @@ func (s *Server) handleReset(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 	}
-	s.log.InfoContext(r.Context(), "state reset", "cancelled_tasks", cancelled)
-	return httpx.WriteJSON(w, http.StatusOK, resetResponse{Status: "reset", CancelledTasks: cancelled})
+	s.log.InfoContext(r.Context(), "state reset", "cancelled_tasks", cancelled, "backup", backup)
+	return httpx.WriteJSON(w, http.StatusOK, resetResponse{Status: "reset", CancelledTasks: cancelled, Backup: backup})
+}
+
+// handleBackup streams an archive of the persisted data. An error after
+// the first bytes can only cut the archive short, which restoring
+// detects.
+func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) error {
+	name := "weistack-backup-" + s.now().UTC().Format("20060102T150405Z") + ".tar.gz"
+	w.Header().Set("Content-Type", "application/gzip")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	if err := s.backups.Write(r.Context(), w); err != nil {
+		s.log.ErrorContext(r.Context(), "backup failed", "error", err)
+	}
+	return nil
 }
 
 // handleCA serves the proxy's CA certificate, so clients of a container

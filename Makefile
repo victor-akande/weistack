@@ -61,8 +61,11 @@ lint: ## Run golangci-lint
 	golangci-lint run
 
 .PHONY: vuln
+# Tools run with go run are pinned, so a build runs the code reviewed.
+GOVULNCHECK := golang.org/x/vuln/cmd/govulncheck@v1.9.0
+
 vuln: ## Scan dependencies for known vulnerabilities
-	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+	go run $(GOVULNCHECK) ./...
 
 .PHONY: tidy
 tidy: ## Tidy go.mod and go.sum
@@ -73,6 +76,10 @@ docker: ## Build the Docker image as weistack:dev
 	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg DATE=$(DATE) -t weistack:dev .
 
 .PHONY: check
+.PHONY: fuzz
+fuzz: ## Run every fuzz target for FUZZTIME each (default 10s)
+	scripts/fuzz.sh
+
 check: fmt-check vet lint test ## Everything CI runs, locally
 
 .PHONY: clean

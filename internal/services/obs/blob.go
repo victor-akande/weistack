@@ -6,8 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sync/atomic"
+
+	"github.com/victor-akande/weistack/internal/core/budget"
 )
 
 // blobStore keeps object bodies as files under one directory. A body is
@@ -15,15 +19,45 @@ import (
 // download in progress keeps reading the old file undisturbed.
 type blobStore struct {
 	dir string
+	// used is the size of the stored blobs, which the data budget
+	// counts; uploads in progress count as they stream.
+	used   atomic.Int64
+	budget *budget.Budget
 }
 
-const blobTempDir = "tmp"
+const blobTempDir = TempDir
 
-func newBlobStore(dir string) (*blobStore, error) {
+// TempDir holds uploads in progress, under the object data directory.
+// Backups leave it out.
+const TempDir = "tmp"
+
+func newBlobStore(dir string, b *budget.Budget) (*blobStore, error) {
 	if err := os.MkdirAll(filepath.Join(dir, blobTempDir), 0o750); err != nil {
 		return nil, fmt.Errorf("obs: creating data directory: %w", err)
 	}
-	return &blobStore{dir: dir}, nil
+	bs := &blobStore{dir: dir, budget: b}
+	var used int64
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		switch {
+		case err != nil:
+			return err
+		case d.IsDir() && p == filepath.Join(dir, blobTempDir):
+			return filepath.SkipDir
+		case d.Type().IsRegular():
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+			used += info.Size()
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("obs: measuring object data: %w", err)
+	}
+	bs.used.Store(used)
+	b.Track(bs.used.Load)
+	return bs, nil
 }
 
 // path spreads blobs over 256 subdirectories by the first two characters
@@ -54,7 +88,7 @@ func (b *blobStore) putThrough(id string, body io.Reader, wrap func(io.Writer) i
 	}()
 
 	hash := md5.New() //nolint:gosec // see import
-	var dst io.Writer = tmp
+	dst := b.budget.Writer(tmp)
 	if wrap != nil {
 		dst = wrap(tmp)
 	}
@@ -76,9 +110,14 @@ func (b *blobStore) install(tmpName, id string) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
 		return fmt.Errorf("obs: creating blob directory: %w", err)
 	}
+	info, err := os.Stat(tmpName)
+	if err != nil {
+		return fmt.Errorf("obs: storing blob: %w", err)
+	}
 	if err := os.Rename(tmpName, dst); err != nil {
 		return fmt.Errorf("obs: storing blob: %w", err)
 	}
+	b.used.Add(info.Size())
 	return nil
 }
 
@@ -90,6 +129,10 @@ func (b *blobStore) link(src, dst string) error {
 		return fmt.Errorf("obs: creating blob directory: %w", err)
 	}
 	if err := os.Link(b.path(src), b.path(dst)); err == nil {
+		// Counted as a copy, as removing either counts it out.
+		if info, err := os.Stat(b.path(dst)); err == nil {
+			b.used.Add(info.Size())
+		}
 		return nil
 	}
 	in, err := b.open(src)
@@ -112,8 +155,15 @@ func (b *blobStore) open(id string) (*os.File, error) {
 
 // remove deletes a blob. A blob that is already gone is not an error.
 func (b *blobStore) remove(id string) error {
-	if err := os.Remove(b.path(id)); err != nil && !errors.Is(err, os.ErrNotExist) {
+	info, statErr := os.Stat(b.path(id))
+	if err := os.Remove(b.path(id)); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
 		return fmt.Errorf("obs: removing blob: %w", err)
+	}
+	if statErr == nil {
+		b.used.Add(-info.Size())
 	}
 	return nil
 }
@@ -132,5 +182,6 @@ func (b *blobStore) reset() error {
 	if err := os.MkdirAll(filepath.Join(b.dir, blobTempDir), 0o750); err != nil {
 		return fmt.Errorf("obs: recreating data directory: %w", err)
 	}
+	b.used.Store(0)
 	return nil
 }

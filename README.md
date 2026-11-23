@@ -166,9 +166,18 @@ export SSL_CERT_FILE=$PWD/weistack-ca.pem   # Go and OpenSSL-based clients
 
 The CA is kept in `~/.config/weistack/tls` (`-tls-dir` changes it;
 `/data/tls` in the image), with or without `-persist`, so clients trust it
-once. Its key never leaves that directory and is readable only by you. A
-running emulator also serves the certificate, which is the easy way to get
-it out of a container:
+once. Its key never leaves that directory and is readable only by you.
+Since v0.3 a new CA can sign only for the names WeiStack answers:
+`myhuaweicloud.com` and the other `-proxy-domains` it was created with,
+`localhost`, names under `.local`, `.lan`, `.internal` and `.home.arpa`,
+and loopback and private addresses. Clients refuse its certificates for
+any other site, so even its key could not be used to impersonate one. A CA
+created by an earlier release has no such limit and still works; WeiStack
+warns about it at start. To replace it, delete `ca.pem` and `ca-key.pem`
+from that directory, restart, and trust the new CA in place of the old
+one. Do the same after adding a `-proxy-domains` domain the CA was not
+created with. A running emulator also serves the certificate, which is
+the easy way to get it out of a container:
 
 ```bash
 curl -o weistack-ca.pem http://127.0.0.1:8780/_weistack/ca
@@ -218,8 +227,11 @@ defaults. Run `weistack -h` for the full list.
 
 | Flag | Environment variable | Default | Meaning |
 | --- | --- | --- | --- |
-| `-host` | `WEISTACK_HOST` | `127.0.0.1` (`0.0.0.0` in the image) | Address to bind. The default also listens on `::1` |
+| `-host` | `WEISTACK_HOST` | `127.0.0.1` (`0.0.0.0` in the image) | Address to bind. The default also listens on `::1`. Addresses beyond loopback are refused outside a container (the image sets `WEISTACK_IN_CONTAINER=1`): use `-lan` |
 | `-port` | `WEISTACK_PORT` | `8780` | Port to listen on |
+| `-lan` | `WEISTACK_LAN` | off | Serve other machines over HTTPS on `-lan-port`, always checking credentials (see [Other machines](docs/lan.md)) |
+| `-lan-port` | `WEISTACK_LAN_PORT` | `8781` | The HTTPS port `-lan` opens on every interface |
+| `-lan-clients` | `WEISTACK_LAN_CLIENTS` | private and loopback ranges | Address ranges `-lan` admits, for example `192.168.1.0/24` |
 | `-region` | `WEISTACK_REGION` | `ap-southeast-1` | Region when a request names none |
 | `-project-id` | `WEISTACK_PROJECT_ID` | generated | Default project, 32 hex characters |
 | `-persist` | `WEISTACK_PERSIST` | off | Keep state on disk across restarts |
@@ -245,6 +257,7 @@ defaults. Run `weistack -h` for the full list.
 | `-vault-key-file` | `WEISTACK_VAULT_KEY_FILE` | `vault-key.json` in `-data-dir` | With `-persist`, the key that seals stored secret keys and KMS key material, kept apart from the data. Move the existing file there; WeiStack refuses to start while a key is also left in the data directory |
 | `-metrics` | `WEISTACK_METRICS` | off | Serve Prometheus metrics |
 | `-max-body-bytes` | `WEISTACK_MAX_BODY_BYTES` | `10485760` | Body limit for JSON APIs |
+| `-max-data-bytes` | `WEISTACK_MAX_DATA_BYTES` | `21474836480` (20 GiB) | Most data WeiStack keeps: records and object data, on disk or in memory. Past it, new resources and uploads get 507 `WeiStack.0507`; changes and deletes still work. `0` is no limit. Reset backups are not counted |
 | `-shutdown-timeout` | `WEISTACK_SHUTDOWN_TIMEOUT` | `10s` | Drain time on SIGTERM |
 
 ## Admin API
@@ -254,7 +267,8 @@ defaults. Run `weistack -h` for the full list.
 | `GET /_weistack/health` | Liveness and version |
 | `GET /_weistack/services` | Enabled services, default region, project ID and account |
 | `GET /_weistack/state` | Dump of every stored resource as JSON |
-| `POST /_weistack/reset` | Wipe all state, pending transitions and injected faults |
+| `POST /_weistack/reset` | Wipe all state, pending transitions and injected faults; with `-persist`, after keeping a backup in `backups/` in the data directory |
+| `GET /_weistack/backup` | A backup of the persisted data, as `.tar.gz` (only with `-persist`; `weistack backup` fetches it, and `weistack restore` restores it) |
 | `GET /_weistack/ca` | The proxy's CA certificate, as PEM |
 | `GET /_weistack/accounts` | Every account: the primary one and those added |
 | `POST /_weistack/accounts` | Add an account, `{"name": "partner"}`; returns its root user's keys |
@@ -314,10 +328,17 @@ for how a service plugs into the core.
 make check      # gofmt, vet, golangci-lint, tests with the race detector
 make test-sdk   # drive a real emulator with Huawei's official Go SDK
 make test-terraform  # apply, re-plan and destroy a stack with the Terraform provider
+make fuzz       # every fuzz target for FUZZTIME each (default 10s)
 ```
 
 The Terraform scenario ([test/terraform](test/terraform)) also shows the
 provider settings WeiStack needs.
+
+## Security
+
+WeiStack is for development and tests. [docs/threat-model.md](docs/threat-model.md)
+says what it protects and what it leaves to you; report vulnerabilities
+privately as [SECURITY.md](SECURITY.md) explains.
 
 ## Licence
 

@@ -300,6 +300,15 @@ func (b *Bolt) Dump(ctx context.Context) (map[string][]Record, error) {
 	return out, nil
 }
 
+// Size returns the size of the database file.
+func (b *Bolt) Size() int64 {
+	info, err := os.Stat(b.db.Path())
+	if err != nil {
+		return 0
+	}
+	return info.Size()
+}
+
 // Close flushes the database to disk and releases the file lock. It is
 // safe to call more than once.
 func (b *Bolt) Close() error {

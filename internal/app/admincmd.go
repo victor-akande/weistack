@@ -45,23 +45,9 @@ func adminCommand(ctx context.Context, env Env) error {
 	if err != nil {
 		return err
 	}
-	creds, _, err := loadAdmin(cfg, slog.New(slog.NewTextHandler(env.Stderr, nil)))
-	if err != nil {
-		return err
-	}
-
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	url := "http://" + net.JoinHostPort(clientHost(cfg), strconv.Itoa(cfg.Port)) + path
-	req, err := http.NewRequestWithContext(ctx, method, url, strings.NewReader(body))
-	if err != nil {
-		return err
-	}
-	if body != "" {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	sigcheck.SignSDKHMAC(req, creds.AccessKey, creds.SecretKey, req.URL.Path, []byte(body), time.Now())
-	res, err := http.DefaultClient.Do(req)
+	res, err := adminRequest(ctx, cfg, env, method, path, body)
 	if err != nil {
 		return fmt.Errorf("admin: %w", err)
 	}
@@ -75,6 +61,25 @@ func adminCommand(ctx context.Context, env Env) error {
 	}
 	_, err = env.Stdout.Write(out)
 	return err
+}
+
+// adminRequest sends a request to the admin API of the WeiStack cfg
+// describes, signed with the administrator's keys.
+func adminRequest(ctx context.Context, cfg config.Config, env Env, method, path, body string) (*http.Response, error) {
+	creds, _, err := loadAdmin(cfg, slog.New(slog.NewTextHandler(env.Stderr, nil)))
+	if err != nil {
+		return nil, err
+	}
+	url := "http://" + net.JoinHostPort(clientHost(cfg), strconv.Itoa(cfg.Port)) + path
+	req, err := http.NewRequestWithContext(ctx, method, url, strings.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	sigcheck.SignSDKHMAC(req, creds.AccessKey, creds.SecretKey, req.URL.Path, []byte(body), time.Now())
+	return http.DefaultClient.Do(req)
 }
 
 // adminPrefixPath is the root of the admin API.

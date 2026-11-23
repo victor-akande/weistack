@@ -299,8 +299,9 @@ func TestHealthcheckCommand(t *testing.T) {
 	check := func(args ...string) (string, error) {
 		var out bytes.Buffer
 		err := Run(context.Background(), Env{
-			Args:   append([]string{"healthcheck"}, args...),
-			Getenv: func(string) string { return "" },
+			Args: append([]string{"healthcheck"}, args...),
+			// As in the image, which binds 0.0.0.0.
+			Getenv: func(k string) string { return map[string]string{"WEISTACK_IN_CONTAINER": "1"}[k] },
 			Stdout: &out, Stderr: io.Discard,
 		})
 		return out.String(), err
@@ -545,7 +546,7 @@ func TestBannerAndLogFormat(t *testing.T) {
 	}
 
 	buf.Reset()
-	printBanner(&buf, config.Config{}, "127.0.0.1:8780", "0123456789abcdef0123456789abcdef", testAccount, testAdmin)
+	printBanner(&buf, config.Config{}, "127.0.0.1:8780", "", "0123456789abcdef0123456789abcdef", testAccount, testAdmin)
 	for _, want := range []string{
 		"ready on http://127.0.0.1:8780", "0123456789abcdef0123456789abcdef", "new on every start",
 		"export HTTPS_PROXY=http://127.0.0.1:8780", "http://127.0.0.1:8780/_weistack/ca",
@@ -557,7 +558,7 @@ func TestBannerAndLogFormat(t *testing.T) {
 		}
 	}
 	buf.Reset()
-	printBanner(&buf, config.Config{Persist: true, DataDir: "/srv/weistack"}, "127.0.0.1:8780", "0123456789abcdef0123456789abcdef", testAccount, testAdmin)
+	printBanner(&buf, config.Config{Persist: true, DataDir: "/srv/weistack"}, "127.0.0.1:8780", "", "0123456789abcdef0123456789abcdef", testAccount, testAdmin)
 	if !strings.Contains(buf.String(), "kept in /srv/weistack") {
 		t.Errorf("persistent banner:\n%s", buf.String())
 	}
@@ -565,7 +566,7 @@ func TestBannerAndLogFormat(t *testing.T) {
 		t.Errorf("accept-mode banner:\n%s", buf.String())
 	}
 	buf.Reset()
-	printBanner(&buf, config.Config{IAM: config.IAMEnforce}, "127.0.0.1:8780", "0123456789abcdef0123456789abcdef", testAccount, testAdmin)
+	printBanner(&buf, config.Config{IAM: config.IAMEnforce}, "127.0.0.1:8780", "", "0123456789abcdef0123456789abcdef", testAccount, testAdmin)
 	if !strings.Contains(buf.String(), "enforced: every request needs a valid signature or IAM token") {
 		t.Errorf("enforce-mode banner:\n%s", buf.String())
 	}

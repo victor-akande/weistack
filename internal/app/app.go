@@ -21,6 +21,7 @@ import (
 
 	"github.com/victor-akande/weistack/internal/core/auth"
 	"github.com/victor-akande/weistack/internal/core/authz"
+	"github.com/victor-akande/weistack/internal/core/budget"
 	"github.com/victor-akande/weistack/internal/core/config"
 	"github.com/victor-akande/weistack/internal/core/faults"
 	"github.com/victor-akande/weistack/internal/core/hostpattern"
@@ -62,6 +63,9 @@ type Env struct {
 	// OnReady, if set, is called with the bound address once the server
 	// is accepting connections.
 	OnReady func(addr net.Addr)
+	// OnLAN, if set, is called with the -lan listener's address before
+	// OnReady.
+	OnLAN func(addr net.Addr)
 }
 
 // Run executes the command line and blocks until the server stops. It
@@ -81,6 +85,10 @@ func Run(ctx context.Context, env Env) error {
 			return printCredentials(env)
 		case "admin":
 			return adminCommand(ctx, env)
+		case "backup":
+			return backupCommand(ctx, env)
+		case "restore":
+			return restoreCommand(env)
 		}
 	}
 
@@ -97,6 +105,11 @@ func Run(ctx context.Context, env Env) error {
 func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 	log := newLogger(cfg, env.Stdout)
 
+	if cfg.Persist {
+		if err := checkDataDir(cfg, log); err != nil {
+			return err
+		}
+	}
 	st, err := openStore(cfg)
 	if err != nil {
 		return err
@@ -149,7 +162,13 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 	if err != nil {
 		return err
 	}
-	services, err := buildServices(ctx, cfg, projectID, objectDir, st, engine, gen, log, directory, vlt)
+	// Services write through the data budget; the server's own uses
+	// (reset, dumps, backups) bypass it.
+	data := budget.New(cfg.MaxDataBytes)
+	if sized, ok := st.(interface{ Size() int64 }); ok {
+		data.Track(sized.Size)
+	}
+	services, err := buildServices(ctx, cfg, projectID, objectDir, budget.Store(st, data), data, engine, gen, log, directory, vlt)
 	if err != nil {
 		return err
 	}
@@ -169,6 +188,10 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		bypass = append(bypass, compiled)
 	}
 
+	var backups server.Backups
+	if db, ok := st.(*store.Bolt); ok {
+		backups = &dataBackups{cfg: cfg, db: db, log: log, now: time.Now}
+	}
 	srv, err := server.New(server.Options{
 		Config:      cfg,
 		ProjectID:   projectID,
@@ -183,6 +206,7 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		Accounts:    accounts(services),
 		Temporary:   temporary(services),
 		Faults:      injected,
+		Backups:     backups,
 		Sealer:      vlt,
 		Proxy: server.ProxyOptions{
 			CA: ca, Domains: cfg.ProxyDomains, Bypass: bypass, Passthrough: cfg.ProxyPassthrough,
@@ -223,11 +247,23 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		servicePorts[name] = group[0].Addr().String()
 	}
 
+	var lanAddr string
+	if cfg.LAN {
+		lan, err := listenLAN(ctx, cfg, ca, log)
+		if err != nil {
+			return err
+		}
+		servers = append(servers, newHTTPServer(srv.NetworkHandler(), log))
+		bound = append(bound, []net.Listener{lan})
+		lanAddr = lan.Addr().String()
+	}
+
 	log.Info("weistack started",
 		"version", version.Version,
 		"address", ln.Addr().String(),
 		"ipv6_loopback", len(listeners) > 1,
 		"service_ports", servicePorts,
+		"lan", lanAddr,
 		"region", cfg.Region,
 		"project_id", projectID,
 		"account_id", account.ID,
@@ -240,8 +276,17 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		"services", srv.ServiceNames(),
 	)
 	warnExposure(log, cfg)
+	if cfg.LAN {
+		_, port, _ := net.SplitHostPort(lanAddr)
+		p, _ := strconv.Atoi(port)
+		log.Info("serving other machines over HTTPS (-lan); every request needs valid credentials",
+			"address", lanAddr, "urls", lanURLs(p), "clients", cfg.LANClients)
+	}
 	if isTerminal(env.Stdout) {
-		printBanner(env.Stdout, cfg, ln.Addr().String(), projectID, account, admin)
+		printBanner(env.Stdout, cfg, ln.Addr().String(), lanAddr, projectID, account, admin)
+	}
+	if env.OnLAN != nil && lanAddr != "" {
+		env.OnLAN(bound[len(bound)-1][0].Addr())
 	}
 	if env.OnReady != nil {
 		env.OnReady(ln.Addr())
@@ -325,7 +370,7 @@ func tokenChecker(services []server.Service) auth.TokenChecker {
 // added here.
 func buildServices(
 	ctx context.Context, cfg config.Config, projectID, objectDir string,
-	st store.Store, engine *lifecycle.Engine, gen *ids.Generator, log *slog.Logger, directory *identity.Directory,
+	st store.Store, data *budget.Budget, engine *lifecycle.Engine, gen *ids.Generator, log *slog.Logger, directory *identity.Directory,
 	vlt *vault.Vault,
 ) ([]server.Service, error) {
 	// KMS keys encrypt for OBS, ECS disks and RDS: it comes first.
@@ -408,7 +453,7 @@ func buildServices(
 		return nil, err
 	}
 
-	obsSvc, err := obs.New(obs.Deps{Quotas: cfg.Quotas, Store: st, IDs: gen, Logger: log, DataDir: objectDir, Keys: kmsSvc})
+	obsSvc, err := obs.New(obs.Deps{Quotas: cfg.Quotas, Store: st, IDs: gen, Logger: log, DataDir: objectDir, Keys: kmsSvc, Budget: data})
 	if err != nil {
 		return nil, err
 	}
@@ -479,15 +524,35 @@ func tlsDir(cfg config.Config) string {
 // that trust the CA must fetch it again after every start.
 func loadCA(cfg config.Config, log *slog.Logger) (*tlsca.Authority, error) {
 	dir := tlsDir(cfg)
-	ca, err := tlsca.Load(dir)
+	ca, err := tlsca.Load(dir, cfg.ProxyDomains...)
 	if err == nil {
+		checkCA(log, cfg, ca, dir)
 		return ca, nil
 	}
 	if cfg.TLSDir != "" {
 		return nil, err // an explicit choice must work
 	}
 	log.Warn("using an in-memory CA", "error", err)
-	return tlsca.Load("")
+	return tlsca.Load("", cfg.ProxyDomains...)
+}
+
+// checkCA warns about a CA that can sign for any name, created before
+// v0.3, and about proxy domains the CA cannot sign for, which were added
+// after it was created.
+func checkCA(log *slog.Logger, cfg config.Config, ca *tlsca.Authority, dir string) {
+	rotate := "delete " + filepath.Join(dir, tlsca.CertFile) + " and " + filepath.Join(dir, tlsca.KeyFile) +
+		", restart WeiStack, and trust the new CA (weistack ca) in place of the old one"
+	if !ca.Constrained() {
+		log.Warn("the local CA was created before v0.3 and can sign for any name: whoever obtains its key could impersonate any site to clients that trust it",
+			"ca", filepath.Join(dir, tlsca.CertFile), "fix", rotate)
+		return
+	}
+	for _, d := range cfg.ProxyDomains {
+		if !ca.Permits(d) {
+			log.Warn("the local CA cannot sign for a proxy domain, so clients will refuse WeiStack's certificates for it",
+				"domain", d, "fix", rotate)
+		}
+	}
 }
 
 // printCA writes the local CA certificate to stdout, for clients that
@@ -504,7 +569,7 @@ func printCA(env Env) error {
 	if dir == "" {
 		return errors.New("no directory for the CA: set -tls-dir")
 	}
-	ca, err := tlsca.Load(dir)
+	ca, err := tlsca.Load(dir, cfg.ProxyDomains...)
 	if err != nil {
 		return err
 	}
@@ -588,7 +653,7 @@ func warnExposure(log *slog.Logger, cfg config.Config) {
 
 // printBanner tells a person at a terminal how to use the emulator that
 // just started. Logs carry the same facts for machines.
-func printBanner(w io.Writer, cfg config.Config, addr, projectID string, account identity.Account, admin identity.Credentials) {
+func printBanner(w io.Writer, cfg config.Config, addr, lanAddr, projectID string, account identity.Account, admin identity.Credentials) {
 	base := "http://" + addr
 	project := "new on every start; -persist keeps it"
 	if cfg.Persist {
@@ -606,6 +671,16 @@ func printBanner(w io.Writer, cfg config.Config, addr, projectID string, account
 		{"Guide", "https://github.com/victor-akande/weistack/blob/main/docs/getting-started.md"},
 	} {
 		fmt.Fprintf(w, "    %-14s%s\n", line[0], line[1])
+	}
+	if lanAddr != "" {
+		_, port, _ := net.SplitHostPort(lanAddr)
+		p, _ := strconv.Atoi(port)
+		urls := lanURLs(p)
+		if len(urls) == 0 {
+			urls = []string{"https://<this machine>:" + port}
+		}
+		fmt.Fprintf(w, "\n    %-14s%s\n", "Network", strings.Join(urls, "  "))
+		fmt.Fprintf(w, "    %-14s%s\n", "", "HTTPS with the CA above; every request needs valid credentials (-lan)")
 	}
 	fmt.Fprintln(w)
 }

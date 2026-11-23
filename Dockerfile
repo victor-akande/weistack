@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1
 
-FROM --platform=$BUILDPLATFORM golang:1.27 AS build
+# Base images are pinned by digest, so a build uses exactly the images
+# reviewed; Dependabot proposes new digests.
+FROM --platform=$BUILDPLATFORM golang:1.27.4@sha256:205c7636d74e0ffbe3d007162df7d74f859f5a8c8322dfb9f907977686c126cf AS build
 WORKDIR /src
 
 COPY go.mod go.sum ./
@@ -25,7 +27,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     # The runtime user (65532) must own the data directory.
     && mkdir -p /out/data
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 
 LABEL org.opencontainers.image.title="WeiStack" \
       org.opencontainers.image.description="Local emulator of core Huawei Cloud services" \
@@ -36,8 +38,12 @@ COPY --from=build /out/weistack /weistack
 COPY --from=build --chown=65532:65532 /out/data /data
 
 # Inside a container the emulator must listen on all interfaces to be
-# reachable through a published port; outside it defaults to loopback.
+# reachable through a published port; outside it defaults to loopback,
+# and refuses other addresses unless WEISTACK_IN_CONTAINER says it runs
+# in one. Publish the port on loopback (-p 127.0.0.1:8780:8780) unless
+# other machines need it.
 ENV WEISTACK_HOST=0.0.0.0 \
+    WEISTACK_IN_CONTAINER=1 \
     WEISTACK_TLS_DIR=/data/tls \
     WEISTACK_DATA_DIR=/data
 

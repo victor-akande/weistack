@@ -12,7 +12,8 @@ import (
 // Under -iam=enforce the admin API answers only the administrator: it
 // can wipe the data, read every record and mint accounts. Health and the
 // CA certificate stay open, since clients need them before they have
-// credentials. In accept mode nothing changes.
+// credentials. In accept mode nothing changes, except for requests from
+// other machines (-lan), which are always checked.
 
 // maxAdminBody bounds an admin request's body while its signature is
 // checked. Admin bodies are small JSON documents.
@@ -24,11 +25,12 @@ var errNotAdmin = apierr.New(http.StatusForbidden, "WeiStack.0403",
 // adminAuth admits only requests signed with the administrator's keys,
 // or carrying a token of theirs, when credentials are enforced.
 func (s *Server) adminAuth(next http.Handler) http.Handler {
-	if !s.enforcing() {
-		return next
-	}
 	m := &mounted{maxBody: maxAdminBody}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.enforcing(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		id, err := s.verify(m, r, []string{r.URL.Path})
 		if err == nil && !s.isAdministrator(id.Principal) {
 			err = errNotAdmin

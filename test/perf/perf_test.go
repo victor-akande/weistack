@@ -397,7 +397,9 @@ func TestLatencyAtScale(t *testing.T) {
 		{"permissions", enforceEnv, adminKeys, true},
 	} {
 		t.Run(mode.name, func(t *testing.T) {
-			p, _ := start(t, mode.env...)
+			// 1,000 VPCs are far over a new account's quota (150), which
+			// this test is not about.
+			p, _ := start(t, append([]string{"WEISTACK_QUOTAS=vpc.vpc=-1"}, mode.env...)...)
 			p.keys = mode.keys
 			if mode.limited {
 				p.keys = limitedUser(t, p)
