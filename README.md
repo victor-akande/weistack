@@ -334,6 +334,12 @@ make fuzz       # every fuzz target for FUZZTIME each (default 10s)
 The Terraform scenario ([test/terraform](test/terraform)) also shows the
 provider settings WeiStack needs.
 
+## Security
+
+WeiStack is for development and tests. [docs/threat-model.md](docs/threat-model.md)
+says what it protects and what it leaves to you; report vulnerabilities
+privately as [SECURITY.md](SECURITY.md) explains.
+
 ## Licence
 
 [Apache-2.0](LICENSE)

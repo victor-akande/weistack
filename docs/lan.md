@@ -59,6 +59,10 @@ export HTTPS_PROXY=https://192.168.1.20:8781
 or address services directly, as on loopback:
 `https://192.168.1.20:8781/vpc/v1/{project_id}/vpcs`.
 
+Use this machine's IP address, or a name under `.local`, `.lan`,
+`.internal` or `.home.arpa`: since v0.3 the local CA cannot sign for a
+bare machine name such as `nas`, so clients would refuse it.
+
 Prefer an IAM user with only the permissions the other machine needs to
 the administrator's keys (see [IAM: access keys](services/iam.md#access-keys)).
 

@@ -61,8 +61,11 @@ lint: ## Run golangci-lint
 	golangci-lint run
 
 .PHONY: vuln
+# Tools run with go run are pinned, so a build runs the code reviewed.
+GOVULNCHECK := golang.org/x/vuln/cmd/govulncheck@v1.9.0
+
 vuln: ## Scan dependencies for known vulnerabilities
-	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+	go run $(GOVULNCHECK) ./...
 
 .PHONY: tidy
 tidy: ## Tidy go.mod and go.sum
