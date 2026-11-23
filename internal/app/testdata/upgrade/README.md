@@ -16,10 +16,22 @@ written too), and creates through the HTTP API:
 - an OBS bucket with an object, owned by the access key `AKFIXTURE`
 - an RDS MySQL instance
 
+From v0.3.0 it also creates:
+
+- an IAM user with a permanent access key, and a KMS key with a text it
+  encrypted, so the test proves both still unseal: it signs a request
+  with the key under `-iam=enforce` and decrypts the text
+- an EIP, a public NAT gateway with an SNAT rule using it
+- a dedicated load balancer with a listener, a pool and a member (the
+  server)
+- an EVS data disk attached to the server, and a snapshot of it
+
 `ids.json` records their IDs for the test. The CA goes to a scratch
 directory and is not committed: v0.1.0 kept it in the data directory, and
-its private key does not belong in the repository. Nothing secret is stored:
-the RDS password is random and WeiStack keeps no copy of it.
+its private key does not belong in the repository. The RDS password is
+random and WeiStack keeps no copy of it. From v0.3.0, `ids.json` holds the
+fixture user's access key and secret key: they were made by the emulator
+for the fixture, mean nothing anywhere else, and the test needs them.
 From v0.2.0 the data directory also holds `vault-key.json`, the key that
 seals secrets in the store, and `account.json`, the account's ID and name.
 The key was generated for the fixture and seals nothing in it, since the
@@ -33,3 +45,13 @@ internal/app/testdata/upgrade/generate.sh 0.1.2
 ```
 
 Fixtures are never regenerated: each must stay what its release wrote.
+
+**Before a release**, rehearse with a local build, outside the
+repository, and run the test on the result:
+
+```bash
+make build
+WEISTACK_FIXTURE_BINARY=bin/weistack WEISTACK_FIXTURE_OUT=/tmp/weistack-fixture \
+  internal/app/testdata/upgrade/generate.sh 0.3.0
+WEISTACK_UPGRADE_REHEARSAL=/tmp/weistack-fixture/data go test -run TestUpgradeFromReleasedData ./internal/app/
+```

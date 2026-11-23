@@ -12,12 +12,25 @@
 #
 # The CA goes to a scratch directory: v0.1.0 kept it in the data
 # directory under -persist, and its private key must not be committed.
+#
+# To rehearse before a release, give a locally built binary and an output
+# directory outside the repository (a rehearsal is never committed):
+#
+#   WEISTACK_FIXTURE_BINARY=bin/weistack WEISTACK_FIXTURE_OUT=/tmp/fx generate.sh 0.3.0
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 version="${1:?usage: generate.sh <version, for example 0.1.1>}"
 version="${version#v}"
 out="$here/v$version/data"
+binary="${WEISTACK_FIXTURE_BINARY:-}"
+if [[ -n "$binary" ]]; then
+	binary="$(cd "$(dirname "$binary")" && pwd)/$(basename "$binary")"
+	out="${WEISTACK_FIXTURE_OUT:?a rehearsal needs WEISTACK_FIXTURE_OUT, a directory outside the repository}/data"
+	case "$(cd "$(dirname "$out")" 2>/dev/null && pwd || dirname "$out")/" in
+	"$(git -C "$here" rev-parse --show-toplevel)"/*) echo "a rehearsal must not write into the repository" >&2; exit 1 ;;
+	esac
+fi
 release="https://github.com/victor-akande/weistack/releases/download/v${version}"
 work="$(mktemp -d)"
 pid=""
@@ -36,11 +49,18 @@ os="$(uname -s | tr '[:upper:]' '[:lower:]')"
 archive="weistack_${version}_${os}_${arch}.tar.gz"
 
 cd "$work"
-curl -fsSLO "$release/$archive"
-curl -fsSLO "$release/checksums.txt"
-sha256sum -c --ignore-missing checksums.txt
-tar -xzf "$archive" weistack
+if [[ -n "$binary" ]]; then
+	cp "$binary" weistack
+else
+	curl -fsSLO "$release/$archive"
+	curl -fsSLO "$release/checksums.txt"
+	sha256sum -c --ignore-missing checksums.txt
+	tar -xzf "$archive" weistack
+fi
 ./weistack version
+
+# at_least VERSION: the release being written is VERSION or newer.
+at_least() { [[ "$(printf '%s\n%s\n' "$1" "$version" | sort -V | head -n 1)" == "$1" ]]; }
 
 port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
 base="http://127.0.0.1:$port"
@@ -100,13 +120,76 @@ rds=$(call POST "/rds/v3/$project/instances" "{\"name\": \"fixture-mysql\", \"da
 	\"password\": \"$db_password\"}" | field "['instance']['id']")
 wait_for "/rds/v3/$project/instances?id=$rds" "['instances'][0]['status']" ACTIVE
 
+extra=""
+if at_least 0.3.0; then
+	# Services and stored secrets added in v0.2 and v0.3: identity, KMS,
+	# EIP, NAT, ELB and EVS data disks.
+	domain=$(call GET /_weistack/services | field "['account_id']")
+	user=$(call POST /iam/v3.0/OS-USER/users "{\"user\": {\"name\": \"fixture-user\", \"domain_id\": \"$domain\"}}" | field "['user']['id']")
+	credential=$(call POST /iam/v3.0/OS-CREDENTIAL/credentials "{\"credential\": {\"user_id\": \"$user\", \"description\": \"fixture\"}}")
+	access_key=$(field "['credential']['access']" <<<"$credential")
+	secret_key=$(field "['credential']['secret']" <<<"$credential")
+
+	kms_key=$(call POST "/kms/v1.0/$project/kms/create-key" '{"key_alias": "fixture-key"}' | field "['key_info']['key_id']")
+	plain_text="sealed by WeiStack v${version}"
+	cipher_text=$(call POST "/kms/v1.0/$project/kms/encrypt-data" "{\"key_id\": \"$kms_key\", \"plain_text\": \"$plain_text\"}" | field "['cipher_text']")
+
+	public_ip=$(call POST "/vpc/v1/$project/publicips" \
+		'{"publicip": {"type": "5_bgp"}, "bandwidth": {"name": "fixture-bandwidth", "size": 5, "share_type": "PER", "charge_mode": "traffic"}}' |
+		field "['publicip']['id']")
+	wait_for "/vpc/v1/$project/publicips/$public_ip" "['publicip']['status']" DOWN
+
+	nat=$(call POST "/nat/v2/$project/nat_gateways" \
+		"{\"nat_gateway\": {\"name\": \"fixture-nat\", \"router_id\": \"$vpc\", \"internal_network_id\": \"$subnet\", \"spec\": \"1\"}}" |
+		field "['nat_gateway']['id']")
+	wait_for "/nat/v2/$project/nat_gateways/$nat" "['nat_gateway']['status']" ACTIVE
+	snat=$(call POST "/nat/v2/$project/snat_rules" \
+		"{\"snat_rule\": {\"nat_gateway_id\": \"$nat\", \"network_id\": \"$subnet\", \"floating_ip_id\": \"$public_ip\"}}" |
+		field "['snat_rule']['id']")
+	wait_for "/nat/v2/$project/snat_rules/$snat" "['snat_rule']['status']" ACTIVE
+
+	ipv4_subnet=$(call GET "/vpc/v1/$project/subnets/$subnet" | field "['subnet']['neutron_subnet_id']")
+	l4=$(call GET "/elb/v3/$project/elb/flavors?type=L4" | field "['flavors'][0]['id']")
+	l7=$(call GET "/elb/v3/$project/elb/flavors?type=L7" | field "['flavors'][0]['id']")
+	lb=$(call POST "/elb/v3/$project/elb/loadbalancers" "{\"loadbalancer\": {\"name\": \"fixture-lb\", \"vpc_id\": \"$vpc\",
+		\"vip_subnet_cidr_id\": \"$ipv4_subnet\", \"availability_zone_list\": [\"ap-southeast-1a\"],
+		\"l4_flavor_id\": \"$l4\", \"l7_flavor_id\": \"$l7\"}}" | field "['loadbalancer']['id']")
+	wait_for "/elb/v3/$project/elb/loadbalancers/$lb" "['loadbalancer']['provisioning_status']" ACTIVE
+	pool=$(call POST "/elb/v3/$project/elb/pools" \
+		"{\"pool\": {\"name\": \"fixture-pool\", \"protocol\": \"HTTP\", \"lb_algorithm\": \"ROUND_ROBIN\", \"loadbalancer_id\": \"$lb\"}}" |
+		field "['pool']['id']")
+	listener=$(call POST "/elb/v3/$project/elb/listeners" "{\"listener\": {\"name\": \"fixture-listener\", \"protocol\": \"HTTP\",
+		\"protocol_port\": 80, \"loadbalancer_id\": \"$lb\", \"default_pool_id\": \"$pool\"}}" | field "['listener']['id']")
+	server_ip=$(call GET "/ecs/v1/$project/cloudservers/$server" | field "['server']['addresses']['$vpc'][0]['addr']")
+	member=$(call POST "/elb/v3/$project/elb/pools/$pool/members" \
+		"{\"member\": {\"address\": \"$server_ip\", \"protocol_port\": 8080, \"subnet_cidr_id\": \"$ipv4_subnet\"}}" |
+		field "['member']['id']")
+
+	volume=$(call POST "/evs/v2.1/$project/cloudvolumes" \
+		'{"volume": {"name": "fixture-data", "size": 10, "volume_type": "SSD", "availability_zone": "ap-southeast-1a"}}' |
+		field "['volume_ids'][0]")
+	wait_for "/evs/v2/$project/cloudvolumes/$volume" "['volume']['status']" available
+	call POST "/ecs/v1/$project/cloudservers/$server/attachvolume" "{\"volumeAttachment\": {\"volumeId\": \"$volume\"}}" >/dev/null
+	wait_for "/evs/v2/$project/cloudvolumes/$volume" "['volume']['status']" in-use
+	snapshot=$(call POST "/evs/v2/$project/cloudsnapshots" "{\"snapshot\": {\"name\": \"fixture-snapshot\", \"volume_id\": \"$volume\", \"force\": true}}" |
+		field "['snapshot']['id']")
+	wait_for "/evs/v2/$project/cloudsnapshots/$snapshot" "['snapshot']['status']" available
+
+	extra=",
+ \"user\": \"$user\", \"access_key\": \"$access_key\", \"secret_key\": \"$secret_key\",
+ \"kms_key\": \"$kms_key\", \"cipher_text\": \"$cipher_text\", \"plain_text\": \"$plain_text\",
+ \"public_ip\": \"$public_ip\", \"nat_gateway\": \"$nat\", \"snat_rule\": \"$snat\",
+ \"load_balancer\": \"$lb\", \"listener\": \"$listener\", \"pool\": \"$pool\", \"member\": \"$member\",
+ \"volume\": \"$volume\", \"snapshot\": \"$snapshot\""
+fi
+
 kill -INT "$pid"
 wait "$pid" || true
 pid=""
 grep -E 'level=(WARN|ERROR)' "$work/log" && { echo "the emulator logged warnings or errors" >&2; exit 1; }
 cat >"$out/ids.json" <<JSON
 {"project": "$project", "vpc": "$vpc", "subnet": "$subnet", "security_group": "$group", "server": "$server",
- "image_job": "$job", "bucket": "fixture-bucket", "object": "notes/hello.txt", "bucket_owner": "AKFIXTURE", "rds": "$rds"}
+ "image_job": "$job", "bucket": "fixture-bucket", "object": "notes/hello.txt", "bucket_owner": "AKFIXTURE", "rds": "$rds"$extra}
 JSON
 ls -l "$out"
 echo "fixture written by $(cd "$work" && ./weistack version)"

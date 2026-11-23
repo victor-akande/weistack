@@ -11,9 +11,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	bolt "go.etcd.io/bbolt"
 
+	"github.com/victor-akande/weistack/internal/core/sigcheck"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
@@ -29,6 +31,46 @@ type fixtureIDs struct {
 	Object        string `json:"object"`
 	BucketOwner   string `json:"bucket_owner"`
 	RDS           string `json:"rds"`
+
+	// From v0.3.0: identity, KMS, EIP, NAT, ELB and EVS data disks.
+	User         string `json:"user"`
+	AccessKey    string `json:"access_key"`
+	SecretKey    string `json:"secret_key"`
+	KMSKey       string `json:"kms_key"`
+	CipherText   string `json:"cipher_text"`
+	PlainText    string `json:"plain_text"`
+	PublicIP     string `json:"public_ip"`
+	NATGateway   string `json:"nat_gateway"`
+	SNATRule     string `json:"snat_rule"`
+	LoadBalancer string `json:"load_balancer"`
+	Listener     string `json:"listener"`
+	Pool         string `json:"pool"`
+	Member       string `json:"member"`
+	Volume       string `json:"volume"`
+	Snapshot     string `json:"snapshot"`
+}
+
+// upgradeRehearsal names a data directory generate.sh wrote with a local
+// binary (WEISTACK_FIXTURE_OUT/data), tested as one more release before a
+// release's own fixture exists.
+const upgradeRehearsal = "WEISTACK_UPGRADE_REHEARSAL"
+
+// releaseFixtures lists every release's data directory, and the
+// rehearsal's if one is named.
+func releaseFixtures(t *testing.T) map[string]string {
+	t.Helper()
+	dirs, err := filepath.Glob(filepath.Join("testdata", "upgrade", "v*", "data"))
+	if err != nil || len(dirs) < 2 {
+		t.Fatalf("release fixtures = %v, %v; want one per release", dirs, err)
+	}
+	fixtures := make(map[string]string, len(dirs)+1)
+	for _, dir := range dirs {
+		fixtures[filepath.Base(filepath.Dir(dir))] = dir
+	}
+	if dir := os.Getenv(upgradeRehearsal); dir != "" {
+		fixtures["rehearsal"] = dir
+	}
+	return fixtures
 }
 
 // copyFixture copies a released data directory into a temp dir, so the
@@ -74,12 +116,7 @@ func (i *instance) getAs(t *testing.T, path, authorization string) (int, string)
 // every released version and reads all of it back.
 func TestUpgradeFromReleasedData(t *testing.T) {
 	t.Parallel()
-	dirs, err := filepath.Glob(filepath.Join("testdata", "upgrade", "v*", "data"))
-	if err != nil || len(dirs) < 2 {
-		t.Fatalf("release fixtures = %v, %v; want one per release", dirs, err)
-	}
-	for _, dir := range dirs {
-		version := filepath.Base(filepath.Dir(dir))
+	for version, dir := range releaseFixtures(t) {
 		t.Run(version, func(t *testing.T) {
 			t.Parallel()
 			data := copyFixture(t, dir)
@@ -131,9 +168,15 @@ func TestUpgradeFromReleasedData(t *testing.T) {
 
 			owner := "OBS " + ids.BucketOwner + ":c2ln"
 			status, object := inst.getAs(t, "/obs/"+ids.Bucket+"/"+ids.Object, owner)
-			want := "written by WeiStack " + version
-			if status != http.StatusOK || object != want {
+			if !strings.HasPrefix(object, "written by WeiStack v") {
+				t.Fatalf("object: %d %q", status, object)
+			}
+			if want := "written by WeiStack " + version; version != "rehearsal" && (status != http.StatusOK || object != want) {
 				t.Fatalf("object: %d %q, want %q", status, object, want)
+			}
+
+			if ids.User != "" {
+				checkV03Resources(t, inst, p, ids)
 			}
 
 			// Writing still works, and a new ID does not collide.
@@ -154,11 +197,71 @@ func TestUpgradeFromReleasedData(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer db.Close()
 			if v, err := db.Format(); err != nil || v != store.FormatVersion {
 				t.Fatalf("format after the upgrade = %d, %v", v, err)
 			}
+			if err := db.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			if ids.AccessKey != "" {
+				// The user's secret key is sealed by the vault key: under
+				// -iam=enforce, a request it signs is still accepted.
+				enforced := startInstance(t, map[string]string{"WEISTACK_PERSIST": "1", "WEISTACK_DATA_DIR": data, "WEISTACK_IAM": "enforce"})
+				path := "/iam/v3/auth/projects"
+				req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://"+enforced.addr+path, nil)
+				sigcheck.SignSDKHMAC(req, ids.AccessKey, ids.SecretKey, path, nil, time.Now())
+				res, err := http.DefaultClient.Do(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				body, _ := io.ReadAll(res.Body)
+				res.Body.Close()
+				if res.StatusCode != http.StatusOK || !strings.Contains(string(body), p) {
+					t.Fatalf("signed by the release's access key: %d %s", res.StatusCode, body)
+				}
+				if err := enforced.stop(t); err != nil {
+					t.Fatalf("stopping: %v", err)
+				}
+			}
 		})
+	}
+}
+
+// checkV03Resources reads back what v0.3.0 added to the fixture, and
+// decrypts with the release's KMS key, whose material the vault key seals.
+func checkV03Resources(t *testing.T, inst *instance, p string, ids fixtureIDs) {
+	t.Helper()
+	expect := func(path string, wants ...string) {
+		t.Helper()
+		status, body := inst.get(t, path)
+		if status != http.StatusOK {
+			t.Fatalf("GET %s: %d %s", path, status, body)
+		}
+		for _, want := range wants {
+			if !strings.Contains(body, want) {
+				t.Errorf("GET %s lacks %s: %s", path, want, body)
+			}
+		}
+	}
+	expect("/iam/v3.0/OS-USER/users/"+ids.User, `"name":"fixture-user"`)
+	expect("/iam/v3.0/OS-CREDENTIAL/credentials/"+ids.AccessKey, `"status":"active"`)
+	expect("/vpc/v1/"+p+"/publicips/"+ids.PublicIP, `"status":"ACTIVE"`)
+	expect("/nat/v2/"+p+"/nat_gateways/"+ids.NATGateway, `"name":"fixture-nat"`, `"status":"ACTIVE"`)
+	expect("/nat/v2/"+p+"/snat_rules/"+ids.SNATRule, `"floating_ip_id":"`+ids.PublicIP+`"`, `"status":"ACTIVE"`)
+	expect("/elb/v3/"+p+"/elb/loadbalancers/"+ids.LoadBalancer, `"name":"fixture-lb"`, `"provisioning_status":"ACTIVE"`)
+	expect("/elb/v3/"+p+"/elb/listeners/"+ids.Listener, `"name":"fixture-listener"`, `"default_pool_id":"`+ids.Pool+`"`)
+	expect("/elb/v3/"+p+"/elb/pools/"+ids.Pool+"/members/"+ids.Member, `"protocol_port":8080`)
+	expect("/evs/v2/"+p+"/cloudvolumes/"+ids.Volume, `"name":"fixture-data"`, `"status":"in-use"`)
+	expect("/evs/v2/"+p+"/cloudsnapshots/"+ids.Snapshot, `"name":"fixture-snapshot"`, `"status":"available"`)
+
+	body, err := json.Marshal(map[string]string{"key_id": ids.KMSKey, "cipher_text": ids.CipherText})
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, out := inst.send(t, http.MethodPost, "/kms/v1.0/"+p+"/kms/decrypt-data", body)
+	if status != http.StatusOK || !strings.Contains(out, `"plain_text":"`+ids.PlainText+`"`) {
+		t.Fatalf("decrypting with the release's KMS key: %d %s", status, out)
 	}
 }
 
