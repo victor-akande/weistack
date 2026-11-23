@@ -15,6 +15,10 @@ terraform {
       source  = "huaweicloud/huaweicloud"
       version = "1.100.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "3.7.2"
+    }
   }
 }
 
@@ -39,8 +43,14 @@ locals {
 
 # ---- encryption ------------------------------------------------------------
 
+# A deleted key waits 7 days before it goes, and keeps its alias until then
+# (KMS.1104 "Duplicate key aliases"), so each stack's key gets its own.
+resource "random_id" "key" {
+  byte_length = 3
+}
+
 resource "huaweicloud_kms_key" "app" {
-  key_alias         = "${var.name}-${var.environment}"
+  key_alias         = "${var.name}-${var.environment}-${random_id.key.hex}"
   key_description   = "Encrypts the ${var.name} disks, database and bucket"
   pending_days      = "7"
   rotation_enabled  = true
