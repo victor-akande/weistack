@@ -328,13 +328,14 @@ func buildServices(
 ) ([]server.Service, error) {
 	// KMS keys encrypt for OBS, ECS disks and RDS: it comes first.
 	kmsSvc, err := kms.New(kms.Deps{
-		Store: st, Logger: log, IDs: gen, Vault: vlt, Directory: directory,
+		Quotas: cfg.Quotas,
+		Store:  st, Logger: log, IDs: gen, Vault: vlt, Directory: directory,
 		DefaultRegion: cfg.Region, DefaultProjectID: projectID,
 	})
 	if err != nil {
 		return nil, err
 	}
-	vpcSvc, err := vpc.New(vpc.Deps{Store: st, Engine: engine, IDs: gen, Logger: log})
+	vpcSvc, err := vpc.New(vpc.Deps{Quotas: cfg.Quotas, Store: st, Engine: engine, IDs: gen, Logger: log})
 	if err != nil {
 		return nil, err
 	}
@@ -343,14 +344,15 @@ func buildServices(
 		return nil, err
 	}
 
-	eipSvc, err := eip.New(eip.Deps{Store: st, Engine: engine, IDs: gen, Logger: log, Ports: vpcSvc, MaxPerProject: cfg.EIPMaxPerProject})
+	eipSvc, err := eip.New(eip.Deps{Quotas: cfg.Quotas, Store: st, Engine: engine, IDs: gen, Logger: log, Ports: vpcSvc, MaxPerProject: cfg.EIPMaxPerProject})
 	if err != nil {
 		return nil, err
 	}
 	vpcSvc.Extend(eipSvc)
 
 	imsSvc, err := ims.New(ims.Deps{
-		Store: st, Engine: engine, IDs: gen, Logger: log,
+		Quotas: cfg.Quotas,
+		Store:  st, Engine: engine, IDs: gen, Logger: log,
 		DefaultProjectID: projectID, SeedDir: cfg.SeedDir,
 	})
 	if err != nil {
@@ -361,7 +363,8 @@ func buildServices(
 	}
 
 	evsSvc, err := evs.New(evs.Deps{
-		Store: st, Engine: engine, IDs: gen, Logger: log, Images: imsSvc, Keys: kmsSvc,
+		Quotas: cfg.Quotas,
+		Store:  st, Engine: engine, IDs: gen, Logger: log, Images: imsSvc, Keys: kmsSvc,
 	})
 	if err != nil {
 		return nil, err
@@ -371,7 +374,8 @@ func buildServices(
 	}
 
 	ecsSvc, err := ecs.New(ecs.Deps{
-		Store: st, Engine: engine, IDs: gen, Logger: log, SeedDir: cfg.SeedDir,
+		Quotas: cfg.Quotas,
+		Store:  st, Engine: engine, IDs: gen, Logger: log, SeedDir: cfg.SeedDir,
 		Network: vpcSvc, EIPs: eipSvc, Images: imsSvc, Volumes: evsSvc, Keys: kmsSvc,
 		Quota: ecs.Quota{Servers: cfg.ECSMaxServers, VCPUs: cfg.ECSMaxVCPUs},
 	})
@@ -388,7 +392,7 @@ func buildServices(
 	// VPC shows the NICs of ECS servers as ports.
 	vpcSvc.SetPorts(ecsSvc)
 
-	natSvc, err := nat.New(nat.Deps{Store: st, Engine: engine, IDs: gen, Logger: log, VPC: vpcSvc, EIPs: eipSvc})
+	natSvc, err := nat.New(nat.Deps{Quotas: cfg.Quotas, Store: st, Engine: engine, IDs: gen, Logger: log, VPC: vpcSvc, EIPs: eipSvc})
 	if err != nil {
 		return nil, err
 	}
@@ -397,18 +401,19 @@ func buildServices(
 	}
 	vpcSvc.Extend(natSvc.VPCExtension())
 
-	elbSvc, err := elb.New(elb.Deps{Store: st, IDs: gen, Logger: log, Vault: vlt, VPC: vpcSvc, EIPs: eipSvc, Servers: ecsSvc})
+	elbSvc, err := elb.New(elb.Deps{Quotas: cfg.Quotas, Store: st, IDs: gen, Logger: log, Vault: vlt, VPC: vpcSvc, EIPs: eipSvc, Servers: ecsSvc})
 	if err != nil {
 		return nil, err
 	}
 
-	obsSvc, err := obs.New(obs.Deps{Store: st, IDs: gen, Logger: log, DataDir: objectDir, Keys: kmsSvc})
+	obsSvc, err := obs.New(obs.Deps{Quotas: cfg.Quotas, Store: st, IDs: gen, Logger: log, DataDir: objectDir, Keys: kmsSvc})
 	if err != nil {
 		return nil, err
 	}
 
 	rdsSvc, err := rds.New(rds.Deps{
-		Store: st, Engine: engine, IDs: gen, Logger: log, Network: vpcSvc, Keys: kmsSvc, MaxInstances: cfg.RDSMaxInstances,
+		Quotas: cfg.Quotas,
+		Store:  st, Engine: engine, IDs: gen, Logger: log, Network: vpcSvc, Keys: kmsSvc, MaxInstances: cfg.RDSMaxInstances,
 	})
 	if err != nil {
 		return nil, err
@@ -417,7 +422,8 @@ func buildServices(
 		return nil, err
 	}
 	iamSvc, err := iam.New(iam.Deps{
-		IDs: gen, Vault: vlt,
+		Quotas: cfg.Quotas,
+		IDs:    gen, Vault: vlt,
 		Store: st, Logger: log, Directory: directory, DefaultRegion: cfg.Region, DefaultProjectID: projectID,
 	})
 	if err != nil {

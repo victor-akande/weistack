@@ -15,6 +15,7 @@ import (
 
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
@@ -64,6 +65,8 @@ type Tenant struct {
 
 // Deps are the dependencies of the service.
 type Deps struct {
+	// Quotas are the per-project limits (internal/core/quota).
+	Quotas quota.Limits
 	Store  store.Store
 	Engine *lifecycle.Engine
 	IDs    *ids.Generator

@@ -24,6 +24,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/httpx"
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/pagination"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/reqctx"
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/core/vault"
@@ -90,6 +91,8 @@ type Servers interface {
 
 // Deps are the dependencies of the ELB service (§4.1).
 type Deps struct {
+	// Quotas are the per-project limits (internal/core/quota).
+	Quotas  quota.Limits
 	Store   store.Store
 	IDs     *ids.Generator
 	Logger  *slog.Logger

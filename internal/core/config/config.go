@@ -20,6 +20,7 @@ import (
 
 	"github.com/victor-akande/weistack/internal/core/hostpattern"
 	"github.com/victor-akande/weistack/internal/core/identity"
+	"github.com/victor-akande/weistack/internal/core/quota"
 )
 
 // EnvPrefix is prepended to every environment variable WeiStack reads.
@@ -84,6 +85,9 @@ type Config struct {
 	// ProxyPassthrough says who may tunnel through WeiStack to other
 	// hosts: loopback (clients on this machine), all, or none.
 	ProxyPassthrough string
+	// Quotas are the per-project limits of the services: Huawei's
+	// defaults, the four quota flags, then -quotas.
+	Quotas quota.Limits
 	// AllowedHosts are host patterns, besides localhost, IP addresses and
 	// ProxyDomains, that a loopback-bound WeiStack answers. Other Host
 	// headers are refused, which stops DNS rebinding.
@@ -132,6 +136,7 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 		servicePorts string
 		proxyDomains string
 		proxyBypass  string
+		quotas       string
 		allowedHosts string
 	)
 
@@ -148,6 +153,8 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 	fs.IntVar(&cfg.ECSMaxVCPUs, "ecs-max-vcpus", env.int("ECS_MAX_VCPUS", DefaultECSMaxVCPUs), "per-project quota of ECS vCPUs")
 	fs.IntVar(&cfg.EIPMaxPerProject, "eip-max-per-project", env.int("EIP_MAX_PER_PROJECT", DefaultEIPMaxPerProject), "per-project quota of elastic IPs")
 	fs.IntVar(&cfg.RDSMaxInstances, "rds-max-instances", env.int("RDS_MAX_INSTANCES", DefaultRDSMaxInstances), "per-project quota of RDS instances")
+	fs.StringVar(&quotas, "quotas", env.str("QUOTAS", ""),
+		"per-project limits as key=value,... (-1 is unlimited), for example vpc.vpc=500,elb.loadbalancer=-1; see docs/quotas.md")
 	fs.DurationVar(&cfg.LifecycleDelay, "lifecycle-delay", env.duration("LIFECYCLE_DELAY", DefaultLifecycleDelay), "duration of asynchronous state transitions (0 is instant)")
 	fs.StringVar(&logLevel, "log-level", env.str("LOG_LEVEL", "info"), "log level: debug, info, warn or error")
 	fs.StringVar(&cfg.LogFormat, "log-format", env.str("LOG_FORMAT", DefaultLogFormat), "log format: json, text, or auto for text at a terminal")
@@ -185,6 +192,9 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 	cfg.Services = splitList(services)
 	cfg.ProxyDomains = splitList(proxyDomains)
 	cfg.ProxyBypass = splitList(proxyBypass)
+	if cfg.Quotas, err = loadQuotas(cfg, quotas); err != nil {
+		return Config{}, err
+	}
 	cfg.AllowedHosts = splitList(allowedHosts)
 	if cfg.ServicePorts, err = parseServicePorts(servicePorts); err != nil {
 		return Config{}, err
@@ -283,6 +293,35 @@ func (c Config) Validate() error {
 		errs = append(errs, fmt.Errorf("shutdown timeout %s must be positive", c.ShutdownTimeout))
 	}
 	return errors.Join(errs...)
+}
+
+// quotaFlags are the quotas that have flags of their own.
+var quotaFlags = map[quota.Key]string{
+	quota.ECSInstances: "-ecs-max-servers",
+	quota.ECSCores:     "-ecs-max-vcpus",
+	quota.VPCPublicIP:  "-eip-max-per-project",
+	quota.RDSInstance:  "-rds-max-instances",
+}
+
+// loadQuotas starts from Huawei's defaults, applies the quota flags, then
+// -quotas. Flags out of range are left to Validate.
+func loadQuotas(c Config, spec string) (quota.Limits, error) {
+	var l quota.Limits
+	for k, v := range map[quota.Key]int{
+		quota.ECSInstances: c.ECSMaxServers,
+		quota.ECSCores:     c.ECSMaxVCPUs,
+		quota.VPCPublicIP:  c.EIPMaxPerProject,
+		quota.RDSInstance:  c.RDSMaxInstances,
+	} {
+		if def, _, _ := quota.Default(k); v >= 1 && v != def {
+			l = l.With(k, v)
+		}
+	}
+	l, err := quota.Parse(l, spec, quotaFlags)
+	if err != nil {
+		return quota.Limits{}, fmt.Errorf("-quotas: %w", err)
+	}
+	return l, nil
 }
 
 // Loopback reports whether Host binds only the loopback interface, so
