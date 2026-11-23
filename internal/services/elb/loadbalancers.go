@@ -9,6 +9,7 @@ import (
 
 	"github.com/victor-akande/weistack/internal/core/apierr"
 	"github.com/victor-akande/weistack/internal/core/pagination"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/core/zones"
 	"github.com/victor-akande/weistack/internal/services/eip"
@@ -416,6 +417,14 @@ func (s *Service) createLoadBalancer(ctx context.Context, t Tenant, in createLoa
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	existingLBs, err := s.loadBalancers(t).List(ctx, nil)
+	if err != nil {
+		return loadBalancer{}, err
+	}
+	if !s.quotas.Allows(quota.ELBLoadBalancer, len(existingLBs), 1) {
+		return loadBalancer{}, errLoadBalancerQuotaExceeded()
+	}
 
 	vpcID := in.VPCID
 	if vpcID != "" {

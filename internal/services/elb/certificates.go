@@ -16,6 +16,7 @@ import (
 
 	"github.com/victor-akande/weistack/internal/core/apierr"
 	"github.com/victor-akande/weistack/internal/core/pagination"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
@@ -391,6 +392,13 @@ func (s *Service) certCreate(ctx context.Context, t Tenant, in certCreateInput) 
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	existingCerts, err := s.certificates(t).List(ctx, nil)
+	if err != nil {
+		return certificate{}, err
+	}
+	if !s.quotas.Allows(quota.ELBCertificate, len(existingCerts), 1) {
+		return certificate{}, errCertificateQuotaExceeded()
+	}
 	if err := s.certificates(t).Create(ctx, rec.ID, rec); err != nil {
 		return certificate{}, err
 	}

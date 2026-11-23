@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/victor-akande/weistack/internal/core/pagination"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
@@ -515,6 +516,23 @@ func (s *Service) l7CreatePolicy(ctx context.Context, t Tenant, in l7CreatePolic
 	}
 	if !isL7ListenerProtocol(lsn.Protocol) {
 		return l7PolicyDetail{}, errInvalidInput("listener_id")
+	}
+
+	allPolicies, err := s.l7Policies(t).List(ctx, nil)
+	if err != nil {
+		return l7PolicyDetail{}, err
+	}
+	if !s.quotas.Allows(quota.ELBL7Policy, len(allPolicies), 1) {
+		return l7PolicyDetail{}, errResourceQuotaExceeded("l7policy")
+	}
+	onListener := 0
+	for _, pol := range allPolicies {
+		if pol.ListenerID == lsn.ID {
+			onListener++
+		}
+	}
+	if !s.quotas.Allows(quota.ELBL7PoliciesPerListener, onListener, 1) {
+		return l7PolicyDetail{}, errResourceQuotaExceeded("l7policies_per_listener")
 	}
 
 	var priority *int
