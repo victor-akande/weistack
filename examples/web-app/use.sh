@@ -33,5 +33,11 @@ export no_proxy="$NO_PROXY"
 # Python and the AWS CLI bring their own CA list; point them at the system's.
 export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt AWS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 
+# `direct terraform init`, `direct go build`: downloads from the internet
+# (providers, modules) skip WeiStack, which answers only Huawei Cloud's
+# hosts over -lan. Both spellings of the proxy variable must go: tools
+# fall back from one to the other.
+direct() { env -u HTTPS_PROXY -u https_proxy "$@"; }
+
 echo "acting as web-app-$role ($ak) through $WEISTACK"
 unset ak sk role host

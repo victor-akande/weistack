@@ -227,7 +227,8 @@ unset HW_ACCESS_KEY HW_SECRET_KEY HTTPS_PROXY
 ```
 
 `terraform init` runs without the proxy: it downloads the provider from
-the public registry.
+the public registry. After `. ./use.sh`, `direct` does the same:
+`direct terraform init`, `direct go build`.
 
 What it creates:
 
@@ -252,7 +253,7 @@ administrator runs this step from their own machine.
 export TF_VAR_project_id="$(terraform -chdir=iam output -raw project_id)"
 export TF_VAR_db_password="$(cat secrets/db-password)"
 
-HTTPS_PROXY= terraform -chdir=infra init
+direct terraform -chdir=infra init
 terraform -chdir=infra apply
 ```
 
@@ -393,7 +394,7 @@ checks the stack with read-only keys and exits non-zero when something is
 wrong. Run it after every change, or from monitoring:
 
 ```bash
-(cd smoke && HTTPS_PROXY= go build -o ../bin/smoke .)
+(cd smoke && direct go build -o ../bin/smoke .)
 . ./use.sh operator
 out() { terraform -chdir=infra output -raw "$1"; }
 ./bin/smoke -project "$P" -pool "$(out pool_id)" -nat "$(out nat_gateway_id)" -db "$(out db_id)" -servers "$(out web_server_count)"

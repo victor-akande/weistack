@@ -34,7 +34,7 @@ step "4. The deployer applies the stack"
 . ./use.sh deployer
 [ -s secrets/db-password ] || (umask 077; echo "Db-1$(openssl rand -hex 8)" >secrets/db-password)
 export TF_VAR_project_id="$PROJECT" TF_VAR_db_password="$(cat secrets/db-password)"
-HTTPS_PROXY= terraform -chdir=infra init >/dev/null
+direct terraform -chdir=infra init >/dev/null
 terraform -chdir=infra apply -auto-approve >/dev/null
 terraform -chdir=infra plan -detailed-exitcode >/dev/null || fail "a second plan found changes"
 echo "applied; a second plan finds no changes"
