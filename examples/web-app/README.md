@@ -257,7 +257,7 @@ direct terraform -chdir=infra init
 terraform -chdir=infra apply
 ```
 
-[`infra/`](infra/) creates 27 resources in about a minute. Terraform waits
+[`infra/`](infra/) creates 28 resources in about a minute. Terraform waits
 for each to become ready, as against Huawei Cloud: the servers `ACTIVE`,
 the database `ACTIVE`, the volumes attached. Then:
 

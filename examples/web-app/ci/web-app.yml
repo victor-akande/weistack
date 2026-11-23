@@ -7,6 +7,9 @@
 # applies the stack (infra/) and releases the site, the operator runs the
 # smoke check, and everything is destroyed. A typo, a missing permission
 # or a resource that never becomes healthy fails the pull request.
+#
+# The actions are named by tag for readability; pin each to a commit SHA
+# in your own repository.
 name: web-app
 
 on:
