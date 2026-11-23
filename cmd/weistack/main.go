@@ -8,6 +8,9 @@
 //	weistack credentials [flags]  print the administrator's keys as shell exports
 //	weistack admin METHOD PATH [BODY] [flags]
 //	                              call the admin API, signed as the administrator
+//	weistack backup [FILE] [flags]
+//	                              archive the data directory, running or not
+//	weistack restore FILE [flags] unpack an archive into an empty data directory
 //	weistack -h                   list flags
 package main
 

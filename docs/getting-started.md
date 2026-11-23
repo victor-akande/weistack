@@ -148,12 +148,32 @@ State, object data and the project ID now live in
 Work that was in progress when WeiStack stopped, such as a server still
 being created, finishes after the next start.
 
+Data kept by one release opens in every later one, which upgrades it on
+start. To keep a copy, or move the data to another machine:
+
+```bash
+./bin/weistack backup weistack.tar.gz             # while WeiStack runs, or after it stops
+./bin/weistack restore weistack.tar.gz -data-dir ~/weistack-restored
+./bin/weistack -persist -data-dir ~/weistack-restored
+```
+
+A backup holds the database as of one moment, object data, the project
+ID, the account and, unless `-vault-key-file` keeps it elsewhere, the key
+that seals stored secrets: keep it as private as the data directory.
+`restore` writes only into a missing or empty directory, and refuses a
+backup made by a newer release. With `-persist`, `/_weistack/reset` first
+keeps a backup in `backups/` in the data directory (the newest three are
+kept), so a reset can be undone with `restore`.
+
+WeiStack refuses to start on a data directory other users can write to
+(`chmod go-w` it); in a container it only warns.
+
 ## Tips
 
 - **Faster iteration:** resources take 2 seconds to become ready, as in the
   cloud. `-lifecycle-delay 0` makes every transition instant.
 - **Start over:** `curl -X POST http://localhost:8780/_weistack/reset` wipes
-  everything.
+  everything; with `-persist` it keeps a backup first.
 - **See everything:** `curl http://localhost:8780/_weistack/state` dumps every
   stored resource.
 - **Docker:** `docker compose up --build` runs the image with `/data` as a

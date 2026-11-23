@@ -257,7 +257,8 @@ defaults. Run `weistack -h` for the full list.
 | `GET /_weistack/health` | Liveness and version |
 | `GET /_weistack/services` | Enabled services, default region, project ID and account |
 | `GET /_weistack/state` | Dump of every stored resource as JSON |
-| `POST /_weistack/reset` | Wipe all state, pending transitions and injected faults |
+| `POST /_weistack/reset` | Wipe all state, pending transitions and injected faults; with `-persist`, after keeping a backup in `backups/` in the data directory |
+| `GET /_weistack/backup` | A backup of the persisted data, as `.tar.gz` (only with `-persist`; `weistack backup` fetches it, and `weistack restore` restores it) |
 | `GET /_weistack/ca` | The proxy's CA certificate, as PEM |
 | `GET /_weistack/accounts` | Every account: the primary one and those added |
 | `POST /_weistack/accounts` | Add an account, `{"name": "partner"}`; returns its root user's keys |

@@ -17,7 +17,11 @@ type blobStore struct {
 	dir string
 }
 
-const blobTempDir = "tmp"
+const blobTempDir = TempDir
+
+// TempDir holds uploads in progress, under the object data directory.
+// Backups leave it out.
+const TempDir = "tmp"
 
 func newBlobStore(dir string) (*blobStore, error) {
 	if err := os.MkdirAll(filepath.Join(dir, blobTempDir), 0o750); err != nil {
