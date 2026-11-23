@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -91,8 +92,20 @@ type Options struct {
 	// Faults are the failures injected through /_weistack/faults; the
 	// lifecycle engine should share them. Nil leaves the API out.
 	Faults *faults.Registry
+	// Backups archive the persisted data (-persist): for
+	// /_weistack/backup, and before every reset. Nil leaves both out.
+	Backups Backups
 	// Now defaults to time.Now; enforcement checks signing times with it.
 	Now func() time.Time
+}
+
+// Backups archive the persisted data.
+type Backups interface {
+	// Write writes an archive of the data as it is now.
+	Write(ctx context.Context, w io.Writer) error
+	// BeforeReset keeps an archive of the data that a reset is about to
+	// wipe, and returns where.
+	BeforeReset(ctx context.Context) (string, error)
 }
 
 // Server routes requests to services and serves the admin API.
@@ -119,6 +132,7 @@ type Server struct {
 	accounts  Accounts
 	temporary auth.TemporaryResolver
 	faults    *faults.Registry
+	backups   Backups
 	now       func() time.Time
 	hosts     *hostGuard // nil: any Host name
 }
@@ -180,6 +194,7 @@ func New(opts Options) (*Server, error) {
 	s.perms, s.sealer = opts.Permissions, opts.Sealer
 	s.accounts = opts.Accounts
 	s.temporary = opts.Temporary
+	s.backups = opts.Backups
 	s.faults = opts.Faults
 	s.now = opts.Now
 	if s.now == nil {

@@ -84,6 +84,10 @@ func Run(ctx context.Context, env Env) error {
 			return printCredentials(env)
 		case "admin":
 			return adminCommand(ctx, env)
+		case "backup":
+			return backupCommand(ctx, env)
+		case "restore":
+			return restoreCommand(env)
 		}
 	}
 
@@ -100,6 +104,11 @@ func Run(ctx context.Context, env Env) error {
 func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 	log := newLogger(cfg, env.Stdout)
 
+	if cfg.Persist {
+		if err := checkDataDir(cfg, log); err != nil {
+			return err
+		}
+	}
 	st, err := openStore(cfg)
 	if err != nil {
 		return err
@@ -172,6 +181,10 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		bypass = append(bypass, compiled)
 	}
 
+	var backups server.Backups
+	if db, ok := st.(*store.Bolt); ok {
+		backups = &dataBackups{cfg: cfg, db: db, log: log, now: time.Now}
+	}
 	srv, err := server.New(server.Options{
 		Config:      cfg,
 		ProjectID:   projectID,
@@ -186,6 +199,7 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		Accounts:    accounts(services),
 		Temporary:   temporary(services),
 		Faults:      injected,
+		Backups:     backups,
 		Sealer:      vlt,
 		Proxy: server.ProxyOptions{
 			CA: ca, Domains: cfg.ProxyDomains, Bypass: bypass, Passthrough: cfg.ProxyPassthrough,
