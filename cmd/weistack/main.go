@@ -5,6 +5,9 @@
 //	weistack [flags]              run the emulator
 //	weistack version              print the version
 //	weistack healthcheck [flags]  exit 0 if a running emulator is healthy
+//	weistack credentials [flags]  print the administrator's keys as shell exports
+//	weistack admin METHOD PATH [BODY] [flags]
+//	                              call the admin API, signed as the administrator
 //	weistack -h                   list flags
 package main
 

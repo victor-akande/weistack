@@ -25,26 +25,30 @@ func (s *Server) newAdmin() http.Handler {
 			"WeiStack.0405", "method %s is not allowed on %s", req.Method, req.URL.Path))
 	})
 	r.Route(adminPrefix, func(r chi.Router) {
+		// Open to every client, as they need these before credentials.
 		r.Get("/health", s.adminOp("Health", s.handleHealth))
-		r.Get("/services", s.adminOp("ListServices", s.handleServices))
-		r.Get("/state", s.adminOp("DumpState", s.handleState))
-		r.Post("/reset", s.adminOp("Reset", s.handleReset))
 		if s.ca != nil {
 			r.Get("/ca", s.adminOp("GetCACertificate", s.handleCA))
 		}
-		if s.accounts != nil {
-			r.Get("/accounts", s.adminOp("ListAccounts", s.handleListAccounts))
-			r.Post("/accounts", s.adminOp("NewAccount", s.handleNewAccount))
-		}
-		if s.faults != nil {
-			r.Get("/faults", s.adminOp("ListFaults", s.handleListFaults))
-			r.Post("/faults", s.adminOp("AddFault", s.handleAddFault))
-			r.Delete("/faults", s.adminOp("ClearFaults", s.handleClearFaults))
-			r.Delete("/faults/{id}", s.adminOp("RemoveFault", s.handleRemoveFault))
-		}
-		if s.cfg.Metrics {
-			r.Get("/metrics", s.adminOp("Metrics", s.handleMetrics))
-		}
+		r.Group(func(r chi.Router) {
+			r.Use(s.adminAuth)
+			r.Get("/services", s.adminOp("ListServices", s.handleServices))
+			r.Get("/state", s.adminOp("DumpState", s.handleState))
+			r.Post("/reset", s.adminOp("Reset", s.handleReset))
+			if s.accounts != nil {
+				r.Get("/accounts", s.adminOp("ListAccounts", s.handleListAccounts))
+				r.Post("/accounts", s.adminOp("NewAccount", s.handleNewAccount))
+			}
+			if s.faults != nil {
+				r.Get("/faults", s.adminOp("ListFaults", s.handleListFaults))
+				r.Post("/faults", s.adminOp("AddFault", s.handleAddFault))
+				r.Delete("/faults", s.adminOp("ClearFaults", s.handleClearFaults))
+				r.Delete("/faults/{id}", s.adminOp("RemoveFault", s.handleRemoveFault))
+			}
+			if s.cfg.Metrics {
+				r.Get("/metrics", s.adminOp("Metrics", s.handleMetrics))
+			}
+		})
 	})
 	return r
 }

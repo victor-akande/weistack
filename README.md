@@ -242,6 +242,7 @@ defaults. Run `weistack -h` for the full list.
 | `-iam` | `WEISTACK_IAM` | `accept` | `accept` takes any credentials; `enforce` requires a valid signature or IAM token, and permissions (see [Checking credentials](docs/enforce.md)) |
 | `-admin-access-key`, `-admin-secret-key` | `WEISTACK_ADMIN_ACCESS_KEY`, `WEISTACK_ADMIN_SECRET_KEY` | generated | Fix the administrator's keys, for example in CI. Prefer the environment variables for the secret: flags show in process lists |
 | `-tls-dir` | `WEISTACK_TLS_DIR` | see above | Where the local CA is kept |
+| `-vault-key-file` | `WEISTACK_VAULT_KEY_FILE` | `vault-key.json` in `-data-dir` | With `-persist`, the key that seals stored secret keys and KMS key material, kept apart from the data. Move the existing file there; WeiStack refuses to start while a key is also left in the data directory |
 | `-metrics` | `WEISTACK_METRICS` | off | Serve Prometheus metrics |
 | `-max-body-bytes` | `WEISTACK_MAX_BODY_BYTES` | `10485760` | Body limit for JSON APIs |
 | `-shutdown-timeout` | `WEISTACK_SHUTDOWN_TIMEOUT` | `10s` | Drain time on SIGTERM |
@@ -259,6 +260,11 @@ defaults. Run `weistack -h` for the full list.
 | `POST /_weistack/accounts` | Add an account, `{"name": "partner"}`; returns its root user's keys |
 | `GET /_weistack/metrics` | Prometheus metrics (only with `-metrics`) |
 | `GET`, `POST`, `DELETE /_weistack/faults` | List, add and clear injected faults; `DELETE /_weistack/faults/{id}` removes one (see [Injecting faults](docs/faults.md)) |
+
+Under `-iam=enforce` every endpoint but `health` and `ca` needs the
+administrator's credentials. `weistack admin` calls one signed with them,
+for example `weistack admin POST reset` or `weistack admin GET services`
+(see [Checking credentials](docs/enforce.md)).
 
 ## Authentication
 

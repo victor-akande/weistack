@@ -72,10 +72,13 @@ mkdir "$work/restricted"
 cp "$here"/restricted/*.tf "$here/.terraform.lock.hcl" "$work/restricted/"
 cd "$work"
 export TF_IN_AUTOMATION=1 TF_INPUT=0 TF_VAR_project_id="$project"
-TF_VAR_account_id="$(curl -fsS "$admin/services" | python3 -c 'import json, sys; print(json.load(sys.stdin)["account_id"])')"
+# The admin API is called with `weistack admin`, which signs as the
+# administrator, as -iam=enforce requires.
+admin_api() { "$bin" admin "$@" -port "$port" -tls-dir "$work/tls"; }
+TF_VAR_account_id="$(admin_api GET services | python3 -c 'import json, sys; print(json.load(sys.stdin)["account_id"])')"
 export TF_VAR_account_id
 # A second account, which the scenario's agencies delegate to.
-partner="$(curl -fsS -X POST -H 'Content-Type: application/json' -d '{"name":"tf-partner"}' "$admin/accounts")"
+partner="$(admin_api POST accounts '{"name":"tf-partner"}')"
 partner_field() { python3 -c 'import json, sys; d = json.load(sys.stdin); print(d[sys.argv[1]][sys.argv[2]])' "$1" "$2" <<<"$partner"; }
 TF_VAR_partner_id="$(partner_field account id)" TF_VAR_partner_name="$(partner_field account name)"
 export TF_VAR_partner_id TF_VAR_partner_name
@@ -237,7 +240,7 @@ terraform destroy -auto-approve -no-color -var evs_size=30
 
 step "Checking that nothing is left"
 unset HTTPS_PROXY HTTP_PROXY
-curl -fsS "$admin/state" | python3 -c '
+admin_api GET state | python3 -c '
 import json, sys
 state = json.load(sys.stdin)["resources"]
 def records(kind):

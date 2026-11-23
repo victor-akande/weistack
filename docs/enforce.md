@@ -211,11 +211,27 @@ denial at the `info` level, with the action, resources, user and reason.
 - **Agency tokens** (`POST /v3/auth/tokens` with `assume_role`) and
   federation (`AssumeAgencyWithSAML`, `AssumeAgencyWithOIDC`) are not
   emulated.
-- **The admin API** (`/_weistack/*`) is not protected by `-iam`: keep the
-  emulator's port to yourself. It refuses requests that a browser sends
-  from a page on another site, and a WeiStack bound to loopback answers
-  only `localhost`, IP addresses, the proxy domains and `-allowed-hosts`,
-  so web pages cannot reach it by DNS rebinding.
+- **The admin API** (`/_weistack/*`) answers only the administrator
+  under `-iam=enforce`: a request signed with the administrator's keys,
+  or temporary credentials of theirs without session policies. Others
+  get `APIGW.0305` without credentials, `APIGW.0301` with a bad
+  signature, and 403 `WeiStack.0403` for any other caller, IAM users and
+  other accounts' root users included. `/_weistack/health` and
+  `/_weistack/ca` stay open, since clients need them first. From a
+  script, `weistack admin` signs the request for you, with the flags the
+  server was started with:
+
+  ```bash
+  weistack admin GET services
+  weistack admin POST faults '{"type": "request", "service": "vpc", "status": 429}'
+  weistack admin POST reset
+  ```
+
+  In accept mode the admin API needs no credentials, as before. In both
+  modes it refuses requests that a browser sends from a page on another
+  site, and a WeiStack bound to loopback answers only `localhost`, IP
+  addresses, the proxy domains and `-allowed-hosts`, so web pages cannot
+  reach it by DNS rebinding.
 - **Other algorithms.** The SDKs' opt-in algorithms (`V11-HMAC-SHA256`,
   `SDK-HMAC-SM3`, ECDSA and SM2) are refused as signatures that do not
   match. In uploads signed with trailing headers

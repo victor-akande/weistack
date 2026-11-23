@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -39,14 +40,18 @@ func (k vaultKey) valid() bool { return len(k.Key) == vault.KeyLen }
 
 // loadVault returns the vault that seals secrets in the store. Its key is
 // kept with the data under -persist, since the data cannot be read
-// without it, and is new on every start without it.
+// without it, or in -vault-key-file, and is new on every start without
+// -persist.
 func loadVault(cfg config.Config) (*vault.Vault, error) {
 	key, err := newVaultKey()
 	if err != nil {
 		return nil, err
 	}
 	if cfg.Persist {
-		path := filepath.Join(cfg.DataDir, vaultKeyFile)
+		path, err := vaultKeyPath(cfg)
+		if err != nil {
+			return nil, err
+		}
 		key, err = loadOrCreate(path, newVaultKey, vaultKey.valid)
 		switch {
 		case errors.Is(err, errInvalid):
@@ -56,6 +61,50 @@ func loadVault(cfg config.Config) (*vault.Vault, error) {
 		}
 	}
 	return vault.New(key.Key)
+}
+
+// vaultKeyPath is where the vault key is kept. A -vault-key-file must
+// not leave behind or contradict a key already in the data directory:
+// the data was sealed with that one, and a new key could not open it.
+func vaultKeyPath(cfg config.Config) (string, error) {
+	inData := filepath.Join(cfg.DataDir, vaultKeyFile)
+	if cfg.VaultKeyFile == "" {
+		return inData, nil
+	}
+	file := cfg.VaultKeyFile
+	if same, err := samePath(file, inData); err != nil || same {
+		return file, err
+	}
+	old, err := readJSON[vaultKey](inData)
+	if errors.Is(err, fs.ErrNotExist) {
+		return file, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("reading %s: %w", inData, err)
+	}
+	cur, err := readJSON[vaultKey](file)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return "", fmt.Errorf("the data in %s is sealed with %s; move that file to %s (-vault-key-file), or unset -vault-key-file", cfg.DataDir, inData, file)
+	case err != nil:
+		return "", fmt.Errorf("reading %s: %w", file, err)
+	case !bytes.Equal(cur.Key, old.Key):
+		return "", fmt.Errorf("%s and %s hold different vault keys; keep the one the data was sealed with and delete the other", file, inData)
+	}
+	return "", fmt.Errorf("%s is also in %s; delete it from there, now that -vault-key-file keeps it", vaultKeyFile, cfg.DataDir)
+}
+
+// samePath reports whether a and b name the same file, or would.
+func samePath(a, b string) (bool, error) {
+	absA, err := filepath.Abs(a)
+	if err != nil {
+		return false, err
+	}
+	absB, err := filepath.Abs(b)
+	if err != nil {
+		return false, err
+	}
+	return absA == absB, nil
 }
 
 // loadAccount returns the emulator's account: kept in the data directory

@@ -7,7 +7,10 @@ failures, so you can test how your code, retry logic or Terraform runs
 handle them.
 
 Faults are managed through the admin API at `/_weistack/faults`, and are
-not stored: a restart or `POST /_weistack/reset` removes them.
+not stored: a restart or `POST /_weistack/reset` removes them. Under
+`-iam=enforce` the admin API needs the administrator's credentials: use
+`weistack admin POST faults '{...}'` instead of `curl`, which signs the
+request (see [Checking credentials](enforce.md)).
 
 ## Two kinds of fault
 

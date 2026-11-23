@@ -1,7 +1,6 @@
 package sdk
 
 import (
-	"bytes"
 	"crypto/rand"
 	"net/http"
 	"strings"
@@ -13,10 +12,7 @@ import (
 // addFault adds a fault through the emulator's admin API.
 func addFault(t *testing.T, rule string) {
 	t.Helper()
-	res, err := http.Post("http://"+emulatorAddr+"/_weistack/faults", "application/json", bytes.NewReader([]byte(rule)))
-	if err != nil {
-		t.Fatal(err)
-	}
+	res := adminDo(t, http.MethodPost, "/_weistack/faults", rule)
 	_ = res.Body.Close()
 	if res.StatusCode != http.StatusCreated {
 		t.Fatalf("POST /_weistack/faults %s = %d", rule, res.StatusCode)
