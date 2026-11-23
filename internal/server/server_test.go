@@ -137,6 +137,7 @@ func newHarness(t *testing.T, mutate func(*config.Config), services ...Service) 
 func (h *harness) do(t *testing.T, method, target string, body io.Reader, mutate func(*http.Request)) *http.Response {
 	t.Helper()
 	r := httptest.NewRequest(method, target, body)
+	r.Host = "localhost" // httptest's example.com is a name the host guard refuses
 	if mutate != nil {
 		mutate(r)
 	}

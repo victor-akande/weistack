@@ -212,7 +212,10 @@ denial at the `info` level, with the action, resources, user and reason.
   federation (`AssumeAgencyWithSAML`, `AssumeAgencyWithOIDC`) are not
   emulated.
 - **The admin API** (`/_weistack/*`) is not protected by `-iam`: keep the
-  emulator's port to yourself.
+  emulator's port to yourself. It refuses requests that a browser sends
+  from a page on another site, and a WeiStack bound to loopback answers
+  only `localhost`, IP addresses, the proxy domains and `-allowed-hosts`,
+  so web pages cannot reach it by DNS rebinding.
 - **Other algorithms.** The SDKs' opt-in algorithms (`V11-HMAC-SHA256`,
   `SDK-HMAC-SM3`, ECDSA and SM2) are refused as signatures that do not
   match. In uploads signed with trailing headers

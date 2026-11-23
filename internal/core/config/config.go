@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -83,6 +84,10 @@ type Config struct {
 	// ProxyPassthrough says who may tunnel through WeiStack to other
 	// hosts: loopback (clients on this machine), all, or none.
 	ProxyPassthrough string
+	// AllowedHosts are host patterns, besides localhost, IP addresses and
+	// ProxyDomains, that a loopback-bound WeiStack answers. Other Host
+	// headers are refused, which stops DNS rebinding.
+	AllowedHosts []string
 	// TLSDir holds the local CA, and the bootstrap administrator's
 	// credentials beside it. Empty means the default location.
 	TLSDir string
@@ -127,6 +132,7 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 		servicePorts string
 		proxyDomains string
 		proxyBypass  string
+		allowedHosts string
 	)
 
 	fs := flag.NewFlagSet("weistack", flag.ContinueOnError)
@@ -149,6 +155,8 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 	fs.StringVar(&proxyBypass, "proxy-bypass", env.str("PROXY_BYPASS", strings.Join(DefaultProxyBypass, ",")),
 		"hosts inside the proxy domains that are passed on, not answered: * is one label, {region} the same label everywhere")
 	fs.StringVar(&cfg.ProxyPassthrough, "proxy-passthrough", env.str("PROXY_PASSTHROUGH", "loopback"), "who may tunnel to other hosts through the proxy: loopback, all or none")
+	fs.StringVar(&allowedHosts, "allowed-hosts", env.str("ALLOWED_HOSTS", ""),
+		"extra host names a loopback-bound WeiStack answers (localhost, IP addresses and the proxy domains always work): * is one label")
 	fs.StringVar(&cfg.AdminAccessKey, "admin-access-key", env.str("ADMIN_ACCESS_KEY", ""), "the administrator's access key, instead of the generated one")
 	fs.StringVar(&cfg.AdminSecretKey, "admin-secret-key", env.str("ADMIN_SECRET_KEY", ""), "the administrator's secret key (prefer WEISTACK_ADMIN_SECRET_KEY: flags show in process lists)")
 	fs.StringVar(&cfg.IAM, "iam", env.str("IAM", IAMAccept), "credentials: accept (any, as before) or enforce (a valid signature or IAM token on every request)")
@@ -177,6 +185,7 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 	cfg.Services = splitList(services)
 	cfg.ProxyDomains = splitList(proxyDomains)
 	cfg.ProxyBypass = splitList(proxyBypass)
+	cfg.AllowedHosts = splitList(allowedHosts)
 	if cfg.ServicePorts, err = parseServicePorts(servicePorts); err != nil {
 		return Config{}, err
 	}
@@ -220,6 +229,11 @@ func (c Config) Validate() error {
 	for _, p := range c.ProxyBypass {
 		if _, err := hostpattern.Compile(p); err != nil {
 			errs = append(errs, fmt.Errorf("proxy bypass: %w", err))
+		}
+	}
+	for _, p := range c.AllowedHosts {
+		if _, err := hostpattern.Compile(p); err != nil {
+			errs = append(errs, fmt.Errorf("allowed hosts: %w", err))
 		}
 	}
 	if c.RDSMaxInstances < 1 {
@@ -269,6 +283,16 @@ func (c Config) Validate() error {
 		errs = append(errs, fmt.Errorf("shutdown timeout %s must be positive", c.ShutdownTimeout))
 	}
 	return errors.Join(errs...)
+}
+
+// Loopback reports whether Host binds only the loopback interface, so
+// that only this machine can connect.
+func (c Config) Loopback() bool {
+	if strings.EqualFold(c.Host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(c.Host, "[]"))
+	return ip != nil && ip.IsLoopback()
 }
 
 // ServiceEnabled reports whether the named service should be started.

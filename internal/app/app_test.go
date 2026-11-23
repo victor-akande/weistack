@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -567,5 +568,32 @@ func TestBannerAndLogFormat(t *testing.T) {
 	printBanner(&buf, config.Config{IAM: config.IAMEnforce}, "127.0.0.1:8780", "0123456789abcdef0123456789abcdef", testAccount, testAdmin)
 	if !strings.Contains(buf.String(), "enforced: every request needs a valid signature or IAM token") {
 		t.Errorf("enforce-mode banner:\n%s", buf.String())
+	}
+}
+
+func TestWarnExposure(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		host, iam, passthrough string
+		want                   []string
+	}{
+		{"127.0.0.1", config.IAMAccept, "loopback", nil},
+		{"localhost", config.IAMAccept, "loopback", nil},
+		{"0.0.0.0", config.IAMEnforce, "loopback", nil},
+		{"0.0.0.0", config.IAMAccept, "loopback", []string{"listens beyond this machine"}},
+		{"127.0.0.1", config.IAMAccept, "all", []string{"tunnel to other hosts"}},
+	} {
+		var buf bytes.Buffer
+		log := slog.New(slog.NewTextHandler(&buf, nil))
+		warnExposure(log, config.Config{Host: tc.host, IAM: tc.iam, ProxyPassthrough: tc.passthrough})
+		got := buf.String()
+		if len(tc.want) == 0 && got != "" {
+			t.Errorf("%+v: unexpected warning %q", tc, got)
+		}
+		for _, w := range tc.want {
+			if !strings.Contains(got, w) {
+				t.Errorf("%+v: warning %q lacks %q", tc, got, w)
+			}
+		}
 	}
 }

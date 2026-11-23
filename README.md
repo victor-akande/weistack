@@ -237,6 +237,7 @@ defaults. Run `weistack -h` for the full list.
 | `-proxy-domains` | `WEISTACK_PROXY_DOMAINS` | `myhuaweicloud.com` | Domains the proxy answers for itself |
 | `-proxy-bypass` | `WEISTACK_PROXY_BYPASS` | KooCLI's downloads and API Explorer | Hosts inside the proxy domains that are passed on instead of answered: `*` is one label, `{region}` the same label everywhere. Empty turns it off |
 | `-proxy-passthrough` | `WEISTACK_PROXY_PASSTHROUGH` | `loopback` | Which proxy clients may reach other hosts: `loopback`, `all` or `none` |
+| `-allowed-hosts` | `WEISTACK_ALLOWED_HOSTS` | none | Extra host names a loopback-bound WeiStack answers; `localhost`, IP addresses and the proxy domains always work, others are refused against DNS rebinding. `*` is one label |
 | `-iam` | `WEISTACK_IAM` | `accept` | `accept` takes any credentials; `enforce` requires a valid signature or IAM token, and permissions (see [Checking credentials](docs/enforce.md)) |
 | `-admin-access-key`, `-admin-secret-key` | `WEISTACK_ADMIN_ACCESS_KEY`, `WEISTACK_ADMIN_SECRET_KEY` | generated | Fix the administrator's keys, for example in CI. Prefer the environment variables for the secret: flags show in process lists |
 | `-tls-dir` | `WEISTACK_TLS_DIR` | see above | Where the local CA is kept |
