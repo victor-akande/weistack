@@ -76,7 +76,8 @@ mkdir -p backups && echo "-- web-app database dump" | gzip >"backups/db-$(date -
 aws configure set default.s3.addressing_style path
 aws --endpoint-url "$WEISTACK/obs" s3 sync backups/ "s3://$(out bucket)/backups/" \
 	--sse aws:kms --sse-kms-key-id "$(out kms_key_id)" --only-show-errors
-aws --endpoint-url "$WEISTACK/obs" s3 ls "s3://$(out bucket)/" --recursive | grep -q "backups/db-" || fail "no backup in the bucket"
+listing="$(aws --endpoint-url "$WEISTACK/obs" s3 ls "s3://$(out bucket)/" --recursive)"
+grep -q "backups/db-" <<<"$listing" || fail "no backup in the bucket"
 echo "backups synced"
 
 step "8. The operator runs the smoke check"
