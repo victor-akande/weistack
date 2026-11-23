@@ -231,6 +231,7 @@ func TestQuotaUnlimited(t *testing.T) {
 	if status != http.StatusAccepted {
 		t.Fatalf("resize unlimited: %d %v", status, out)
 	}
+	waitEngine(t, env.engine)
 
 	for _, name := range []string{"s1", "s2", "s3"} {
 		status, out = doJSON(t, env.handler, http.MethodPost, "/v2/{p}/cloudsnapshots", map[string]any{
