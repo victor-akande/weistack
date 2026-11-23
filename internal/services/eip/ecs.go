@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/services/vpc"
 )
@@ -99,7 +100,7 @@ func (s *Service) AttachToServer(ctx context.Context, t vpc.Tenant, portID, serv
 		}
 	}
 
-	if len(existing) >= s.maxPerProject {
+	if !s.quotas.Allows(quota.VPCPublicIP, len(existing), 1) {
 		return "", errPublicIPQuota()
 	}
 

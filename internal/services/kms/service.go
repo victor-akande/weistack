@@ -45,12 +45,13 @@ type Deps struct {
 
 // Service is the KMS emulator.
 type Service struct {
-	store store.Store
-	log   *slog.Logger
-	ids   *ids.Generator
-	vault *vault.Vault
-	dir   *identity.Directory
-	now   func() time.Time
+	quotas quota.Limits
+	store  store.Store
+	log    *slog.Logger
+	ids    *ids.Generator
+	vault  *vault.Vault
+	dir    *identity.Directory
+	now    func() time.Time
 
 	defaultRegion, defaultProject string
 
@@ -67,7 +68,7 @@ func New(d Deps) (*Service, error) {
 		d.Now = time.Now
 	}
 	return &Service{
-		store: d.Store, log: d.Logger, ids: d.IDs, vault: d.Vault, dir: d.Directory, now: d.Now,
+		quotas: d.Quotas, store: d.Store, log: d.Logger, ids: d.IDs, vault: d.Vault, dir: d.Directory, now: d.Now,
 		defaultRegion: d.DefaultRegion, defaultProject: d.DefaultProjectID,
 	}, nil
 }

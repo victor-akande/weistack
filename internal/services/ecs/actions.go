@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
@@ -188,8 +189,8 @@ func (s *Service) ResizeServer(ctx context.Context, t Tenant, id string, opt Res
 	if err != nil {
 		return Job{}, err
 	}
-	if after := usedCPUs - current.VCPUs + target.VCPUs; after > s.quota.VCPUs {
-		return Job{}, errQuota("vCPU", target.VCPUs-current.VCPUs, usedCPUs, s.quota.VCPUs)
+	if target.VCPUs > current.VCPUs && !s.quotas.Allows(quota.ECSCores, usedCPUs, target.VCPUs-current.VCPUs) {
+		return Job{}, errQuota("vCPU", target.VCPUs-current.VCPUs, usedCPUs, s.quotas.Get(quota.ECSCores))
 	}
 
 	job, err := s.newJob(ctx, t, "resizeServer", "resizeSingleServer", []string{id})

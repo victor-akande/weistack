@@ -26,10 +26,6 @@ const (
 	kindGroup = "iam.group"
 )
 
-// maxUsers is classic IAM's default quota of IAM users, the root user not
-// included (productdesc-iam/iam_01_0305).
-const maxUsers = 50
-
 // user is an IAM user. The root user is the account itself; it holds the
 // bootstrap administrator's keys and cannot be renamed, disabled or
 // deleted.

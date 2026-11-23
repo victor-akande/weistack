@@ -101,13 +101,12 @@ func newV3Env(t *testing.T) *v3Env {
 		t.Fatalf("vpc.New: %v", err)
 	}
 	svc, err := New(Deps{
-		Store:         st,
-		Engine:        engine,
-		IDs:           gen,
-		Logger:        log,
-		Ports:         ports,
-		MaxPerProject: DefaultMaxPerProject,
-		Now:           clock.Now,
+		Store:  st,
+		Engine: engine,
+		IDs:    gen,
+		Logger: log,
+		Ports:  ports,
+		Now:    clock.Now,
 	})
 	if err != nil {
 		t.Fatalf("eip.New: %v", err)
@@ -583,13 +582,12 @@ func TestV3ResolvesVPCIDViaRealVPCService(t *testing.T) {
 	})
 
 	eipSvc, err := New(Deps{
-		Store:         st,
-		Engine:        engine,
-		IDs:           gen,
-		Logger:        log,
-		Ports:         vpcSvc,
-		MaxPerProject: DefaultMaxPerProject,
-		Now:           clock.Now,
+		Store:  st,
+		Engine: engine,
+		IDs:    gen,
+		Logger: log,
+		Ports:  vpcSvc,
+		Now:    clock.Now,
 	})
 	if err != nil {
 		t.Fatalf("eip.New: %v", err)

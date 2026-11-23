@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/victor-akande/weistack/internal/core/httpx"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
@@ -180,7 +181,7 @@ func (s *Service) createUser(r *http.Request, c userChange, mandatory error) (us
 		}
 		return user{}, err
 	}
-	if n, err := s.countUsers(ctx); err != nil || n >= maxUsers {
+	if n, err := s.countUsers(ctx); err != nil || !s.quotas.Allows(quota.IAMUser, n, 1) {
 		if err == nil {
 			err = errTooManyUsers
 		}

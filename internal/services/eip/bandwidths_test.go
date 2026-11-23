@@ -18,6 +18,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/config"
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/server"
 	"github.com/victor-akande/weistack/internal/services/vpc"
@@ -218,7 +219,7 @@ func TestSharedBandwidthCRUDAndQuota(t *testing.T) {
 
 	// Create 5 shared bandwidths (the project quota).
 	var created []bandwidth
-	for i := 1; i <= maxSharedBandwidths; i++ {
+	for i := 1; i <= (quota.Limits{}).Get(quota.VPCShareBandwidth); i++ {
 		bw, err := e.svc.CreateSharedBandwidth(ctx, bwTestTenant, createSharedBandwidthOption{
 			Name: fmt.Sprintf("shared-%d", i),
 			Size: 5 * i,
@@ -476,7 +477,7 @@ func TestSharedBandwidthMax20EIPsLimit(t *testing.T) {
 	}
 
 	var infos []insertPublicIPInfo
-	for i := 1; i <= maxEIPsPerSharedBandwidth; i++ {
+	for i := 1; i <= (quota.Limits{}).Get(quota.VPCShareBandwidthIP); i++ {
 		pip, _ := e.bwSeedPublicIPWithPER(t, fmt.Sprintf("per-%d", i), 5, fmt.Sprintf("192.0.2.%d", i))
 		infos = append(infos, insertPublicIPInfo{PublicIPID: pip.ID})
 	}

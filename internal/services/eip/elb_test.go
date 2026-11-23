@@ -373,7 +373,7 @@ func TestELBBoundEIPEffectsV1V3AndECS(t *testing.T) {
 
 func TestELBConcurrentBinds(t *testing.T) {
 	t.Parallel()
-	e := newPIPEnvWithOptions(t, 0, DefaultMaxPerProject)
+	e := newPIPEnvWithOptions(t, 0, 0)
 	ctx := t.Context()
 
 	pip, err := e.svc.createPublicIP(ctx, pipTestTenant, pipPerReq("bw-race", 5))

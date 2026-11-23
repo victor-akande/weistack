@@ -8,6 +8,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/victor-akande/weistack/internal/core/quota"
 )
 
 // Key tags (api-dew "Tag Management"): at most 20 per key, keys of 1 to
@@ -317,7 +319,7 @@ func (s *Service) handleUserQuotas(w http.ResponseWriter, r *http.Request, t ten
 	return write(w, struct {
 		Quotas quotas `json:"quotas"`
 	}{quotas{[]resource{
-		{Type: "CMK", Used: customCount(keys), Quota: maxKeysPerProject},
+		{Type: "CMK", Used: customCount(keys), Quota: s.quotas.Get(quota.KMSCMK)},
 		{Type: "grant_per_CMK", Used: 0, Quota: maxGrantsPerKey},
 	}}})
 }

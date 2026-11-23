@@ -74,13 +74,6 @@ type Quota struct {
 	VCPUs   int
 }
 
-// Default quotas, those of a new Huawei Cloud account's order of
-// magnitude.
-const (
-	DefaultMaxServers = 20
-	DefaultMaxVCPUs   = 80
-)
-
 // Service is the ECS emulator.
 type Service struct {
 	store  store.Store
@@ -94,7 +87,7 @@ type Service struct {
 	images  *ims.Service
 	volumes *evs.Service
 	keys    cmk.Keys
-	quota   Quota
+	quotas  quota.Limits
 
 	// mu serialises operations that check then write across records:
 	// quota accounting on create, and delete.
@@ -109,12 +102,6 @@ func New(d Deps) (*Service, error) {
 	if d.Store == nil || d.Engine == nil || d.IDs == nil || d.Logger == nil || d.Network == nil || d.Images == nil || d.Volumes == nil {
 		return nil, errors.New("ecs: Store, Engine, IDs, Logger, Network, Images and Volumes are required")
 	}
-	if d.Quota.Servers == 0 {
-		d.Quota.Servers = DefaultMaxServers
-	}
-	if d.Quota.VCPUs == 0 {
-		d.Quota.VCPUs = DefaultMaxVCPUs
-	}
 	if d.Now == nil {
 		d.Now = time.Now
 	}
@@ -124,7 +111,7 @@ func New(d Deps) (*Service, error) {
 	}
 	s := &Service{
 		store: d.Store, engine: d.Engine, ids: d.IDs, log: d.Logger, now: d.Now,
-		network: d.Network, eips: d.EIPs, images: d.Images, volumes: d.Volumes, keys: d.Keys, quota: d.Quota,
+		network: d.Network, eips: d.EIPs, images: d.Images, volumes: d.Volumes, keys: d.Keys, quotas: d.Quotas,
 		flavors:      flavors,
 		flavorByName: make(map[string]FlavorSpec, len(flavors)),
 	}

@@ -39,11 +39,8 @@ const (
 // Lifecycle task kind, matched by fault injection.
 const taskPublicIPCreate = "eip.publicip.create"
 
-// Quotas and defaults.
+// Defaults.
 const (
-	DefaultMaxPerProject       = 50
-	maxSharedBandwidths        = 5
-	maxEIPsPerSharedBandwidth  = 20
 	defaultEnterpriseProjectID = "0"
 	allGrantedEPs              = "all_granted_eps"
 )
@@ -71,13 +68,13 @@ type Deps struct {
 
 // Service is the EIP emulator.
 type Service struct {
-	store         store.Store
-	engine        *lifecycle.Engine
-	ids           *ids.Generator
-	log           *slog.Logger
-	ports         PortLookup
-	maxPerProject int
-	now           func() time.Time
+	store  store.Store
+	engine *lifecycle.Engine
+	ids    *ids.Generator
+	log    *slog.Logger
+	ports  PortLookup
+	quotas quota.Limits
+	now    func() time.Time
 
 	// mu serialises check-then-write sequences across publicips and
 	// bandwidths (quota, port binding uniqueness, shared bandwidth updates).
@@ -95,17 +92,14 @@ func New(d Deps) (*Service, error) {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	if d.MaxPerProject <= 0 {
-		d.MaxPerProject = DefaultMaxPerProject
-	}
 	return &Service{
-		store:         d.Store,
-		engine:        d.Engine,
-		ids:           d.IDs,
-		log:           d.Logger,
-		ports:         d.Ports,
-		maxPerProject: d.MaxPerProject,
-		now:           d.Now,
+		store:  d.Store,
+		engine: d.Engine,
+		ids:    d.IDs,
+		log:    d.Logger,
+		ports:  d.Ports,
+		quotas: d.Quotas,
+		now:    d.Now,
 	}, nil
 }
 

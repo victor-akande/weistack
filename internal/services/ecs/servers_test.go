@@ -17,6 +17,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/apierr"
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/services/eip"
 	"github.com/victor-akande/weistack/internal/services/evs"
@@ -1107,7 +1108,7 @@ func TestCreateServerPublicIPErrorRollsBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eipSvc, err := eip.New(eip.Deps{Store: st, Engine: engine, IDs: gen, Logger: log, Ports: vpcSvc, MaxPerProject: 1, Now: clock.Now})
+	eipSvc, err := eip.New(eip.Deps{Quotas: quota.For(map[quota.Key]int{quota.VPCPublicIP: 1}), Store: st, Engine: engine, IDs: gen, Logger: log, Ports: vpcSvc, Now: clock.Now})
 	if err != nil {
 		t.Fatal(err)
 	}

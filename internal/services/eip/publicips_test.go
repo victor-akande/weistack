@@ -16,6 +16,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/config"
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/server"
 	"github.com/victor-akande/weistack/internal/services/vpc"
@@ -63,7 +64,7 @@ type pipEnv struct {
 
 func newPIPEnv(t *testing.T) *pipEnv {
 	t.Helper()
-	return newPIPEnvWithOptions(t, pipTestDelay, DefaultMaxPerProject)
+	return newPIPEnvWithOptions(t, pipTestDelay, 0)
 }
 
 func newPIPEnvWithOptions(t *testing.T, delay time.Duration, maxPerProject int) *pipEnv {
@@ -94,14 +95,18 @@ func newPIPEnvWithOptions(t *testing.T, delay time.Duration, maxPerProject int) 
 	if err != nil {
 		t.Fatalf("vpc.New: %v", err)
 	}
+	var limits quota.Limits
+	if maxPerProject != 0 {
+		limits = quota.For(map[quota.Key]int{quota.VPCPublicIP: maxPerProject})
+	}
 	svc, err := New(Deps{
-		Store:         st,
-		Engine:        engine,
-		IDs:           gen,
-		Logger:        log,
-		Ports:         ports,
-		MaxPerProject: maxPerProject,
-		Now:           clock.Now,
+		Quotas: limits,
+		Store:  st,
+		Engine: engine,
+		IDs:    gen,
+		Logger: log,
+		Ports:  ports,
+		Now:    clock.Now,
 	})
 	if err != nil {
 		t.Fatalf("eip.New: %v", err)
@@ -187,7 +192,7 @@ func pipPerReq(name string, size int) createPublicIPRequest {
 
 func TestPublicIPLifecycleTransitionZeroDelay(t *testing.T) {
 	t.Parallel()
-	e := newPIPEnvWithOptions(t, 0, DefaultMaxPerProject)
+	e := newPIPEnvWithOptions(t, 0, 0)
 	ctx := t.Context()
 
 	// Unbound EIP moves from PENDING_CREATE -> DOWN.
@@ -250,7 +255,7 @@ func TestPublicIPPerProjectQuota(t *testing.T) {
 
 func TestPublicIPUpdatePortIDRules(t *testing.T) {
 	t.Parallel()
-	e := newPIPEnvWithOptions(t, 0, DefaultMaxPerProject)
+	e := newPIPEnvWithOptions(t, 0, 0)
 	ctx := t.Context()
 
 	created, err := e.svc.createPublicIP(ctx, pipTestTenant, pipPerReq("bw-update", 5))
@@ -358,7 +363,7 @@ func TestPublicIPUpdatePortIDRules(t *testing.T) {
 
 func TestPublicIPRegionTypeRules(t *testing.T) {
 	t.Parallel()
-	e := newPIPEnvWithOptions(t, 0, DefaultMaxPerProject)
+	e := newPIPEnvWithOptions(t, 0, 0)
 	ctx := t.Context()
 
 	tests := []struct {
@@ -392,7 +397,7 @@ func TestPublicIPRegionTypeRules(t *testing.T) {
 
 func TestPublicIPConcurrentCreatesAcrossTwoProjects(t *testing.T) {
 	t.Parallel()
-	e := newPIPEnvWithOptions(t, 0, DefaultMaxPerProject)
+	e := newPIPEnvWithOptions(t, 0, 0)
 	ctx := t.Context()
 
 	const goroutines = 8

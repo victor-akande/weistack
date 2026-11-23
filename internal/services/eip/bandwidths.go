@@ -6,6 +6,7 @@ import (
 	"errors"
 	"slices"
 
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
@@ -118,7 +119,7 @@ func (s *Service) CreateSharedBandwidth(ctx context.Context, t Tenant, opt creat
 	if err != nil {
 		return bandwidth{}, err
 	}
-	if len(shared) >= maxSharedBandwidths {
+	if !s.quotas.Allows(quota.VPCShareBandwidth, len(shared), 1) {
 		return bandwidth{}, errSharedBandwidthQuota()
 	}
 
@@ -216,7 +217,7 @@ func (s *Service) AddPublicIPsIntoSharedBandwidth(ctx context.Context, t Tenant,
 		pips = append(pips, pip)
 	}
 
-	if len(bw.PublicIPIDs)+len(pips) > maxEIPsPerSharedBandwidth {
+	if !s.quotas.Allows(quota.VPCShareBandwidthIP, len(bw.PublicIPIDs), len(pips)) {
 		return bandwidth{}, errSharedBandwidthModify()
 	}
 
