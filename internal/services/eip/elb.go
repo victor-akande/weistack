@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/services/vpc"
 )
@@ -124,7 +125,7 @@ func (s *Service) CreateForELB(ctx context.Context, t vpc.Tenant, lbID, vipPortI
 		}
 	}
 
-	if len(existing) >= s.maxPerProject {
+	if !s.quotas.Allows(quota.VPCPublicIP, len(existing), 1) {
 		return "", "", errPublicIPQuota()
 	}
 

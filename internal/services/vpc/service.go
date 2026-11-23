@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/victor-akande/weistack/internal/core/apierr"
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/quota"
@@ -56,6 +57,7 @@ type Deps struct {
 
 // Service is the VPC emulator.
 type Service struct {
+	quotas quota.Limits
 	store  store.Store
 	engine *lifecycle.Engine
 	ids    *ids.Generator
@@ -83,7 +85,20 @@ func New(d Deps) (*Service, error) {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	return &Service{store: d.Store, engine: d.Engine, ids: d.IDs, log: d.Logger, now: d.Now}, nil
+	return &Service{quotas: d.Quotas, store: d.Store, engine: d.Engine, ids: d.IDs, log: d.Logger, now: d.Now}, nil
+}
+
+// checkQuota checks that adding want records to col stays within the
+// project's limit for key. The caller must hold s.mu.
+func checkQuota[T any](ctx context.Context, limits quota.Limits, col store.Collection[T], key quota.Key, want int, exceeded func() *apierr.Error) error {
+	existing, err := col.List(ctx, nil)
+	if err != nil {
+		return err
+	}
+	if !limits.Allows(key, len(existing), want) {
+		return exceeded()
+	}
+	return nil
 }
 
 // Name implements server.Service.

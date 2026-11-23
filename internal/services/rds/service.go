@@ -26,9 +26,6 @@ const (
 	kindJob      = "rds.job"
 )
 
-// DefaultMaxInstances is the per-project instance quota.
-const DefaultMaxInstances = 20
-
 // Tenant identifies whose resources a call operates on.
 type Tenant struct {
 	Region    string
@@ -56,14 +53,14 @@ type Deps struct {
 
 // Service is the RDS emulator.
 type Service struct {
-	store        store.Store
-	engine       *lifecycle.Engine
-	ids          *ids.Generator
-	log          *slog.Logger
-	network      *vpc.Service
-	keys         cmk.Keys
-	maxInstances int
-	now          func() time.Time
+	store   store.Store
+	engine  *lifecycle.Engine
+	ids     *ids.Generator
+	log     *slog.Logger
+	network *vpc.Service
+	keys    cmk.Keys
+	quotas  quota.Limits
+	now     func() time.Time
 
 	// mu serialises operations that check then write across records:
 	// quota and name uniqueness on create, and status checks.
@@ -78,12 +75,9 @@ func New(d Deps) (*Service, error) {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	if d.MaxInstances == 0 {
-		d.MaxInstances = DefaultMaxInstances
-	}
 	return &Service{
 		store: d.Store, engine: d.Engine, ids: d.IDs, log: d.Logger, network: d.Network, keys: d.Keys,
-		maxInstances: d.MaxInstances, now: d.Now,
+		quotas: d.Quotas, now: d.Now,
 	}, nil
 }
 

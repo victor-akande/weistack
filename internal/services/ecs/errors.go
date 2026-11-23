@@ -37,6 +37,9 @@ func errQuota(what string, want, used, limit int) *apierr.Error {
 	return bad("Ecs.0001", "The %s quota is insufficient: %d requested, %d of %d in use.", what, want, used, limit)
 }
 
+// errEVSQuotaExceeded is Ecs.0021.
+var errEVSQuotaExceeded = bad("Ecs.0021", "Insufficient EVS disk quota. Contact customer service to increase quota.")
+
 // Server creation.
 var (
 	errNameTooLong  = bad("Ecs.0914", "The ECS name contains more than 64 characters.")

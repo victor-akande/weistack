@@ -9,6 +9,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/apierr"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/pagination"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
@@ -125,7 +126,7 @@ func (s *Service) createPublicIP(ctx context.Context, t Tenant, req createPublic
 		}
 	}
 
-	if len(existing) >= s.maxPerProject {
+	if !s.quotas.Allows(quota.VPCPublicIP, len(existing), 1) {
 		return publicIP{}, errPublicIPQuota()
 	}
 

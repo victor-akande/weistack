@@ -202,6 +202,9 @@ func v1Error(err error) error {
 	if !errors.As(err, &e) {
 		return err
 	}
+	if e.Code == "VPC.9905" && strings.Contains(e.Message, "security_group.") {
+		return apierr.New(http.StatusConflict, "VPC.0604", "Quota exceeded for resources: ['security_group'].")
+	}
 	switch e.Status {
 	case http.StatusNotFound:
 		return apierr.New(http.StatusNotFound, "VPC.0603", "%s", e.Message)

@@ -16,6 +16,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/config"
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/server"
 	"github.com/victor-akande/weistack/internal/services/vpc"
@@ -78,7 +79,11 @@ func newEnvWith(t *testing.T, o options) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc, err := New(Deps{Store: o.store, Engine: engine, IDs: gen, Logger: log, Network: network, MaxInstances: o.quota, Now: clock.Now})
+	var limits quota.Limits
+	if o.quota != 0 {
+		limits = quota.For(map[quota.Key]int{quota.RDSInstance: o.quota})
+	}
+	svc, err := New(Deps{Quotas: limits, Store: o.store, Engine: engine, IDs: gen, Logger: log, Network: network, Now: clock.Now})
 	if err != nil {
 		t.Fatal(err)
 	}

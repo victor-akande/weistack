@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
@@ -66,6 +67,9 @@ func (s *Service) CreateVPC(ctx context.Context, t Tenant, opt CreateVPCOption) 
 	defer s.mu.Unlock()
 
 	if err := s.checkVPCNameFree(ctx, t, v.Name, ""); err != nil {
+		return VPC{}, err
+	}
+	if err := checkQuota(ctx, s.quotas, s.vpcs(t), quota.VPCVPC, 1, errVPCQuotaExceeded); err != nil {
 		return VPC{}, err
 	}
 	v.CreatedAt = s.timestamp()

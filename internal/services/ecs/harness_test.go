@@ -15,6 +15,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/config"
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/server"
 	"github.com/victor-akande/weistack/internal/services/eip"
@@ -58,9 +59,9 @@ func newEnvWith(t *testing.T, st store.Store, seedDir string) *env {
 	return newEnvFull(t, st, seedDir, Quota{})
 }
 
-func newEnvFull(t *testing.T, st store.Store, seedDir string, quota Quota) *env {
+func newEnvFull(t *testing.T, st store.Store, seedDir string, q Quota) *env {
 	t.Helper()
-	return newEnvOpts(t, st, seedDir, quota, nil)
+	return newEnvOpts(t, st, seedDir, q, nil)
 }
 
 // newEnvFaulty returns an env whose lifecycle engine injects faults.
@@ -69,7 +70,7 @@ func newEnvFaulty(t *testing.T, faults lifecycle.FaultInjector) *env {
 	return newEnvOpts(t, store.NewMemory(), "", Quota{}, faults)
 }
 
-func newEnvOpts(t *testing.T, st store.Store, seedDir string, quota Quota, faults lifecycle.FaultInjector) *env {
+func newEnvOpts(t *testing.T, st store.Store, seedDir string, q Quota, faults lifecycle.FaultInjector) *env {
 	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	clock := lifecycle.NewFakeClock(testEpoch)
@@ -102,9 +103,17 @@ func newEnvOpts(t *testing.T, st store.Store, seedDir string, quota Quota, fault
 	if err != nil {
 		t.Fatalf("evs.New: %v", err)
 	}
+	limits := map[quota.Key]int{}
+	if q.Servers != 0 {
+		limits[quota.ECSInstances] = q.Servers
+	}
+	if q.VCPUs != 0 {
+		limits[quota.ECSCores] = q.VCPUs
+	}
 	svc, err := New(Deps{
-		Store: st, Engine: engine, IDs: gen, Logger: log, Now: clock.Now, SeedDir: seedDir,
-		Network: network, EIPs: eips, Images: images, Volumes: volumes, Quota: quota,
+		Quotas: quota.For(limits),
+		Store:  st, Engine: engine, IDs: gen, Logger: log, Now: clock.Now, SeedDir: seedDir,
+		Network: network, EIPs: eips, Images: images, Volumes: volumes,
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)

@@ -8,6 +8,7 @@ import (
 	"sort"
 
 	"github.com/victor-akande/weistack/internal/core/pagination"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/core/zones"
 )
@@ -272,6 +273,14 @@ func (s *Service) createMember(ctx context.Context, t Tenant, poolID string, in 
 	}
 	if err != nil {
 		return memberView{}, err
+	}
+
+	allMembers, err := s.members(t).List(ctx, nil)
+	if err != nil {
+		return memberView{}, err
+	}
+	if !s.quotas.Allows(quota.ELBMember, len(allMembers), 1) {
+		return memberView{}, errMemberQuotaExceeded()
 	}
 
 	port := 0

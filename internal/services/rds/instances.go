@@ -11,6 +11,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/apierr"
 	"github.com/victor-akande/weistack/internal/core/cmk"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/core/zones"
 	"github.com/victor-akande/weistack/internal/services/vpc"
@@ -264,8 +265,8 @@ func (s *Service) CreateInstance(ctx context.Context, t Tenant, opt CreateInstan
 	if err != nil {
 		return Instance{}, Job{}, err
 	}
-	if len(existing) >= s.maxInstances {
-		return Instance{}, Job{}, errQuota(s.maxInstances)
+	if !s.quotas.Allows(quota.RDSInstance, len(existing), 1) {
+		return Instance{}, Job{}, errQuota(s.quotas.Get(quota.RDSInstance))
 	}
 	if slices.ContainsFunc(existing, func(i Instance) bool { return i.Name == opt.Name }) {
 		return Instance{}, Job{}, errNameExists(opt.Name)

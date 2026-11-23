@@ -39,6 +39,7 @@ var (
 	errDescTooLong     = bad("IMG.0004", "The image description contains more than 1024 characters.")
 	errDescFormat      = bad("IMG.0054", "The image description is invalid: it cannot contain angle brackets or line breaks.")
 	errInstanceInvalid = bad("IMG.0012", "The ECS ID is not specified or is invalid.")
+	errQuotaExceeded   = bad("IMG.0015", "The number of private images has reached the maximum allowed.")
 )
 
 // errNameInUse is IMG.0009.

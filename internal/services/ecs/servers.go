@@ -14,6 +14,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/apierr"
 	"github.com/victor-akande/weistack/internal/core/cmk"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/core/zones"
 	"github.com/victor-akande/weistack/internal/services/eip"
@@ -395,11 +396,11 @@ func (s *Service) CreateServers(ctx context.Context, t Tenant, opt CreateServerO
 	if err != nil {
 		return Job{}, nil, err
 	}
-	if used+p.count > s.quota.Servers {
-		return Job{}, nil, errQuota("ECS", p.count, used, s.quota.Servers)
+	if !s.quotas.Allows(quota.ECSInstances, used, p.count) {
+		return Job{}, nil, errQuota("ECS", p.count, used, s.quotas.Get(quota.ECSInstances))
 	}
-	if want := p.count * p.flavor.VCPUs; usedCPUs+want > s.quota.VCPUs {
-		return Job{}, nil, errQuota("vCPU", want, usedCPUs, s.quota.VCPUs)
+	if want := p.count * p.flavor.VCPUs; !s.quotas.Allows(quota.ECSCores, usedCPUs, want) {
+		return Job{}, nil, errQuota("vCPU", want, usedCPUs, s.quotas.Get(quota.ECSCores))
 	}
 
 	now := s.now().UTC().Format(timeLayout)
@@ -509,6 +510,9 @@ func (s *Service) CreateServers(ctx context.Context, t Tenant, opt CreateServerO
 			Data: dataDisks,
 		}); err != nil {
 			rollback()
+			if errors.Is(err, evs.ErrQuotaExceeded) {
+				return Job{}, nil, errEVSQuotaExceeded
+			}
 			return Job{}, nil, err
 		}
 		ids = append(ids, srv.ID)

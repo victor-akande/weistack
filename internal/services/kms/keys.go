@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
@@ -21,9 +22,8 @@ const (
 	statePendingDeletion = "4"
 )
 
-// Limits, from the API reference and the documented quota.
+// Limits, from the API reference.
 const (
-	maxKeysPerProject   = 100
 	maxAlias            = 255
 	maxDescription      = 255
 	minPendingDays      = 7
@@ -250,7 +250,7 @@ func (s *Service) createKey(ctx context.Context, t tenant, n newKey) (key, error
 			custom++
 		}
 	}
-	if !n.Default && custom >= maxKeysPerProject {
+	if !n.Default && !s.quotas.Allows(quota.KMSCMK, custom, 1) {
 		return key{}, errTooManyKeys
 	}
 	if err := s.keys(t.Region).Create(ctx, k.ID, k); err != nil {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/victor-akande/weistack/internal/core/apierr"
 	"github.com/victor-akande/weistack/internal/core/pagination"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
@@ -429,6 +430,14 @@ func (s *Service) createPool(ctx context.Context, t Tenant, in createPoolInput) 
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	existingPools, err := s.pools(t).List(ctx, nil)
+	if err != nil {
+		return poolDetail{}, err
+	}
+	if !s.quotas.Allows(quota.ELBPool, len(existingPools), 1) {
+		return poolDetail{}, errResourceQuotaExceeded("pool")
+	}
 
 	var (
 		lbID         string

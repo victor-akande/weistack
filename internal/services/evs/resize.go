@@ -10,6 +10,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/apierr"
 	"github.com/victor-akande/weistack/internal/core/httpx"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
@@ -82,6 +83,18 @@ func (s *Service) resizeVolume(ctx context.Context, t Tenant, volumeID string, n
 	}
 	if err := s.checkResizeLocal(v, newSize); err != nil {
 		return "", err
+	}
+
+	vols, err := s.volumes(t).List(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	var usedGB int
+	for _, vol := range vols {
+		usedGB += vol.SizeGB
+	}
+	if !s.quotas.Allows(quota.EVSGigabytes, usedGB, newSize-v.SizeGB) {
+		return "", errQuotaGigabytesExceeded
 	}
 
 	now := s.now().UTC()

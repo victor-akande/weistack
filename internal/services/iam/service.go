@@ -55,6 +55,7 @@ type Deps struct {
 
 // Service is the IAM emulator.
 type Service struct {
+	quotas        quota.Limits
 	store         store.Store
 	log           *slog.Logger
 	dir           *identity.Directory
@@ -79,7 +80,7 @@ func New(d Deps) (*Service, error) {
 		d.Now = time.Now
 	}
 	return &Service{
-		store: d.Store, log: d.Logger, dir: d.Directory, ids: d.IDs, vault: d.Vault,
+		quotas: d.Quotas, store: d.Store, log: d.Logger, dir: d.Directory, ids: d.IDs, vault: d.Vault,
 		defaultRegion: d.DefaultRegion, defaultProj: d.DefaultProjectID, now: d.Now,
 	}, nil
 }

@@ -50,12 +50,13 @@ type Deps struct {
 
 // Service is the OBS emulator.
 type Service struct {
-	store store.Store
-	ids   *ids.Generator
-	log   *slog.Logger
-	now   func() time.Time
-	blobs *blobStore
-	keys  cmk.Keys
+	quotas quota.Limits
+	store  store.Store
+	ids    *ids.Generator
+	log    *slog.Logger
+	now    func() time.Time
+	blobs  *blobStore
+	keys   cmk.Keys
 
 	// maxObjectSize bounds a single upload, object or part.
 	maxObjectSize int64
@@ -88,7 +89,7 @@ func New(d Deps) (*Service, error) {
 		return nil, err
 	}
 	s := &Service{
-		store: d.Store, ids: d.IDs, log: d.Logger, now: d.Now, blobs: blobs, keys: d.Keys,
+		quotas: d.Quotas, store: d.Store, ids: d.IDs, log: d.Logger, now: d.Now, blobs: blobs, keys: d.Keys,
 		maxObjectSize: DefaultMaxObjectSize,
 	}
 	s.configs = s.configReads()

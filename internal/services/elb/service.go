@@ -105,6 +105,7 @@ type Deps struct {
 
 // Service is the dedicated ELB v3 emulator.
 type Service struct {
+	quotas  quota.Limits
 	store   store.Store
 	ids     *ids.Generator
 	log     *slog.Logger
@@ -127,6 +128,7 @@ func New(d Deps) (*Service, error) {
 		d.Now = time.Now
 	}
 	return &Service{
+		quotas:  d.Quotas,
 		store:   d.Store,
 		ids:     d.IDs,
 		log:     d.Logger,

@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/victor-akande/weistack/internal/core/quota"
 )
 
 func TestBandwidthLifecycleMatchesGoldenFiles(t *testing.T) {
@@ -106,7 +108,7 @@ func TestBandwidthErrorGoldenFilesPerOperation(t *testing.T) {
 	}
 
 	var sharedIDs []string
-	for i := 1; i <= maxSharedBandwidths; i++ {
+	for i := 1; i <= (quota.Limits{}).Get(quota.VPCShareBandwidth); i++ {
 		status, out := e.callV20(t, http.MethodPost, "/bandwidths",
 			fmt.Sprintf(`{"bandwidth": {"name": "shared-%d", "size": 10}}`, i))
 		if status != http.StatusOK {

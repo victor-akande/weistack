@@ -87,6 +87,7 @@ type Deps struct {
 
 // Service is the IMS emulator.
 type Service struct {
+	quotas         quota.Limits
 	store          store.Store
 	engine         *lifecycle.Engine
 	ids            *ids.Generator
@@ -119,7 +120,7 @@ func New(d Deps) (*Service, error) {
 		return nil, err
 	}
 	return &Service{
-		store: d.Store, engine: d.Engine, ids: d.IDs, log: d.Logger, now: d.Now,
+		quotas: d.Quotas, store: d.Store, engine: d.Engine, ids: d.IDs, log: d.Logger, now: d.Now,
 		defaultProject: d.DefaultProjectID,
 		seeds:          seeds,
 		servers:        d.Servers,

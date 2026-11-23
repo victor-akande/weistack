@@ -12,6 +12,7 @@ import (
 
 	"github.com/victor-akande/weistack/internal/core/httpx"
 	"github.com/victor-akande/weistack/internal/core/pagination"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
@@ -140,6 +141,15 @@ func (s *Service) handleCreateSnapshot(w http.ResponseWriter, r *http.Request, t
 	if !canCreateSnapshot(v, opt.Force) {
 		s.mu.Unlock()
 		return errInvalidResourceStatus
+	}
+	snaps, err := s.snapshots(t).List(r.Context(), nil)
+	if err != nil {
+		s.mu.Unlock()
+		return err
+	}
+	if !s.quotas.Allows(quota.EVSSnapshots, len(snaps), 1) {
+		s.mu.Unlock()
+		return errQuotaCountExceeded
 	}
 
 	ep := v.EnterpriseProjectID

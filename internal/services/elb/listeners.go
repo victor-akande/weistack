@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/victor-akande/weistack/internal/core/pagination"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
@@ -683,6 +684,9 @@ func (s *Service) createListener(ctx context.Context, t Tenant, in createListene
 	allListeners, err := s.listeners(t).List(ctx, nil)
 	if err != nil {
 		return listener{}, err
+	}
+	if !s.quotas.Allows(quota.ELBListener, len(allListeners), 1) {
+		return listener{}, errListenerQuotaExceeded()
 	}
 
 	// Port conflict check per protocol family on the same LB (§3.2).

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
@@ -132,6 +133,9 @@ func (s *Service) CreateSecurityGroup(ctx context.Context, t Tenant, opt CreateS
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.ensureDefaultSecGroup(ctx, t); err != nil {
+		return SecurityGroupInfo{}, err
+	}
+	if err := checkQuota(ctx, s.quotas, s.secGroups(t), quota.VPCSecurityGroup, 1, errSecGroupQuotaExceeded); err != nil {
 		return SecurityGroupInfo{}, err
 	}
 	return s.insertSecGroup(ctx, t, g)
@@ -426,6 +430,9 @@ func (s *Service) CreateSecurityGroupRule(ctx context.Context, t Tenant, opt Cre
 	}
 	if dryRun {
 		return SecurityGroupRule{}, nil
+	}
+	if err := checkQuota(ctx, s.quotas, s.secGroupRules(t), quota.VPCSecurityGroupRule, 1, errSecGroupRuleQuotaExceeded); err != nil {
+		return SecurityGroupRule{}, err
 	}
 
 	now := TimeZ(s.timestamp())

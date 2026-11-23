@@ -59,6 +59,31 @@ func errSubnetFull() *apierr.Error {
 	return apierr.New(http.StatusBadRequest, "ELB.8934", "The number of available IP addresses in the subnet on the downstream plane is insufficient.")
 }
 
+// ELB.1091 (403): error-codes.tsv — load balancer quota exceeded.
+func errLoadBalancerQuotaExceeded() *apierr.Error {
+	return apierr.New(http.StatusForbidden, "ELB.1091", "The number of load balancers exceeds the quota.")
+}
+
+// ELB.6091 (403): error-codes.tsv — listener quota exceeded.
+func errListenerQuotaExceeded() *apierr.Error {
+	return apierr.New(http.StatusForbidden, "ELB.6091", "The number of listeners reaches the limit.")
+}
+
+// ELB.2001 (403): error-codes.tsv — member quota exceeded.
+func errMemberQuotaExceeded() *apierr.Error {
+	return apierr.New(http.StatusForbidden, "ELB.2001", "Creating the member failed. The total number of members exceeds the upper limit.")
+}
+
+// ELB.5151 (400): error-codes.tsv — certificate quota exceeded.
+func errCertificateQuotaExceeded() *apierr.Error {
+	return apierr.New(http.StatusBadRequest, "ELB.5151", "The certificate quantity exceeds the quota.")
+}
+
+// ELB.8905 (409): error-codes.tsv — quota exceeded for resource (pool, l7policy, l7policies_per_listener).
+func errResourceQuotaExceeded(resource string) *apierr.Error {
+	return apierr.New(http.StatusConflict, "ELB.8905", "Quota exceeded for resources: %s", resource)
+}
+
 // WeiStack.0501 (501): unimplemented operation or out-of-scope feature.
 func errNotImplemented(feature string) *apierr.Error {
 	return apierr.NotImplemented("elb", feature)

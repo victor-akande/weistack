@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/victor-akande/weistack/internal/core/quota"
 )
 
 // do sends a request with a JSON body to the region-less IAM host.
@@ -196,7 +198,7 @@ func TestClassicUserErrors(t *testing.T) {
 func TestUserQuota(t *testing.T) {
 	t.Parallel()
 	e := newEnv(t)
-	for i := range maxUsers {
+	for i := range (quota.Limits{}).Get(quota.IAMUser) {
 		e.want(t, http.StatusCreated, http.MethodPost, "/v3/users", `{"user":{"name":"u`+string(rune('A'+i/26))+string(rune('a'+i%26))+`"}}`)
 	}
 	e.wantErr(t, http.StatusBadRequest, "1115", http.MethodPost, "/v3/users", `{"user":{"name":"onemore"}}`)

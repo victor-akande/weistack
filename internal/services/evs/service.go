@@ -32,6 +32,7 @@ var (
 	ErrSystemDisk      = errors.New("evs: cannot perform operation on system disk")
 	ErrShared          = errors.New("evs: cannot update delete_on_termination on multiattach volume")
 	ErrServerNotFound  = errors.New("evs: server not found")
+	ErrQuotaExceeded   = errors.New("evs: quota exceeded")
 )
 
 // Tenant identifies whose volumes a call is about.
@@ -69,6 +70,7 @@ type Deps struct {
 
 // Service is the EVS emulator.
 type Service struct {
+	quotas quota.Limits
 	store  store.Store
 	engine *lifecycle.Engine
 	ids    *ids.Generator
@@ -100,6 +102,7 @@ func New(d Deps) (*Service, error) {
 		now = time.Now
 	}
 	return &Service{
+		quotas: d.Quotas,
 		store:  d.Store,
 		engine: d.Engine,
 		ids:    d.IDs,

@@ -72,13 +72,12 @@ func newTagEnv(t *testing.T) *tagEnv {
 		t.Fatalf("vpc.New: %v", err)
 	}
 	eipSvc, err := New(Deps{
-		Store:         st,
-		Engine:        engine,
-		IDs:           gen,
-		Logger:        log,
-		Ports:         vpcSvc,
-		MaxPerProject: DefaultMaxPerProject,
-		Now:           clock.Now,
+		Store:  st,
+		Engine: engine,
+		IDs:    gen,
+		Logger: log,
+		Ports:  vpcSvc,
+		Now:    clock.Now,
 	})
 	if err != nil {
 		t.Fatalf("eip.New: %v", err)

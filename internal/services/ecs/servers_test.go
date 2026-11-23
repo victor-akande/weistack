@@ -17,6 +17,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/apierr"
 	"github.com/victor-akande/weistack/internal/core/ids"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/services/eip"
 	"github.com/victor-akande/weistack/internal/services/evs"
@@ -471,13 +472,15 @@ func TestDeleteWhileBuildingCancelsTheBuild(t *testing.T) {
 
 func TestQuotas(t *testing.T) {
 	t.Parallel()
-	e := newEnvFull(t, store.NewMemory(), "", Quota{Servers: 3, VCPUs: 8})
+	maxServers, maxVCPUs := 3, 8
+	firstBatch := maxServers - 1
+	e := newEnvFull(t, store.NewMemory(), "", Quota{Servers: maxServers, VCPUs: maxVCPUs})
 	n := e.mustNetwork(t, testTenant, "192.168.1.0/24")
 
-	e.mustCreate(t, n.serverBody("count", `2`))                                                              // 2 servers, 4 vCPUs
-	e.expect(t, "error_ecs_0001", http.MethodPost, serversPath, n.serverBody("count", `2`))                  // 4 servers
-	e.expect(t, "error_ecs_0001", http.MethodPost, serversPath, n.serverBody("flavorRef", `"s6.2xlarge.2"`)) // 12 vCPUs
-	_, ids := e.mustCreate(t, n.serverBody("flavorRef", `"s6.xlarge.2"`))                                    // 3 servers, 8 vCPUs
+	e.mustCreate(t, n.serverBody("count", fmt.Sprintf("%d", firstBatch)))                                                          // firstBatch servers, 4 vCPUs
+	e.expect(t, "error_ecs_0001", http.MethodPost, serversPath, n.serverBody("count", fmt.Sprintf("%d", maxServers-firstBatch+1))) // exceeds maxServers
+	e.expect(t, "error_ecs_0001", http.MethodPost, serversPath, n.serverBody("flavorRef", `"s6.2xlarge.2"`))                       // exceeds maxVCPUs
+	_, ids := e.mustCreate(t, n.serverBody("flavorRef", `"s6.xlarge.2"`))                                                          // reaches maxServers, maxVCPUs
 	e.expect(t, "error_ecs_0001", http.MethodPost, serversPath, n.serverBody("flavorRef", `"s6.small.1"`))
 
 	// Quota is per project.
@@ -655,8 +658,11 @@ func TestDeleteFaultKeepsTheServer(t *testing.T) {
 // Concurrent creates must never exceed the quota or share an address.
 func TestConcurrentCreatesRespectQuotaAndAddresses(t *testing.T) {
 	t.Parallel()
-	e := newEnvFull(t, store.NewMemory(), "", Quota{Servers: 10, VCPUs: 1000})
+	limit, extra, vcpus := 10, 20, 1000
+	total := limit + extra
+	e := newEnvFull(t, store.NewMemory(), "", Quota{Servers: limit, VCPUs: vcpus})
 	n := e.mustNetwork(t, testTenant, "192.168.1.0/24")
+	initialFree := e.subnetFree(t, n.subnetID)
 	opt := CreateServerOption{
 		Name: "racer", ImageRef: ubuntuImage, FlavorRef: "s6.small.1", VPCID: n.vpcID,
 		NICs: []CreateNIC{{SubnetID: n.subnetID}}, RootVolume: &CreateVolume{VolumeType: "SSD"},
@@ -667,7 +673,7 @@ func TestConcurrentCreatesRespectQuotaAndAddresses(t *testing.T) {
 		mu           sync.Mutex
 		ok, rejected int
 	)
-	for range 30 {
+	for range total {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -685,19 +691,19 @@ func TestConcurrentCreatesRespectQuotaAndAddresses(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	if ok != 10 || rejected != 20 {
-		t.Fatalf("%d created and %d rejected, want 10 and 20", ok, rejected)
+	if ok != limit || rejected != extra {
+		t.Fatalf("%d created and %d rejected, want %d and %d", ok, rejected, limit, extra)
 	}
 	all, _ := e.svc.ListServers(t.Context(), testTenant, ListServersFilter{})
 	ips := map[string]bool{}
 	for _, srv := range all {
 		ips[srv.NICs[0].IP] = true
 	}
-	if len(all) != 10 || len(ips) != 10 {
-		t.Fatalf("%d servers with %d distinct addresses, want 10 and 10", len(all), len(ips))
+	if len(all) != limit || len(ips) != limit {
+		t.Fatalf("%d servers with %d distinct addresses, want %d and %d", len(all), len(ips), limit, limit)
 	}
-	if free := e.subnetFree(t, n.subnetID); free != 241 {
-		t.Fatalf("%d free addresses, want 241", free)
+	if free := e.subnetFree(t, n.subnetID); free != initialFree-limit {
+		t.Fatalf("%d free addresses, want %d", free, initialFree-limit)
 	}
 }
 
@@ -1107,7 +1113,9 @@ func TestCreateServerPublicIPErrorRollsBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eipSvc, err := eip.New(eip.Deps{Store: st, Engine: engine, IDs: gen, Logger: log, Ports: vpcSvc, MaxPerProject: 1, Now: clock.Now})
+	eipLimit := 1
+	count := eipLimit + 1
+	eipSvc, err := eip.New(eip.Deps{Quotas: quota.For(map[quota.Key]int{quota.VPCPublicIP: eipLimit}), Store: st, Engine: engine, IDs: gen, Logger: log, Ports: vpcSvc, Now: clock.Now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1149,7 +1157,7 @@ func TestCreateServerPublicIPErrorRollsBack(t *testing.T) {
 		VPCID:      v.ID,
 		NICs:       []CreateNIC{{SubnetID: sn.ID}},
 		RootVolume: &CreateVolume{VolumeType: "GPSSD"},
-		Count:      ptr(2),
+		Count:      ptr(count),
 		PublicIP: &CreatePublicIP{
 			EIP: &CreateServerEIP{
 				IPType:    "5_bgp",
@@ -1288,5 +1296,85 @@ func TestResumeDeleteHonoursDeletePublicIP(t *testing.T) {
 	}](t, out)
 	if len(got.PublicIPs) != 0 {
 		t.Fatalf("EIP survived resumed delete with delete_publicip=true: %s", out)
+	}
+}
+
+func TestCreateServerEVSQuotaExceeded(t *testing.T) {
+	t.Parallel()
+	st := store.NewMemory()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	clock := lifecycle.NewFakeClock(testEpoch)
+	engine := lifecycle.New(lifecycle.Options{Delay: testDelay, Clock: clock, Logger: log})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); engine.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done; _ = st.Close() })
+
+	gen := ids.NewSeeded(22)
+	vpcSvc, err := vpc.New(vpc.Deps{Store: st, Engine: engine, IDs: gen, Logger: log, Now: clock.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	imsSvc, err := ims.New(ims.Deps{Store: st, Engine: engine, IDs: gen, Logger: log, Now: clock.Now, DefaultProjectID: testProject})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Allow volLimit server's root disk, so creating count (> volLimit) fails on the next server.
+	volLimit, rootGB := 1, 40
+	gbLimit, count := volLimit*rootGB, volLimit+1
+	evsSvc, err := evs.New(evs.Deps{
+		Quotas: quota.For(map[quota.Key]int{
+			quota.EVSVolumes:   volLimit,
+			quota.EVSGigabytes: gbLimit,
+		}),
+		Store: st, Engine: engine, IDs: gen, Logger: log, Images: imsSvc, Now: clock.Now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ecsSvc, err := New(Deps{
+		Store: st, Engine: engine, IDs: gen, Logger: log, Now: clock.Now,
+		Network: vpcSvc, Images: imsSvc, Volumes: evsSvc,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	evsSvc.SetServers(ecsSvc)
+
+	v, err := vpcSvc.CreateVPC(t.Context(), testTenant.vpc(), vpc.CreateVPCOption{CIDR: ptr("10.2.0.0/16")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sn, err := vpcSvc.CreateSubnet(t.Context(), testTenant.vpc(), vpc.CreateSubnetOption{
+		Name: "s1", CIDR: "10.2.1.0/24", GatewayIP: "10.2.1.1", VPCID: v.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock.Advance(testDelay)
+	_ = engine.WaitIdle(t.Context())
+
+	_, _, err = ecsSvc.CreateServers(t.Context(), testTenant, CreateServerOption{
+		Name:       "evs-quota-rollback",
+		ImageRef:   ubuntuImage,
+		FlavorRef:  "s6.large.2",
+		VPCID:      v.ID,
+		NICs:       []CreateNIC{{SubnetID: sn.ID}},
+		RootVolume: &CreateVolume{VolumeType: "GPSSD"},
+		Count:      ptr(count),
+	})
+	var ae *apierr.Error
+	if !errors.As(err, &ae) || ae.Status != http.StatusBadRequest || ae.Code != "Ecs.0021" ||
+		ae.Message != "Insufficient EVS disk quota. Contact customer service to increase quota." {
+		t.Fatalf("CreateServers err = %v, want 400 Ecs.0021", err)
+	}
+	if all, _ := ecsSvc.ListServers(t.Context(), testTenant, ListServersFilter{}); len(all) != 0 {
+		t.Fatalf("%d servers left after EVS quota rollback", len(all))
+	}
+	if disks, err := evsSvc.DisksByServer(t.Context(), testTenant.evs()); err != nil || len(disks) != 0 {
+		t.Fatalf("disks left after EVS quota rollback: %v, %v", disks, err)
+	}
+	if gotSN, err := vpcSvc.GetSubnet(t.Context(), testTenant.vpc(), sn.ID); err != nil || gotSN.AvailableIPAddressCount != 251 {
+		t.Fatalf("subnet after EVS quota rollback: %+v, %v", gotSN, err)
 	}
 }
