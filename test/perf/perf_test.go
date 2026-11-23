@@ -39,6 +39,7 @@ import (
 	"time"
 
 	"github.com/victor-akande/weistack/internal/core/identity"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/sigcheck"
 )
 
@@ -397,9 +398,10 @@ func TestLatencyAtScale(t *testing.T) {
 		{"permissions", enforceEnv, adminKeys, true},
 	} {
 		t.Run(mode.name, func(t *testing.T) {
-			// 1,000 VPCs are far over a new account's quota (150), which
-			// this test is not about.
-			p, _ := start(t, append([]string{"WEISTACK_QUOTAS=vpc.vpc=-1"}, mode.env...)...)
+			// The test creates more VPCs than a new account's quota allows,
+			// and is not about quotas: the quota is raised to what it needs.
+			need := "WEISTACK_QUOTAS=" + quota.Format(map[quota.Key]int{quota.VPCVPC: resources})
+			p, _ := start(t, append([]string{need}, mode.env...)...)
 			p.keys = mode.keys
 			if mode.limited {
 				p.keys = limitedUser(t, p)

@@ -131,3 +131,20 @@ func keyNames() []string {
 	}
 	return out
 }
+
+// Format writes limits as a -quotas setting ("key=value,..." in key
+// order), so tests can derive WEISTACK_QUOTAS from the counts they need.
+// It panics on an unknown key or a value below Unlimited, as With does.
+func Format(m map[Key]int) string {
+	keys := make([]Key, 0, len(m))
+	for k, v := range m {
+		_ = Limits{}.With(k, v) // validates
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+	parts := make([]string, len(keys))
+	for i, k := range keys {
+		parts[i] = string(k) + "=" + strconv.Itoa(m[k])
+	}
+	return strings.Join(parts, ",")
+}

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -37,10 +38,10 @@ func TestLoadDefaults(t *testing.T) {
 		ProxyBypass:      DefaultProxyBypass,
 		ProxyPassthrough: "loopback",
 		IAM:              IAMAccept,
-		ECSMaxServers:    20,
-		ECSMaxVCPUs:      80,
-		EIPMaxPerProject: 50,
-		RDSMaxInstances:  20,
+		ECSMaxServers:    DefaultECSMaxServers,
+		ECSMaxVCPUs:      DefaultECSMaxVCPUs,
+		EIPMaxPerProject: DefaultEIPMaxPerProject,
+		RDSMaxInstances:  DefaultRDSMaxInstances,
 		LifecycleDelay:   2 * time.Second,
 		LogLevel:         slog.LevelInfo,
 		LogFormat:        "auto",
@@ -306,13 +307,16 @@ func TestProxyBypass(t *testing.T) {
 
 func TestLoadQuotas(t *testing.T) {
 	t.Parallel()
-	got, err := Load([]string{"-quotas", "vpc.vpc=5,elb.loadbalancer=-1", "-ecs-max-servers", "7"}, env(nil), io.Discard)
+	vpcs, servers := 5, 7
+	set := map[quota.Key]int{quota.VPCVPC: vpcs, quota.ELBLoadBalancer: quota.Unlimited}
+	got, err := Load([]string{"-quotas", quota.Format(set), "-ecs-max-servers", strconv.Itoa(servers)}, env(nil), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
+	subnets, _, _ := quota.Default(quota.VPCSubnet)
 	for k, want := range map[quota.Key]int{
-		quota.VPCVPC: 5, quota.ELBLoadBalancer: quota.Unlimited, quota.ECSInstances: 7,
-		quota.ECSCores: DefaultECSMaxVCPUs, quota.VPCSubnet: 400,
+		quota.VPCVPC: vpcs, quota.ELBLoadBalancer: quota.Unlimited, quota.ECSInstances: servers,
+		quota.ECSCores: DefaultECSMaxVCPUs, quota.VPCSubnet: subnets,
 	} {
 		if v := got.Quotas.Get(k); v != want {
 			t.Errorf("%s = %d, want %d", k, v, want)
