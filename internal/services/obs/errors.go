@@ -28,6 +28,7 @@ var (
 	errBucketExists = apierr.New(http.StatusConflict, "BucketAlreadyExists",
 		"The requested bucket name is not available. The bucket namespace is shared by all users of the system. Please select a different name and try again.")
 	errNoSuchBucket     = apierr.New(http.StatusNotFound, "NoSuchBucket", "The specified bucket does not exist")
+	errTooManyBuckets   = apierr.New(http.StatusBadRequest, "TooManyBuckets", "You have attempted to create more buckets than allowed.")
 	errMethodNotAllowed = apierr.New(http.StatusMethodNotAllowed, "MethodNotAllowed", "The specified method is not allowed against this resource.")
 	errInvalidURI       = apierr.New(http.StatusBadRequest, "InvalidURI", "Couldn't parse the specified URI.")
 )

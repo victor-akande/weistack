@@ -7,6 +7,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
@@ -42,6 +43,13 @@ func (s *Service) CreateBucket(ctx context.Context, owner, region, name string) 
 		return Bucket{}, errBucketExists
 	case !errors.Is(err, store.ErrNotFound):
 		return Bucket{}, err
+	}
+	owned, err := s.buckets().List(ctx, func(b Bucket) bool { return b.Owner == owner })
+	if err != nil {
+		return Bucket{}, err
+	}
+	if !s.quotas.Allows(quota.OBSBuckets, len(owned), 1) {
+		return Bucket{}, errTooManyBuckets
 	}
 	b := Bucket{Name: name, Owner: owner, Region: region, Created: s.now().UTC()}
 	if err := s.buckets().Create(ctx, name, b); err != nil {

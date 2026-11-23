@@ -13,6 +13,7 @@ import (
 
 	"github.com/victor-akande/weistack/internal/core/apierr"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
+	"github.com/victor-akande/weistack/internal/core/quota"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
 
@@ -114,6 +115,13 @@ func (s *Service) CreateImage(ctx context.Context, t Tenant, opt CreateImageOpti
 	}
 	if err := s.checkNameFree(ctx, t, opt.Name, ""); err != nil {
 		return Job{}, err
+	}
+	existing, err := s.privateImages(t).List(ctx, nil)
+	if err != nil {
+		return Job{}, err
+	}
+	if !s.quotas.Allows(quota.IMSImage, len(existing), 1) {
+		return Job{}, errQuotaExceeded
 	}
 
 	now := s.now().UTC()
