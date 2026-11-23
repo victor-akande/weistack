@@ -130,7 +130,7 @@ func TestSnapshotFile(t *testing.T) {
 }
 
 // archiveOf builds an archive with a valid manifest and the given entries.
-func archiveOf(t *testing.T, entries ...*tar.Header) []byte {
+func archiveOf(t testing.TB, entries ...*tar.Header) []byte {
 	t.Helper()
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)

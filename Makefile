@@ -73,6 +73,10 @@ docker: ## Build the Docker image as weistack:dev
 	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg DATE=$(DATE) -t weistack:dev .
 
 .PHONY: check
+.PHONY: fuzz
+fuzz: ## Run every fuzz target for FUZZTIME each (default 10s)
+	scripts/fuzz.sh
+
 check: fmt-check vet lint test ## Everything CI runs, locally
 
 .PHONY: clean

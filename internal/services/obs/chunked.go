@@ -57,8 +57,22 @@ type awsChunkedReader struct {
 	hash   hash.Hash
 }
 
+// maxChunkLine bounds a chunk header or trailer line, so a body that
+// never sends a newline cannot make the reader buffer without end. A
+// header is a hex size and a 64-character signature.
+const maxChunkLine = 4096
+
 func newAWSChunkedReader(r io.Reader, verify *sigcheck.ChunkVerifier) *awsChunkedReader {
-	return &awsChunkedReader{src: bufio.NewReader(r), verify: verify, hash: sha256.New()}
+	return &awsChunkedReader{src: bufio.NewReaderSize(r, maxChunkLine), verify: verify, hash: sha256.New()}
+}
+
+// readLine reads one line, up to maxChunkLine bytes with its newline.
+func (c *awsChunkedReader) readLine() (string, error) {
+	line, err := c.src.ReadSlice('\n')
+	if errors.Is(err, bufio.ErrBufferFull) {
+		return "", fmt.Errorf("%w: a line longer than %d bytes", errBadChunk, maxChunkLine)
+	}
+	return string(line), err
 }
 
 // checkChunk verifies the chunk just read, if signatures are checked.
@@ -100,7 +114,7 @@ func (c *awsChunkedReader) Read(p []byte) (int, error) {
 // nextChunk reads a chunk header and, for the final chunk, consumes the
 // trailers.
 func (c *awsChunkedReader) nextChunk() error {
-	line, err := c.src.ReadString('\n')
+	line, err := c.readLine()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
 			return io.ErrUnexpectedEOF
@@ -122,8 +136,8 @@ func (c *awsChunkedReader) nextChunk() error {
 		// Trailing headers, if any, end with an empty line. A body
 		// that simply stops after the last chunk is accepted too.
 		for {
-			line, err := c.src.ReadString('\n')
-			if errors.Is(err, io.EOF) || strings.TrimRight(line, "\r\n") == "" {
+			line, err := c.readLine()
+			if errors.Is(err, io.EOF) || (err == nil && strings.TrimRight(line, "\r\n") == "") {
 				return nil
 			}
 			if err != nil {
