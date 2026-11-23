@@ -419,10 +419,10 @@ func TestSnatCreateValidationAndOverlaps(t *testing.T) {
 			t.Fatalf("seed any dnat: %v", err)
 		}
 
-		// Build 21 valid UUIDs for NAT.0211.
-		twentyOne := make([]string, 21)
-		for i := range twentyOne {
-			twentyOne[i] = fmt.Sprintf("10000000-0000-4000-8000-%012d", i+1)
+		// Build maxSnatEIPs+1 valid UUIDs for NAT.0211.
+		tooManyEIPs := make([]string, maxSnatEIPs+1)
+		for i := range tooManyEIPs {
+			tooManyEIPs[i] = fmt.Sprintf("10000000-0000-4000-8000-%012d", i+1)
 		}
 
 		tests := []struct {
@@ -491,8 +491,8 @@ func TestSnatCreateValidationAndOverlaps(t *testing.T) {
 				wantCode: "NAT.0002",
 			},
 			{
-				name:     "more than 20 floating_ip_ids",
-				opt:      createSnatRuleOption{NatGatewayID: rulesGW1ID, CIDR: rulePtr("172.16.1.0/24"), SourceType: rulePtr(1), FloatingIPID: strings.Join(twentyOne, ",")},
+				name:     "more than max floating_ip_ids",
+				opt:      createSnatRuleOption{NatGatewayID: rulesGW1ID, CIDR: rulePtr("172.16.1.0/24"), SourceType: rulePtr(1), FloatingIPID: strings.Join(tooManyEIPs, ",")},
 				wantCode: "NAT.0211",
 			},
 			{

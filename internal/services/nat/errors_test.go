@@ -59,7 +59,7 @@ func TestPrivateScaffoldAndErrorCatalogue(t *testing.T) {
 		{errDownlinkVPCLimit(1), http.StatusBadRequest, "NAT.1201"},
 		{errPrivateHasDependencies("g1"), http.StatusBadRequest, "NAT.1202"},
 		{errSamePrivateSpec("Small"), http.StatusBadRequest, "NAT.1206"},
-		{errPrivateRuleLimit(20), http.StatusBadRequest, "NAT.1207"},
+		{errPrivateRuleLimit(privateRuleMax("Small")), http.StatusBadRequest, "NAT.1207"},
 		{errTransitIPInGatewayVPC("ti1"), http.StatusConflict, "NAT.1303"},
 		{errPrivatePortNotInVPC("p1"), http.StatusConflict, "NAT.1304"},
 		{errTransitIPUsedByDnat("ti1"), http.StatusConflict, "NAT.1305"},
@@ -78,7 +78,7 @@ func TestPrivateScaffoldAndErrorCatalogue(t *testing.T) {
 		{errPrivateSnatInvalidCIDR(), http.StatusBadRequest, "NAT.1502"},
 		{errPrivateSnatNetworkExists("s1"), http.StatusConflict, "NAT.1503"},
 		{errPrivateSnatCIDRExists("10.0.0.0/24"), http.StatusConflict, "NAT.1505"},
-		{errPrivateSnatTransitIPLimit(20), http.StatusBadRequest, "NAT.1506"},
+		{errPrivateSnatTransitIPLimit(maxSnatEIPs), http.StatusBadRequest, "NAT.1506"},
 		{errPrivateSnatInvalidTransitIPID(), http.StatusBadRequest, "NAT.1507"},
 	}
 	for _, tc := range cases {

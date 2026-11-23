@@ -257,9 +257,9 @@ func TestPrivateGatewayCreateValidation(t *testing.T) {
 		}
 	}
 
-	twentyOneTags := make([]tag, 21)
-	for i := range twentyOneTags {
-		twentyOneTags[i] = tag{Key: fmt.Sprintf("k%d", i), Value: fmt.Sprintf("v%d", i)}
+	tooManyTags := make([]tag, maxTags+1)
+	for i := range tooManyTags {
+		tooManyTags[i] = tag{Key: fmt.Sprintf("k%d", i), Value: fmt.Sprintf("v%d", i)}
 	}
 
 	base := func() createPrivateGatewayInput {
@@ -348,8 +348,8 @@ func TestPrivateGatewayCreateValidation(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name:       "more than 20 tags",
-			mutate:     func(in *createPrivateGatewayInput) { in.Tags = twentyOneTags },
+			name:       "more than max tags",
+			mutate:     func(in *createPrivateGatewayInput) { in.Tags = tooManyTags },
 			wantCode:   "NAT.1016",
 			wantStatus: http.StatusBadRequest,
 		},
@@ -499,14 +499,18 @@ func TestPrivateGatewayUpdateRules(t *testing.T) {
 		})
 	}
 
-	// Seed 15 SNAT + 6 DNAT rules = 21 total (> Small's rule_max 20, <= Medium's 50).
-	for i := range 15 {
+	// Seed rules exceeding Small's rule_max (within Medium's), split across SNAT and DNAT.
+	smallMax := privateRuleMax("Small")
+	mediumMax := privateRuleMax("Medium")
+	snatCount := smallMax/2 + 1
+	dnatCount := smallMax + 1 - snatCount
+	for i := range snatCount {
 		rid := fmt.Sprintf("11111111-1111-4111-8111-%012d", i)
 		if err := e.svc.privateSnats(gwTestTenant).Create(ctx, rid, privateSnat{ID: rid, GatewayID: g.ID}); err != nil {
 			t.Fatalf("seed private snat %d: %v", i, err)
 		}
 	}
-	for i := range 6 {
+	for i := range dnatCount {
 		rid := fmt.Sprintf("22222222-2222-4222-8222-%012d", i)
 		if err := e.svc.privateDnats(gwTestTenant).Create(ctx, rid, privateDnat{ID: rid, GatewayID: g.ID}); err != nil {
 			t.Fatalf("seed private dnat %d: %v", i, err)
@@ -516,7 +520,7 @@ func TestPrivateGatewayUpdateRules(t *testing.T) {
 		t.Fatalf("downgrade below rule count err = %v, want NAT.1207", err)
 	}
 	if _, err := e.svc.updatePrivateGateway(ctx, gwTestTenant, g.ID, updatePrivateGatewayInput{Spec: gwPtr("Medium")}); err != nil {
-		t.Fatalf("downgrade to Medium (rule_max 50 >= 21) failed: %v", err)
+		t.Fatalf("downgrade to Medium (rule_max %d >= %d) failed: %v", mediumMax, snatCount+dnatCount, err)
 	}
 }
 
@@ -758,9 +762,9 @@ func TestTransitSubnetLifecycleAndValidation(t *testing.T) {
 		t.Fatalf("seed ts3: %v", err)
 	}
 
-	twentyOneTags := make([]tag, 21)
-	for i := range twentyOneTags {
-		twentyOneTags[i] = tag{Key: fmt.Sprintf("k%d", i), Value: "v"}
+	tooManyTags := make([]tag, maxTags+1)
+	for i := range tooManyTags {
+		tooManyTags[i] = tag{Key: fmt.Sprintf("k%d", i), Value: "v"}
 	}
 	createTests := []struct {
 		name     string
@@ -773,7 +777,7 @@ func TestTransitSubnetLifecycleAndValidation(t *testing.T) {
 		{"missing virsubnet_project_id", createTransitSubnetInput{Name: "ok", VirsubnetID: e.subnetID}, "NAT.1010"},
 		{"mismatched virsubnet_project_id", createTransitSubnetInput{Name: "ok", VirsubnetID: e.subnetID, VirsubnetProjectID: gwTestProjectB}, "NAT.1010"},
 		{"invalid tag", createTransitSubnetInput{Name: "ok", VirsubnetID: e.subnetID, VirsubnetProjectID: gwTestProject, Tags: []tag{{Key: ""}}}, "NAT.1015"},
-		{"too many tags", createTransitSubnetInput{Name: "ok", VirsubnetID: e.subnetID, VirsubnetProjectID: gwTestProject, Tags: twentyOneTags}, "NAT.1016"},
+		{"too many tags", createTransitSubnetInput{Name: "ok", VirsubnetID: e.subnetID, VirsubnetProjectID: gwTestProject, Tags: tooManyTags}, "NAT.1016"},
 		{"unknown virsubnet_id", createTransitSubnetInput{Name: "ok", VirsubnetID: gwUnknownUUID, VirsubnetProjectID: gwTestProject}, "NAT.1002"},
 		{"already transit subnet", createTransitSubnetInput{Name: "ok", VirsubnetID: sub3, VirsubnetProjectID: gwTestProject}, "NAT.1101"},
 		{"subnet used by private gateway", createTransitSubnetInput{Name: "ok", VirsubnetID: e.subnet2, VirsubnetProjectID: gwTestProject}, "NAT.1101"},

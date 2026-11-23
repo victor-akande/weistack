@@ -503,9 +503,9 @@ func TestPrivateSnatValidationAndTransitIPLinking(t *testing.T) {
 		t.Fatalf("delete in-use transit IP = %q, want NAT.1409", prErrCode(err))
 	}
 
-	twentyOne := make([]string, 21)
-	for i := range twentyOne {
-		twentyOne[i] = fmt.Sprintf("10000000-0000-4000-8000-%012d", i+1)
+	tooManyTransitIPs := make([]string, maxSnatEIPs+1)
+	for i := range tooManyTransitIPs {
+		tooManyTransitIPs[i] = fmt.Sprintf("10000000-0000-4000-8000-%012d", i+1)
 	}
 
 	errCases := []struct {
@@ -520,7 +520,7 @@ func TestPrivateSnatValidationAndTransitIPLinking(t *testing.T) {
 		{"non-canonical cidr", createPrivateSnatInput{GatewayID: prGW1ID, CIDR: "10.0.60.1/24", TransitIPIDs: []string{ti3.ID}}, "NAT.1502"},
 		{"ipv6 cidr", createPrivateSnatInput{GatewayID: prGW1ID, CIDR: "2001:db8::/64", TransitIPIDs: []string{ti3.ID}}, "NAT.1502"},
 		{"empty transit_ip_ids", createPrivateSnatInput{GatewayID: prGW1ID, CIDR: "10.0.60.0/24"}, "NAT.1010"},
-		{"more than 20 transit_ip_ids", createPrivateSnatInput{GatewayID: prGW1ID, CIDR: "10.0.60.0/24", TransitIPIDs: twentyOne}, "NAT.1506"},
+		{"more than max transit_ip_ids", createPrivateSnatInput{GatewayID: prGW1ID, CIDR: "10.0.60.0/24", TransitIPIDs: tooManyTransitIPs}, "NAT.1506"},
 		{"non-uuid transit_ip_id", createPrivateSnatInput{GatewayID: prGW1ID, CIDR: "10.0.60.0/24", TransitIPIDs: []string{"bad"}}, "NAT.1507"},
 		{"duplicate transit_ip_id", createPrivateSnatInput{GatewayID: prGW1ID, CIDR: "10.0.60.0/24", TransitIPIDs: []string{ti3.ID, ti3.ID}}, "NAT.1010"},
 		{"unknown gateway", createPrivateSnatInput{GatewayID: prUnknownID, CIDR: "10.0.60.0/24", TransitIPIDs: []string{ti3.ID}}, "NAT.1002"},
@@ -735,8 +735,10 @@ func TestPrivateRulesLimitAndRollback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create ti2: %v", err)
 	}
-	// Seed 19 private DNAT rules (on ti1) + 1 private SNAT (on ti2) = 20 (Small spec rule_max).
-	for i := range 19 {
+	// Fill Small spec's rule_max across private DNAT (on ti1) and 1 private SNAT (on ti2).
+	ruleMax := privateRuleMax("Small")
+	snatSeeded := 1
+	for i := range ruleMax - snatSeeded {
 		portStr := fmt.Sprintf("%d", 1000+i)
 		id := fmt.Sprintf("d1000000-0000-4000-8000-%012d", i)
 		if err := e.svc.privateDnats(prTestTenant).Create(ctx, id, privateDnat{

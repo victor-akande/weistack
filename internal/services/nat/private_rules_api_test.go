@@ -270,9 +270,9 @@ func TestPrivateSnatHTTPErrorCodesGolden(t *testing.T) {
 		t.Fatalf("seed dnat: %d %s", st, out)
 	}
 
-	twentyOne := make([]string, 21)
-	for i := range twentyOne {
-		twentyOne[i] = fmt.Sprintf(`"10000000-0000-4000-8000-%012d"`, i+1)
+	tooManyTransitIPs := make([]string, maxSnatEIPs+1)
+	for i := range tooManyTransitIPs {
+		tooManyTransitIPs[i] = fmt.Sprintf(`"10000000-0000-4000-8000-%012d"`, i+1)
 	}
 
 	cases := []struct {
@@ -293,7 +293,7 @@ func TestPrivateSnatHTTPErrorCodesGolden(t *testing.T) {
 		{"invalid cidr", `{"snat_rule": {"gateway_id": "` + prGW1ID + `", "cidr": "10.0.60.5/24", "transit_ip_ids": ["` + ti2 + `"]}}`, "error_nat_1502"},
 		{"duplicate subnet", `{"snat_rule": {"gateway_id": "` + prGW1ID + `", "virsubnet_id": "` + prSub1ID + `", "transit_ip_ids": ["` + ti2 + `"]}}`, "error_nat_1503"},
 		{"duplicate cidr", `{"snat_rule": {"gateway_id": "` + prGW1ID + `", "cidr": "10.0.50.0/24", "transit_ip_ids": ["` + ti2 + `"]}}`, "error_nat_1505"},
-		{"more than 20 transit ips", `{"snat_rule": {"gateway_id": "` + prGW1ID + `", "cidr": "10.0.60.0/24", "transit_ip_ids": [` + strings.Join(twentyOne, ",") + `]}}`, "error_nat_1506"},
+		{"more than max transit ips", `{"snat_rule": {"gateway_id": "` + prGW1ID + `", "cidr": "10.0.60.0/24", "transit_ip_ids": [` + strings.Join(tooManyTransitIPs, ",") + `]}}`, "error_nat_1506"},
 		{"non-uuid transit ip", `{"snat_rule": {"gateway_id": "` + prGW1ID + `", "cidr": "10.0.60.0/24", "transit_ip_ids": ["bad-uuid"]}}`, "error_nat_1507"},
 	}
 	for _, tc := range cases {
@@ -308,8 +308,9 @@ func TestPrivateSnatHTTPErrorCodesGolden(t *testing.T) {
 	e.expect(t, "private_snat", "error_nat_1010", http.MethodGet, "/snat-rules?limit=0", "")
 	e.expect(t, "private_snat", "error_nat_1010", http.MethodGet, "/snat-rules?marker="+prUnknownID, "")
 
-	// Rule limit NAT.1207 (3 rules already on prGW1ID; seed 17 more -> 20).
-	for i := range 17 {
+	// Rule limit NAT.1207 (3 rules already on prGW1ID; fill remaining slots up to Small's rule_max).
+	const seededOnGW1 = 3
+	for i := range privateRuleMax("Small") - seededOnGW1 {
 		st, out := e.call(t, http.MethodPost, "/snat-rules", fmt.Sprintf(`{"snat_rule":{"gateway_id":%q,"cidr":"10.0.%d.0/24","transit_ip_ids":[%q]}}`, prGW1ID, 100+i, ti3))
 		if st != http.StatusCreated {
 			t.Fatalf("fill %d: %d %s", i, st, out)
@@ -483,8 +484,9 @@ func TestPrivateDnatHTTPErrorCodesGolden(t *testing.T) {
 	e.expect(t, "private_dnat", "error_nat_1010", http.MethodGet, "/dnat-rules?limit=0", "")
 	e.expect(t, "private_dnat", "error_nat_1010", http.MethodGet, "/dnat-rules?marker="+prUnknownID, "")
 
-	// Fill remaining 17 slots on prGW1ID (1 SNAT + 2 DNAT = 3 -> add 17 DNAT = 20) -> NAT.1207.
-	for i := range 17 {
+	// Fill remaining slots on prGW1ID (1 SNAT + 2 DNAT = 3) up to Small's rule_max -> NAT.1207.
+	const seededOnGW1 = 3
+	for i := range privateRuleMax("Small") - seededOnGW1 {
 		port := 1000 + i
 		st, out := e.call(t, http.MethodPost, "/dnat-rules", fmt.Sprintf(
 			`{"dnat_rule":{"gateway_id":%q,"transit_ip_id":%q,"private_ip_address":"10.0.9.99","protocol":"tcp","internal_service_port":"%d","transit_service_port":"%d"}}`,
