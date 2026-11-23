@@ -46,6 +46,9 @@ func (s *Service) Routes(r chi.Router) {
 	r.With(act("evs:types:get")).Get("/v2/{project_id}/types", s.handle("CinderListVolumeTypes", s.handleListVolumeTypes))
 	r.With(authz.Public()).Get("/v2/{project_id}/os-availability-zone", s.handle("CinderListAvailabilityZones", s.handleListAvailabilityZones))
 	r.With(authz.Public()).Get("/v1/{project_id}/jobs/{job_id}", s.handle("ShowJob", s.handleShowJob))
+
+	// Quotas
+	r.With(act("evs:quotas:get")).Get("/v2/{project_id}/os-quota-sets/{target_project_id}", s.handle("CinderListQuotas", s.handleListQuotas))
 }
 
 type handler func(w http.ResponseWriter, r *http.Request, t Tenant) error

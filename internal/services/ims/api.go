@@ -28,6 +28,7 @@ func (s *Service) Routes(r chi.Router) {
 	r.With(act("ims:images:get", image)).Get("/v2/images/{image_id}", s.handle("GlanceShowImage", s.handleShowImage))
 	r.With(act("ims:images:deleteImage", image)).Delete("/v2/images/{image_id}", s.handle("GlanceDeleteImage", s.handleDeleteImage))
 	r.With(act("ims:images:getJob")).Get("/v1/{project_id}/jobs/{job_id}", s.handle("ShowJob", s.handleShowJob))
+	r.With(act("ims:quotas:get")).Get("/v1/cloudimages/quota", s.handle("ShowImageQuota", s.handleShowImageQuota))
 }
 
 // listLimits bounds "limit" on ListImages: 1 to 1000, 1000 when omitted.

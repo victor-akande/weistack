@@ -41,6 +41,7 @@ func (s *Service) Routes(r chi.Router) {
 		r.With(act("rds:backup:list")).Get("/backups", s.handle("ListBackups", s.handleListBackups))
 		r.With(act("rds:backup:delete")).Delete("/backups/{backup_id}", s.handle("DeleteManualBackup", s.handleDeleteBackup))
 		r.With(act("rds:task:listAll")).Get("/jobs", s.handle("ListJobInfo", s.handleShowJob))
+		r.With(act("rds:instance:listQuotas")).Get("/quotas", s.handle("ShowQuotas", s.handleShowQuotas))
 	})
 }
 
@@ -304,6 +305,14 @@ func (s *Service) handleDeleteBackup(w http.ResponseWriter, r *http.Request, t T
 		return err
 	}
 	return httpx.WriteJSON(w, http.StatusOK, struct{}{})
+}
+
+func (s *Service) handleShowQuotas(w http.ResponseWriter, r *http.Request, t Tenant) error {
+	resources, err := s.ShowQuotas(r.Context(), t)
+	if err != nil {
+		return err
+	}
+	return httpx.WriteJSON(w, http.StatusOK, showQuotasResponse{Quotas: quotaList{Resources: resources}})
 }
 
 // Resume continues the operations that were in flight when a persistent

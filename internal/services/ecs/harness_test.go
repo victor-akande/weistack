@@ -72,6 +72,18 @@ func newEnvFaulty(t *testing.T, faults lifecycle.FaultInjector) *env {
 
 func newEnvOpts(t *testing.T, st store.Store, seedDir string, q Quota, faults lifecycle.FaultInjector) *env {
 	t.Helper()
+	limits := map[quota.Key]int{}
+	if q.Servers != 0 {
+		limits[quota.ECSInstances] = q.Servers
+	}
+	if q.VCPUs != 0 {
+		limits[quota.ECSCores] = q.VCPUs
+	}
+	return newEnvLimits(t, st, seedDir, quota.For(limits), faults)
+}
+
+func newEnvLimits(t *testing.T, st store.Store, seedDir string, limits quota.Limits, faults lifecycle.FaultInjector) *env {
+	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	clock := lifecycle.NewFakeClock(testEpoch)
 	engine := lifecycle.New(lifecycle.Options{Delay: testDelay, Clock: clock, Logger: log, Faults: faults})
@@ -103,15 +115,8 @@ func newEnvOpts(t *testing.T, st store.Store, seedDir string, q Quota, faults li
 	if err != nil {
 		t.Fatalf("evs.New: %v", err)
 	}
-	limits := map[quota.Key]int{}
-	if q.Servers != 0 {
-		limits[quota.ECSInstances] = q.Servers
-	}
-	if q.VCPUs != 0 {
-		limits[quota.ECSCores] = q.VCPUs
-	}
 	svc, err := New(Deps{
-		Quotas: quota.For(limits),
+		Quotas: limits,
 		Store:  st, Engine: engine, IDs: gen, Logger: log, Now: clock.Now, SeedDir: seedDir,
 		Network: network, EIPs: eips, Images: images, Volumes: volumes,
 	})
