@@ -143,7 +143,16 @@ want = {"server_status": "ACTIVE", "rds_status": "ACTIVE",
                 "cert_domain": "tf-elb.example.com"},
         "evs": {"attached_status": "in-use", "encrypted_status": "available",
                 "snapshot_status": "available", "web_volumes_count": 3,
-                "snapshots_count": 1, "has_azs": True, "volume_types_count": 7}}
+                "snapshots_count": 1, "has_azs": True, "volume_types_count": 7},
+        "quotas": {"vpc_quota": 150, "vpc_used": 2,
+                   "elb_lb_quota": 50, "elb_listener_quota": 100,
+                   "evs_volumes_limit": -1, "evs_volumes_used": 5,
+                   "evs_gigabytes_limit": 42790, "evs_gigabytes_used": 120,
+                   "evs_snapshots_limit": 10, "evs_snapshots_used": 1,
+                   "ecs_instances_quota": 20, "ecs_instances_used": 2,
+                   "ims_image_quota": 20, "ims_image_used": 0,
+                   "rds_instance_quota": 20, "rds_instance_used": 1,
+                   "iam_project_quota": 10, "iam_project_used": 1}}
 bad = {k: out.get(k) for k, v in want.items() if out.get(k) != v}
 if not out.get("server_ip", "").startswith("192.168.1."):
     bad["server_ip"] = out.get("server_ip")
