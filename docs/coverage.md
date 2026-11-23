@@ -10,18 +10,18 @@ A request for anything else answers `501 WeiStack.0501`. The pages under
 
 | Service | API versions | Operations |
 | --- | --- | --- |
-| [ECS](#ecs) | v1, v2.1 | 19 |
-| [ELB](#elb) | v3 (dedicated) | 80 |
+| [ECS](#ecs) | v1, v2.1 | 20 |
+| [ELB](#elb) | v3 (dedicated) | 82 |
 | [EPS](#eps) | v1.0 (the default enterprise project) | 1 |
-| [EVS](#evs) | v2, v2.1 | 18 |
-| [IAM](#iam) | v3, v3.0, v5 (users, groups, tokens, access keys, roles, custom policies, role assignments, identity policies) | 131 |
-| [IMS](#ims) | v1, v2 | 6 |
+| [EVS](#evs) | v2, v2.1 | 19 |
+| [IAM](#iam) | v3, v3.0, v5 (users, groups, tokens, access keys, roles, custom policies, role assignments, identity policies) | 133 |
+| [IMS](#ims) | v1, v2 | 7 |
 | [KMS](#kms) | v1.0 (keys, encryption, data keys, rotation, tags) | 38 |
-| [NAT](#nat) | v2 (public), v3 (private, tags) | 72 |
+| [NAT](#nat) | v2 (public), v3 (private, tags) | 73 |
 | [OBS](#obs) | S3-compatible | 31 |
-| [RDS](#rds) | v3 | 11 |
+| [RDS](#rds) | v3 | 12 |
 | [STS](#sts) | v5 (caller identity, authorization messages, assuming agencies) | 3 |
-| [VPC](#vpc) | v1, v3 | 64 |
+| [VPC](#vpc) | v1, v3 | 66 |
 
 ## ECS
 
@@ -34,6 +34,7 @@ Endpoint: `ecs.{region}.myhuaweicloud.com`. Details: [ECS](services/ecs.md).
 | `POST` | `/v1/{project_id}/cloudservers/delete` | `ecs:cloudServers:deleteServers` |
 | `GET` | `/v1/{project_id}/cloudservers/detail` | `ecs:cloudServers:listServersDetails` |
 | `GET` | `/v1/{project_id}/cloudservers/flavors` | `ecs:cloudServerFlavors:get` |
+| `GET` | `/v1/{project_id}/cloudservers/limits` | `ecs:cloudServerQuotas:get` |
 | `GET` | `/v1/{project_id}/cloudservers/tags` | `ecs:cloudServers:listServerTags` |
 | `POST` | `/v1/{project_id}/cloudservers/{server_id}/attachvolume` | `ecs:cloudServers:attach` |
 | `GET` | `/v1/{project_id}/cloudservers/{server_id}/block_device/{volume_id}` | `ecs:cloudServers:showServerBlockDevice` |
@@ -123,6 +124,8 @@ Endpoint: `elb.{region}.myhuaweicloud.com`. Details: [ELB](services/elb.md).
 | `PUT` | `/v3/{project_id}/elb/pools/{pool_id}` | `elb:pools:update` |
 | `GET` | `/v3/{project_id}/elb/pools` | `elb:pools:list` |
 | `POST` | `/v3/{project_id}/elb/pools` | `elb:pools:create` |
+| `GET` | `/v3/{project_id}/elb/quotas/details` | `elb:quotas:list` |
+| `GET` | `/v3/{project_id}/elb/quotas` | `elb:quotas:show` |
 | `DELETE` | `/v3/{project_id}/elb/security-policies/{security_policy_id}` | `elb:security-policies:delete` |
 | `GET` | `/v3/{project_id}/elb/security-policies/{security_policy_id}` | `elb:security-policies:show` |
 | `PUT` | `/v3/{project_id}/elb/security-policies/{security_policy_id}` | `elb:security-policies:update` |
@@ -167,6 +170,7 @@ Endpoint: `evs.{region}.myhuaweicloud.com`. Details: [EVS](services/evs.md).
 | `GET` | `/v2/{project_id}/cloudvolumes/{volume_id}` | `evs:volumes:get` |
 | `PUT` | `/v2/{project_id}/cloudvolumes/{volume_id}` | `evs:volumes:update` |
 | `GET` | `/v2/{project_id}/os-availability-zone` | None needed |
+| `GET` | `/v2/{project_id}/os-quota-sets/{target_project_id}` | `evs:quotas:get` |
 | `GET` | `/v2/{project_id}/types` | `evs:types:get` |
 
 ## IAM
@@ -211,6 +215,8 @@ Endpoint: `iam.{region}.myhuaweicloud.com`. Details: [IAM](services/iam.md).
 | `DELETE` | `/v3.0/OS-PERMISSION/subjects/agency/scopes/enterprise-project/role-assignments` | `iam:agencies:revokeRoleOnEnterpriseProject` |
 | `PUT` | `/v3.0/OS-PERMISSION/subjects/agency/scopes/enterprise-project/role-assignments` | `iam:agencies:grantRoleOnEnterpriseProject` |
 | `GET` | `/v3.0/OS-PERMISSION/users/{user_id}/enterprise-projects` | `iam:users:listAssignedEnterpriseProjects` |
+| `GET` | `/v3.0/OS-QUOTA/domains/{domain_id}` | None needed |
+| `GET` | `/v3.0/OS-QUOTA/projects/{project_id}` | None needed |
 | `DELETE` | `/v3.0/OS-ROLE/roles/{role_id}` | `iam:roles:delete` |
 | `GET` | `/v3.0/OS-ROLE/roles/{role_id}` | `iam:roles:get` |
 | `PATCH` | `/v3.0/OS-ROLE/roles/{role_id}` | `iam:roles:update` |
@@ -313,6 +319,7 @@ Endpoint: `ims.{region}.myhuaweicloud.com`. Details: [IMS](services/ims.md).
 
 | Method | Path | IAM action |
 | --- | --- | --- |
+| `GET` | `/v1/cloudimages/quota` | `ims:quotas:get` |
 | `GET` | `/v1/{project_id}/jobs/{job_id}` | `ims:images:getJob` |
 | `POST` | `/v2/cloudimages/action` | `ims:serverImages:create` |
 | `PATCH` | `/v2/cloudimages/{image_id}` | `ims:images:updateImage` |
@@ -371,6 +378,7 @@ Endpoint: `nat.{region}.myhuaweicloud.com`. Details: [NAT](services/nat.md).
 
 | Method | Path | IAM action |
 | --- | --- | --- |
+| `GET` | `/v2.0/{project_id}/nat_gateways/quotas` | None needed (undocumented: no action listed) |
 | `POST` | `/v2.0/{project_id}/nat_gateways/resource_instances/action` | `nat:natGateways:listTags` |
 | `GET` | `/v2.0/{project_id}/nat_gateways/tags` | `nat:natGateways:listTags` |
 | `POST` | `/v2.0/{project_id}/nat_gateways/{nat_gateway_id}/tags/action` | `nat:natGateways:createTags` |
@@ -500,6 +508,7 @@ Endpoint: `rds.{region}.myhuaweicloud.com`. Details: [RDS](services/rds.md).
 | `GET` | `/v3/{project_id}/instances` | `rds:instance:listAll` |
 | `POST` | `/v3/{project_id}/instances` | `rds:instance:create` |
 | `GET` | `/v3/{project_id}/jobs` | `rds:task:listAll` |
+| `GET` | `/v3/{project_id}/quotas` | `rds:instance:listQuotas` |
 
 ## STS
 
@@ -527,6 +536,7 @@ Endpoint: `vpc.{region}.myhuaweicloud.com`. Details: [VPC](services/vpc.md).
 | `PUT` | `/v1/{project_id}/publicips/{publicip_id}` | `eip:publicIps:update` |
 | `GET` | `/v1/{project_id}/publicips` | `eip:publicIps:list` |
 | `POST` | `/v1/{project_id}/publicips` | `eip:publicIps:create` |
+| `GET` | `/v1/{project_id}/quotas` | `vpc:quotas:list` |
 | `DELETE` | `/v1/{project_id}/security-group-rules/{security_group_rule_id}` | `vpc:securityGroupRules:delete` |
 | `GET` | `/v1/{project_id}/security-group-rules/{security_group_rule_id}` | `vpc:securityGroupRules:get` |
 | `GET` | `/v1/{project_id}/security-group-rules` | `vpc:securityGroupRules:list` |
@@ -570,6 +580,7 @@ Endpoint: `vpc.{region}.myhuaweicloud.com`. Details: [VPC](services/vpc.md).
 | `GET` | `/v3/{project_id}/eip/publicips/{publicip_id}` | `eip:publicIps:get` |
 | `PUT` | `/v3/{project_id}/eip/publicips/{publicip_id}` | `eip:publicIps:update` |
 | `GET` | `/v3/{project_id}/eip/publicips` | `eip:publicIps:list` |
+| `GET` | `/v3/{project_id}/vpc/quotas` | `vpc:quotas:list` |
 | `DELETE` | `/v3/{project_id}/vpc/security-group-rules/{security_group_rule_id}` | `vpc:securityGroupRules:delete` |
 | `GET` | `/v3/{project_id}/vpc/security-group-rules/{security_group_rule_id}` | `vpc:securityGroupRules:get` |
 | `GET` | `/v3/{project_id}/vpc/security-group-rules` | `vpc:securityGroupRules:list` |

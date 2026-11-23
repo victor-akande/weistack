@@ -52,6 +52,8 @@ func (s *Service) classicRoutes(r chi.Router) {
 	r.With(public()).Get("/v3/auth/projects", s.handle("KeystoneListAuthProjects", s.handleListAuthProjects))
 	r.With(act("iam:projects:list")).Get("/v3/projects", s.handle("KeystoneListProjects", s.handleListProjects))
 	r.With(public()).Get("/v3/projects/{project_id}", s.handle("KeystoneShowProject", s.handleShowProject))
+	r.With(public()).Get("/v3.0/OS-QUOTA/domains/{domain_id}", s.handle("ShowDomainQuota", s.handleShowDomainQuota))
+	r.With(public()).Get("/v3.0/OS-QUOTA/projects/{project_id}", s.handle("ShowProjectQuota", s.handleShowProjectQuota))
 
 	r.With(public()).Post("/v3/auth/tokens", s.handle("KeystoneCreateUserToken", s.handleCreateToken))
 	// Validating a token names no action in IAM's table: a holder of

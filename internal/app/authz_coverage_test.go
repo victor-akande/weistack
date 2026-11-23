@@ -55,6 +55,9 @@ var openRoutes = map[string]string{
 	"sts POST /v5/agencies/assume":                                   "checked once the body names the agency",
 	"nat GET /v2/{project_id}/nat_gateway_specs":                     "documented: no permission needed",
 	"nat GET /v3/{project_id}/private-nat/specs":                     "documented: no permission needed",
+	"nat GET /v2.0/{project_id}/nat_gateways/quotas":                 "undocumented: no action listed",
+	"iam GET /v3.0/OS-QUOTA/domains/{domain_id}":                     "documented: no permission needed",
+	"iam GET /v3.0/OS-QUOTA/projects/{project_id}":                   "documented: no permission needed",
 }
 
 // KMS names the key in the body of most operations, and checks the
