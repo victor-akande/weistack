@@ -336,14 +336,18 @@ func TestPrivateGatewayCreateValidation(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name:       "tag key > 128 runes",
-			mutate:     func(in *createPrivateGatewayInput) { in.Tags = []tag{{Key: strings.Repeat("k", 129), Value: "v"}} },
+			name: "tag key > max runes",
+			mutate: func(in *createPrivateGatewayInput) {
+				in.Tags = []tag{{Key: strings.Repeat("k", maxTagKeyLen+1), Value: "v"}}
+			},
 			wantCode:   "NAT.1015",
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name:       "tag value > 255 runes",
-			mutate:     func(in *createPrivateGatewayInput) { in.Tags = []tag{{Key: "k", Value: strings.Repeat("v", 256)}} },
+			name: "tag value > max runes",
+			mutate: func(in *createPrivateGatewayInput) {
+				in.Tags = []tag{{Key: "k", Value: strings.Repeat("v", maxTagValueLen+1)}}
+			},
 			wantCode:   "NAT.1015",
 			wantStatus: http.StatusBadRequest,
 		},

@@ -493,11 +493,11 @@ func TestTagGoldenErrors(t *testing.T) {
 						{"empty tags create", `{"action": "create", "tags": []}`},
 						{"empty tags delete", `{"action": "delete", "tags": []}`},
 						{"empty key create", `{"action": "create", "tags": [{"key": "", "value": "v"}]}`},
-						{"key over max", `{"action": "create", "tags": [{"key": "` + strings.Repeat("k", tagMaxFilterKeyLen+1) + `", "value": "v"}]}`},
+						{"key over max", `{"action": "create", "tags": [{"key": "` + strings.Repeat("k", tagMaxKeyLen+1) + `", "value": "v"}]}`},
 						{"invalid key char dot", `{"action": "create", "tags": [{"key": "a.b", "value": "v"}]}`},
 						{"invalid key char star", `{"action": "create", "tags": [{"key": "a*b", "value": "v"}]}`},
 						{"invalid key char space", `{"action": "create", "tags": [{"key": "a b", "value": "v"}]}`},
-						{"value over max", `{"action": "create", "tags": [{"key": "k", "value": "` + strings.Repeat("v", tagMaxFilterValueLen+1) + `"}]}`},
+						{"value over max", `{"action": "create", "tags": [{"key": "k", "value": "` + strings.Repeat("v", tagMaxValueLen+1) + `"}]}`},
 						{"invalid value char slash", `{"action": "create", "tags": [{"key": "k", "value": "a/b"}]}`},
 						{"invalid value char eq", `{"action": "create", "tags": [{"key": "k", "value": "a=b"}]}`},
 						{"duplicate key create", `{"action": "create", "tags": [{"key": "dup", "value": "v1"}, {"key": "dup", "value": "v2"}]}`},
@@ -539,9 +539,9 @@ func TestTagGoldenErrors(t *testing.T) {
 					{"malformed json", `{"tag":`},
 					{"missing tag", `{}`},
 					{"empty key", `{"tag": {"key": "", "value": "v"}}`},
-					{"key over max", `{"tag": {"key": "` + strings.Repeat("k", tagMaxFilterKeyLen+1) + `", "value": "v"}}`},
+					{"key over max", `{"tag": {"key": "` + strings.Repeat("k", tagMaxKeyLen+1) + `", "value": "v"}}`},
 					{"invalid key char", `{"tag": {"key": "bad/key", "value": "v"}}`},
-					{"value over max", `{"tag": {"key": "k", "value": "` + strings.Repeat("v", tagMaxFilterValueLen+1) + `"}}`},
+					{"value over max", `{"tag": {"key": "k", "value": "` + strings.Repeat("v", tagMaxValueLen+1) + `"}}`},
 					{"invalid value char", `{"tag": {"key": "k", "value": "bad*val"}}`},
 				}
 				for _, tc := range invalidSingle {
@@ -630,9 +630,9 @@ func TestTagOverwriteBoundariesAndMaxTags(t *testing.T) {
 			}
 			base := "/" + kind + "/" + id
 
-			// Max length key (128 chars in [A-Za-z0-9_-]) and max length value (255 chars in [A-Za-z0-9_.-]).
-			maxKey := "K_" + strings.Repeat("a", 125) + "-"
-			maxVal := "v1.0_" + strings.Repeat("b", 249) + "-"
+			// Max length key (tagMaxKeyLen chars in [A-Za-z0-9_-]) and max length value (tagMaxValueLen chars in [A-Za-z0-9_.-]).
+			maxKey := "K_" + strings.Repeat("a", tagMaxKeyLen-len("K_")-len("-")) + "-"
+			maxVal := "v1.0_" + strings.Repeat("b", tagMaxValueLen-len("v1.0_")-len("-")) + "-"
 
 			st, out := e.call(t, "/v2.0", http.MethodPost, base+"/tags",
 				fmt.Sprintf(`{"tag": {"key": %q, "value": %q}}`, maxKey, maxVal))

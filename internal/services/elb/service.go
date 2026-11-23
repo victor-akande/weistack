@@ -60,6 +60,8 @@ const (
 	defaultEnterpriseProjectID = "0"
 	allGrantedEPs              = "all_granted_eps"
 	maxTags                    = 20
+	tagMaxKeyLen               = 128
+	tagMaxValueLen             = 255
 )
 
 // Tenant identifies whose resources a call operates on.
@@ -199,8 +201,8 @@ var listLimits = pagination.Limits{Default: 2000, Min: 1, Max: 2000}
 
 var (
 	uuidRE     = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
-	tagKeyRE   = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
-	tagValueRE = regexp.MustCompile(`^[A-Za-z0-9_.-]{0,255}$`)
+	tagKeyRE   = regexp.MustCompile("^[A-Za-z0-9_-]{1," + strconv.Itoa(tagMaxKeyLen) + "}$")
+	tagValueRE = regexp.MustCompile("^[A-Za-z0-9_.-]{0," + strconv.Itoa(tagMaxValueLen) + "}$")
 )
 
 func validName(s string) bool {

@@ -455,16 +455,16 @@ func TestPrivateTagGoldenErrors(t *testing.T) {
 			}{
 				{"create nil tag", target.basePath + "/" + id + "/tags", `{}`},
 				{"create empty key", target.basePath + "/" + id + "/tags", `{"tag": {"key": "", "value": "v"}}`},
-				{"create key over max", target.basePath + "/" + id + "/tags", `{"tag": {"key": "` + strings.Repeat("k", maxTagFilterKeyLen+1) + `", "value": "v"}}`},
-				{"create value over max", target.basePath + "/" + id + "/tags", `{"tag": {"key": "k", "value": "` + strings.Repeat("v", maxTagFilterValueLen+1) + `"}}`},
+				{"create key over max", target.basePath + "/" + id + "/tags", `{"tag": {"key": "` + strings.Repeat("k", maxTagKeyLen+1) + `", "value": "v"}}`},
+				{"create value over max", target.basePath + "/" + id + "/tags", `{"tag": {"key": "k", "value": "` + strings.Repeat("v", maxTagValueLen+1) + `"}}`},
 				{"batch create empty tags", target.basePath + "/" + id + "/tags/action", `{"action": "create", "tags": []}`},
 				{"batch delete empty tags", target.basePath + "/" + id + "/tags/action", `{"action": "delete", "tags": []}`},
 				{"batch create empty key", target.basePath + "/" + id + "/tags/action", `{"action": "create", "tags": [{"key": "", "value": "v"}]}`},
-				{"batch create key over max", target.basePath + "/" + id + "/tags/action", `{"action": "create", "tags": [{"key": "` + strings.Repeat("k", maxTagFilterKeyLen+1) + `", "value": "v"}]}`},
-				{"batch create value over max", target.basePath + "/" + id + "/tags/action", `{"action": "create", "tags": [{"key": "k", "value": "` + strings.Repeat("v", maxTagFilterValueLen+1) + `"}]}`},
+				{"batch create key over max", target.basePath + "/" + id + "/tags/action", `{"action": "create", "tags": [{"key": "` + strings.Repeat("k", maxTagKeyLen+1) + `", "value": "v"}]}`},
+				{"batch create value over max", target.basePath + "/" + id + "/tags/action", `{"action": "create", "tags": [{"key": "k", "value": "` + strings.Repeat("v", maxTagValueLen+1) + `"}]}`},
 				{"batch create duplicate key", target.basePath + "/" + id + "/tags/action", `{"action": "create", "tags": [{"key": "dup", "value": "v1"}, {"key": "dup", "value": "v2"}]}`},
 				{"batch delete empty key", target.basePath + "/" + id + "/tags/action", `{"action": "delete", "tags": [{"key": ""}]}`},
-				{"batch delete key over max", target.basePath + "/" + id + "/tags/action", `{"action": "delete", "tags": [{"key": "` + strings.Repeat("k", maxTagFilterKeyLen+1) + `"}]}`},
+				{"batch delete key over max", target.basePath + "/" + id + "/tags/action", `{"action": "delete", "tags": [{"key": "` + strings.Repeat("k", maxTagKeyLen+1) + `"}]}`},
 				{"filter empty key", target.basePath + "/resource_instances/action", `{"action": "filter", "tags": [{"key": "", "values": ["v"]}]}`},
 				{"filter space-only key", target.basePath + "/resource_instances/action", `{"action": "filter", "tags": [{"key": "   ", "values": ["v"]}]}`},
 				{"filter key over max", target.basePath + "/resource_instances/action", `{"action": "filter", "tags": [{"key": "` + strings.Repeat("k", maxTagFilterKeyLen+1) + `", "values": ["v"]}]}`},
@@ -530,8 +530,8 @@ func TestPrivateTagOverwriteBoundariesUpdatedAtAndMaxTags(t *testing.T) {
 			id := target.seed(e, t, tagTestTenant, "priv-bounds", nil)
 			initialUpdated := target.updatedAt(e, t, tagTestTenant, id)
 
-			maxKey := strings.Repeat("é", maxTagFilterKeyLen)
-			maxVal := strings.Repeat("中", maxTagFilterValueLen)
+			maxKey := strings.Repeat("é", maxTagKeyLen)
+			maxVal := strings.Repeat("中", maxTagValueLen)
 
 			// Advance clock before create and verify UpdatedAt updates.
 			e.clock.Advance(5 * time.Second)

@@ -312,16 +312,16 @@ func TestNatGatewayTagGoldenErrors(t *testing.T) {
 			}{
 				{"create nil tag", "/nat_gateways/" + gw.ID + "/tags", `{}`},
 				{"create empty key", "/nat_gateways/" + gw.ID + "/tags", `{"tag": {"key": "", "value": "v"}}`},
-				{"create key over max", "/nat_gateways/" + gw.ID + "/tags", `{"tag": {"key": "` + strings.Repeat("k", maxTagFilterKeyLen+1) + `", "value": "v"}}`},
-				{"create value over max", "/nat_gateways/" + gw.ID + "/tags", `{"tag": {"key": "k", "value": "` + strings.Repeat("v", maxTagFilterValueLen+1) + `"}}`},
+				{"create key over max", "/nat_gateways/" + gw.ID + "/tags", `{"tag": {"key": "` + strings.Repeat("k", maxTagKeyLen+1) + `", "value": "v"}}`},
+				{"create value over max", "/nat_gateways/" + gw.ID + "/tags", `{"tag": {"key": "k", "value": "` + strings.Repeat("v", maxTagValueLen+1) + `"}}`},
 				{"batch create empty tags", "/nat_gateways/" + gw.ID + "/tags/action", `{"action": "create", "tags": []}`},
 				{"batch delete empty tags", "/nat_gateways/" + gw.ID + "/tags/action", `{"action": "delete", "tags": []}`},
 				{"batch create empty key", "/nat_gateways/" + gw.ID + "/tags/action", `{"action": "create", "tags": [{"key": "", "value": "v"}]}`},
-				{"batch create key over max", "/nat_gateways/" + gw.ID + "/tags/action", `{"action": "create", "tags": [{"key": "` + strings.Repeat("k", maxTagFilterKeyLen+1) + `", "value": "v"}]}`},
-				{"batch create value over max", "/nat_gateways/" + gw.ID + "/tags/action", `{"action": "create", "tags": [{"key": "k", "value": "` + strings.Repeat("v", maxTagFilterValueLen+1) + `"}]}`},
+				{"batch create key over max", "/nat_gateways/" + gw.ID + "/tags/action", `{"action": "create", "tags": [{"key": "` + strings.Repeat("k", maxTagKeyLen+1) + `", "value": "v"}]}`},
+				{"batch create value over max", "/nat_gateways/" + gw.ID + "/tags/action", `{"action": "create", "tags": [{"key": "k", "value": "` + strings.Repeat("v", maxTagValueLen+1) + `"}]}`},
 				{"batch create duplicate key", "/nat_gateways/" + gw.ID + "/tags/action", `{"action": "create", "tags": [{"key": "dup", "value": "v1"}, {"key": "dup", "value": "v2"}]}`},
 				{"batch delete empty key", "/nat_gateways/" + gw.ID + "/tags/action", `{"action": "delete", "tags": [{"key": ""}]}`},
-				{"batch delete key over max", "/nat_gateways/" + gw.ID + "/tags/action", `{"action": "delete", "tags": [{"key": "` + strings.Repeat("k", maxTagFilterKeyLen+1) + `"}]}`},
+				{"batch delete key over max", "/nat_gateways/" + gw.ID + "/tags/action", `{"action": "delete", "tags": [{"key": "` + strings.Repeat("k", maxTagKeyLen+1) + `"}]}`},
 				{"filter empty key", "/nat_gateways/resource_instances/action", `{"action": "filter", "tags": [{"key": "", "values": ["v"]}]}`},
 				{"filter space-only key", "/nat_gateways/resource_instances/action", `{"action": "filter", "tags": [{"key": "   ", "values": ["v"]}]}`},
 				{"filter key over max", "/nat_gateways/resource_instances/action", `{"action": "filter", "tags": [{"key": "` + strings.Repeat("k", maxTagFilterKeyLen+1) + `", "values": ["v"]}]}`},
@@ -383,9 +383,9 @@ func TestTagOverwriteBoundariesAndMaxTags(t *testing.T) {
 	e := newTagEnv(t)
 	gw := e.seedGateway(t, tagTestTenant, "nat-bounds", nil)
 
-	// Boundary Unicode lengths (maxTagFilterKeyLen runes, maxTagFilterValueLen runes) and empty value.
-	maxKey := strings.Repeat("é", maxTagFilterKeyLen)
-	maxVal := strings.Repeat("中", maxTagFilterValueLen)
+	// Boundary Unicode lengths (maxTagKeyLen runes, maxTagValueLen runes) and empty value.
+	maxKey := strings.Repeat("é", maxTagKeyLen)
+	maxVal := strings.Repeat("中", maxTagValueLen)
 
 	status, out := e.call(t, "/v3", http.MethodPost, "/nat_gateways/"+gw.ID+"/tags",
 		`{"tag": {"key": "`+maxKey+`", "value": "`+maxVal+`"}}`)
