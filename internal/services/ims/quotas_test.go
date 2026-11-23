@@ -2,6 +2,7 @@ package ims
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -81,13 +82,19 @@ func wantIMSQuotaError(t *testing.T, status int, out []byte) {
 
 func TestImageQuotaEnforced(t *testing.T) {
 	t.Parallel()
-	e := newQuotaEnv(t, store.NewMemory(), quota.For(map[quota.Key]int{quota.IMSImage: 2}))
+	limit := 2
+	e := newQuotaEnv(t, store.NewMemory(), quota.For(map[quota.Key]int{quota.IMSImage: limit}))
 
-	img1 := e.mustCreateImage(t, "img-1")
-	_ = e.mustCreateImage(t, "img-2")
+	var firstID string
+	for i := range limit {
+		img := e.mustCreateImage(t, fmt.Sprintf("img-%d", i+1))
+		if i == 0 {
+			firstID = img.ID
+		}
+	}
 
-	// Creating a 3rd private image from a server is refused with IMG.0015.
-	status, out := e.call(t, testProject, http.MethodPost, "/v2/cloudimages/action", createBody("img-3"))
+	// Creating another private image from a server is refused with IMG.0015.
+	status, out := e.call(t, testProject, http.MethodPost, "/v2/cloudimages/action", createBody("img-extra"))
 	wantIMSQuotaError(t, status, out)
 
 	// Unimplemented create paths (from volume, OBS file) still report 501.
@@ -102,34 +109,37 @@ func TestImageQuotaEnforced(t *testing.T) {
 	}
 
 	// Deleting one image frees a slot.
-	status, out = e.call(t, testProject, http.MethodDelete, "/v2/images/"+img1.ID, "")
+	status, out = e.call(t, testProject, http.MethodDelete, "/v2/images/"+firstID, "")
 	if status != http.StatusNoContent {
 		t.Fatalf("delete: %d %s", status, out)
 	}
-	_ = e.mustCreateImage(t, "img-3")
+	_ = e.mustCreateImage(t, "img-extra")
 }
 
 func TestImageQuotaUnlimited(t *testing.T) {
 	t.Parallel()
+	creates := 3
 	e := newQuotaEnv(t, store.NewMemory(), quota.For(map[quota.Key]int{quota.IMSImage: quota.Unlimited}))
 
-	for _, name := range []string{"img-1", "img-2", "img-3"} {
-		_ = e.mustCreateImage(t, name)
+	for i := range creates {
+		_ = e.mustCreateImage(t, fmt.Sprintf("img-%d", i+1))
 	}
 }
 
 func TestImageQuotaExistingOverLimit(t *testing.T) {
 	t.Parallel()
+	limit, over := 2, 1
+	seeded := limit + over
 	st := store.NewMemory()
 	coll := store.Of[Image](st, store.Scope{Region: testRegion, ProjectID: testProject, Kind: kindImage})
 	now := Time(testEpoch)
 	var ids []string
-	for _, name := range []string{"pre-1", "pre-2", "pre-3"} {
-		id := "00000000-0000-4000-8000-00000000000" + name[len(name)-1:]
+	for i := range seeded {
+		id := fmt.Sprintf("00000000-0000-4000-8000-00000000000%d", i+1)
 		ids = append(ids, id)
 		img := Image{
 			ID:         id,
-			Name:       name,
+			Name:       fmt.Sprintf("pre-%d", i+1),
 			Status:     StatusActive,
 			ImageType:  TypePrivate,
 			Visibility: VisibilityPrivate,
@@ -138,27 +148,27 @@ func TestImageQuotaExistingOverLimit(t *testing.T) {
 			UpdatedAt:  now,
 		}
 		if err := coll.Create(t.Context(), id, img); err != nil {
-			t.Fatalf("seed %s: %v", name, err)
+			t.Fatalf("seed %s: %v", img.Name, err)
 		}
 	}
 
-	e := newQuotaEnv(t, st, quota.For(map[quota.Key]int{quota.IMSImage: 2}))
+	e := newQuotaEnv(t, st, quota.For(map[quota.Key]int{quota.IMSImage: limit}))
 
-	// Existing 3 images over the limit of 2 are all kept.
+	// Existing images over the limit are all kept.
 	imgs, err := e.svc.ListImages(t.Context(), testTenant, ListImagesFilter{ImageType: TypePrivate})
 	if err != nil {
 		t.Fatalf("ListImages: %v", err)
 	}
-	if len(imgs) != 3 {
-		t.Fatalf("len(imgs) = %d, want 3", len(imgs))
+	if len(imgs) != seeded {
+		t.Fatalf("len(imgs) = %d, want %d", len(imgs), seeded)
 	}
 
 	// New create is refused.
 	status, out := e.call(t, testProject, http.MethodPost, "/v2/cloudimages/action", createBody("new-img"))
 	wantIMSQuotaError(t, status, out)
 
-	// Deleting 2 images brings usage to 1 (< 2), allowing a new create.
-	for _, id := range ids[:2] {
+	// Deleting over+1 images brings usage below limit, allowing a new create.
+	for _, id := range ids[:over+1] {
 		stCode, body := e.call(t, testProject, http.MethodDelete, "/v2/images/"+id, "")
 		if stCode != http.StatusNoContent {
 			t.Fatalf("delete %s: %d %s", id, stCode, body)

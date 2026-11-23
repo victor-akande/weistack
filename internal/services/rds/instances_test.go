@@ -290,17 +290,20 @@ func TestListFiltersAndPaging(t *testing.T) {
 
 func TestQuota(t *testing.T) {
 	t.Parallel()
-	e := newEnvWith(t, options{quota: 2})
-	e.mustCreate(t, e.body("name", `"db-one"`))
-	id, _ := e.mustCreate(t, e.body("name", `"db-two"`))
-	e.expect(t, "error_dbs_200046", http.MethodPost, "/instances", e.body("name", `"db-three"`))
+	limit := 2
+	e := newEnvWith(t, options{quota: limit})
+	var lastID string
+	for i := range limit {
+		lastID, _ = e.mustCreate(t, e.body("name", fmt.Sprintf(`"db-%d"`, i+1)))
+	}
+	e.expect(t, "error_dbs_200046", http.MethodPost, "/instances", e.body("name", `"db-over"`))
 
 	e.settle(t)
-	if _, err := e.svc.DeleteInstance(t.Context(), testTenant, id); err != nil {
+	if _, err := e.svc.DeleteInstance(t.Context(), testTenant, lastID); err != nil {
 		t.Fatal(err)
 	}
 	e.settle(t)
-	e.mustCreate(t, e.body("name", `"db-three"`))
+	e.mustCreate(t, e.body("name", `"db-over"`))
 }
 
 func TestSubnetExhaustion(t *testing.T) {
@@ -373,7 +376,10 @@ func TestDeleteFaultKeepsTheInstance(t *testing.T) {
 
 func TestConcurrentCreatesRespectQuotaAndNames(t *testing.T) {
 	t.Parallel()
-	e := newEnvWith(t, options{quota: 5})
+	limit, extra := 5, 15
+	total := limit + extra
+	e := newEnvWith(t, options{quota: limit})
+	initialFree := e.subnetFree(t)
 
 	var (
 		wg       sync.WaitGroup
@@ -381,7 +387,7 @@ func TestConcurrentCreatesRespectQuotaAndNames(t *testing.T) {
 		ok       int
 		failures = map[string]int{}
 	)
-	for i := range 20 {
+	for i := range total {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -414,11 +420,11 @@ func TestConcurrentCreatesRespectQuotaAndNames(t *testing.T) {
 		}
 		names[i.Name] = true
 	}
-	if ok != 5 || len(all) != 5 || failures["DBS.200046"]+failures["DBS.200022"] != 15 {
-		t.Fatalf("%d created, %d stored, failures %v", ok, len(all), failures)
+	if ok != limit || len(all) != limit || failures["DBS.200046"]+failures["DBS.200022"] != extra {
+		t.Fatalf("%d created, %d stored, failures %v (want %d created, %d failed)", ok, len(all), failures, limit, extra)
 	}
-	if free := e.subnetFree(t); free != 246 {
-		t.Errorf("%d free addresses, want 246", free)
+	if free := e.subnetFree(t); free != initialFree-limit {
+		t.Errorf("%d free addresses, want %d", free, initialFree-limit)
 	}
 }
 

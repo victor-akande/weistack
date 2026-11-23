@@ -217,9 +217,10 @@ func TestSharedBandwidthCRUDAndQuota(t *testing.T) {
 	e := newBWEnv(t)
 	ctx := context.Background()
 
-	// Create 5 shared bandwidths (the project quota).
+	// Create up to the shared-bandwidth project quota.
+	limit := (quota.Limits{}).Get(quota.VPCShareBandwidth)
 	var created []bandwidth
-	for i := 1; i <= (quota.Limits{}).Get(quota.VPCShareBandwidth); i++ {
+	for i := 1; i <= limit; i++ {
 		bw, err := e.svc.CreateSharedBandwidth(ctx, bwTestTenant, createSharedBandwidthOption{
 			Name: fmt.Sprintf("shared-%d", i),
 			Size: 5 * i,
@@ -233,9 +234,9 @@ func TestSharedBandwidthCRUDAndQuota(t *testing.T) {
 		created = append(created, bw)
 	}
 
-	// 6th shared bandwidth exceeds quota -> VPC.0310.
+	// One more shared bandwidth exceeds quota -> VPC.0310.
 	_, err := e.svc.CreateSharedBandwidth(ctx, bwTestTenant, createSharedBandwidthOption{
-		Name: "shared-6",
+		Name: fmt.Sprintf("shared-%d", limit+1),
 		Size: 10,
 	})
 	bwWantErrCode(t, err, http.StatusBadRequest, "VPC.0310")
@@ -266,7 +267,7 @@ func TestSharedBandwidthCRUDAndQuota(t *testing.T) {
 	_, err = e.svc.GetBandwidth(ctx, bwTestTenant, created[0].ID)
 	bwWantErrCode(t, err, http.StatusNotFound, "VPC.0306")
 
-	// Creating another shared bandwidth succeeds now that only 4 exist.
+	// Creating another shared bandwidth succeeds now that a slot is free.
 	if _, err := e.svc.CreateSharedBandwidth(ctx, bwTestTenant, createSharedBandwidthOption{
 		Name: "shared-after-delete",
 		Size: 10,
@@ -476,26 +477,27 @@ func TestSharedBandwidthMax20EIPsLimit(t *testing.T) {
 		t.Fatalf("CreateSharedBandwidth: %v", err)
 	}
 
+	limit := (quota.Limits{}).Get(quota.VPCShareBandwidthIP)
 	var infos []insertPublicIPInfo
-	for i := 1; i <= (quota.Limits{}).Get(quota.VPCShareBandwidthIP); i++ {
+	for i := 1; i <= limit; i++ {
 		pip, _ := e.bwSeedPublicIPWithPER(t, fmt.Sprintf("per-%d", i), 5, fmt.Sprintf("192.0.2.%d", i))
 		infos = append(infos, insertPublicIPInfo{PublicIPID: pip.ID})
 	}
 	if _, err := e.svc.AddPublicIPsIntoSharedBandwidth(ctx, bwTestTenant, shared.ID, addPublicIPsIntoSharedBandwidthOption{
 		PublicIPInfo: infos,
 	}); err != nil {
-		t.Fatalf("inserting 20 EIPs: %v", err)
+		t.Fatalf("inserting %d EIPs: %v", limit, err)
 	}
 
-	// 21st EIP exceeds maxEIPsPerSharedBandwidth (20) -> VPC.0323.
-	pip21, perBW21 := e.bwSeedPublicIPWithPER(t, "per-21", 5, "192.0.2.21")
+	// One more EIP exceeds the per-shared-bandwidth quota -> VPC.0323.
+	pipOver, perBWOver := e.bwSeedPublicIPWithPER(t, fmt.Sprintf("per-%d", limit+1), 5, fmt.Sprintf("192.0.2.%d", limit+1))
 	_, err = e.svc.AddPublicIPsIntoSharedBandwidth(ctx, bwTestTenant, shared.ID, addPublicIPsIntoSharedBandwidthOption{
-		PublicIPInfo: []insertPublicIPInfo{{PublicIPID: pip21.ID}},
+		PublicIPInfo: []insertPublicIPInfo{{PublicIPID: pipOver.ID}},
 	})
 	bwWantErrCode(t, err, http.StatusBadRequest, "VPC.0323")
 
-	// perBW21 must still exist.
-	if _, err := e.svc.GetBandwidth(ctx, bwTestTenant, perBW21.ID); err != nil {
-		t.Fatalf("perBW21 should remain intact: %v", err)
+	// perBWOver must still exist.
+	if _, err := e.svc.GetBandwidth(ctx, bwTestTenant, perBWOver.ID); err != nil {
+		t.Fatalf("perBWOver should remain intact: %v", err)
 	}
 }

@@ -89,44 +89,64 @@ func assertV3Error(t *testing.T, status int, body []byte, wantStatus int, wantCo
 
 func TestVPCQuotaEnforcedAndFreedOnDelete(t *testing.T) {
 	t.Parallel()
-	e := newEnvWithQuotas(t, store.NewMemory(), quota.For(map[quota.Key]int{quota.VPCVPC: 2}))
+	limit := 2
+	e := newEnvWithQuotas(t, store.NewMemory(), quota.For(map[quota.Key]int{quota.VPCVPC: limit}))
 
-	v1 := e.mustCreateVPC(t, "v1", "10.0.0.0/16")
-	_ = e.mustCreateVPC(t, "v2", "10.1.0.0/16")
+	var firstID string
+	for i := range limit {
+		v := e.mustCreateVPC(t, fmt.Sprintf("v%d", i+1), fmt.Sprintf("10.%d.0.0/16", i))
+		if i == 0 {
+			firstID = v.ID
+		}
+	}
 
-	status, out := e.call(t, http.MethodPost, "/vpcs", `{"vpc": {"name": "v3", "cidr": "10.2.0.0/16"}}`)
+	status, out := e.call(t, http.MethodPost, "/vpcs", fmt.Sprintf(`{"vpc": {"name": "v-extra", "cidr": "10.%d.0.0/16"}}`, limit))
 	assertV1Error(t, status, out, http.StatusConflict, "VPC.0114", "Quota exceeded for resources: ['router'].")
 
-	if status, out := e.call(t, http.MethodDelete, "/vpcs/"+v1.ID, ""); status != http.StatusNoContent {
+	if status, out := e.call(t, http.MethodDelete, "/vpcs/"+firstID, ""); status != http.StatusNoContent {
 		t.Fatalf("delete vpc: %d %s", status, out)
 	}
-	_ = e.mustCreateVPC(t, "v3", "10.2.0.0/16")
+	_ = e.mustCreateVPC(t, "v-extra", fmt.Sprintf("10.%d.0.0/16", limit))
 }
 
 func TestSubnetQuotaEnforcedAndFreedOnDelete(t *testing.T) {
 	t.Parallel()
-	e := newEnvWithQuotas(t, store.NewMemory(), quota.For(map[quota.Key]int{quota.VPCSubnet: 2}))
+	limit := 2
+	e := newEnvWithQuotas(t, store.NewMemory(), quota.For(map[quota.Key]int{quota.VPCSubnet: limit}))
 	v := e.mustCreateVPC(t, "v1", "10.0.0.0/16")
 
-	s1 := e.mustCreateSubnet(t, v.ID, "s1", "10.0.1.0/24", "10.0.1.1")
-	_ = e.mustCreateSubnet(t, v.ID, "s2", "10.0.2.0/24", "10.0.2.1")
+	var firstID string
+	for i := range limit {
+		s := e.mustCreateSubnet(t, v.ID, fmt.Sprintf("s%d", i+1), fmt.Sprintf("10.0.%d.0/24", i+1), fmt.Sprintf("10.0.%d.1", i+1))
+		if i == 0 {
+			firstID = s.ID
+		}
+	}
 
 	status, out := e.call(t, http.MethodPost, "/subnets", fmt.Sprintf(
-		`{"subnet": {"name": "s3", "cidr": "10.0.3.0/24", "gateway_ip": "10.0.3.1", "vpc_id": %q}}`, v.ID))
+		`{"subnet": {"name": "s-extra", "cidr": "10.0.%d.0/24", "gateway_ip": "10.0.%d.1", "vpc_id": %q}}`, limit+1, limit+1, v.ID))
 	assertV1Error(t, status, out, http.StatusConflict, "VPC.9905", "Quota exceeded for resources: ['subnet'].")
 
-	if status, out := e.call(t, http.MethodDelete, "/vpcs/"+v.ID+"/subnets/"+s1.ID, ""); status != http.StatusNoContent {
+	if status, out := e.call(t, http.MethodDelete, "/vpcs/"+v.ID+"/subnets/"+firstID, ""); status != http.StatusNoContent {
 		t.Fatalf("delete subnet: %d %s", status, out)
 	}
-	_ = e.mustCreateSubnet(t, v.ID, "s3", "10.0.3.0/24", "10.0.3.1")
+	_ = e.mustCreateSubnet(t, v.ID, "s-extra", fmt.Sprintf("10.0.%d.0/24", limit+1), fmt.Sprintf("10.0.%d.1", limit+1))
 }
 
 func TestSecurityGroupQuotaV1AndV3(t *testing.T) {
 	t.Parallel()
-	// Limit 2 allows the auto-created "default" group plus one user group.
-	e := newEnvWithQuotas(t, store.NewMemory(), quota.For(map[quota.Key]int{quota.VPCSecurityGroup: 2}))
+	// Allow the auto-created "default" group plus userGroups user groups.
+	defaultGroups, userGroups := 1, 1
+	limit := defaultGroups + userGroups
+	e := newEnvWithQuotas(t, store.NewMemory(), quota.For(map[quota.Key]int{quota.VPCSecurityGroup: limit}))
 
-	g := e.mustCreateSecGroup(t, "web")
+	var firstID string
+	for i := range userGroups {
+		g := e.mustCreateSecGroup(t, fmt.Sprintf("web-%d", i))
+		if i == 0 {
+			firstID = g.ID
+		}
+	}
 
 	status, out := e.call3(t, http.MethodPost, "/security-groups", `{"security_group": {"name": "db"}}`)
 	assertV3Error(t, status, out, http.StatusConflict, "VPC.9905", "Quota exceeded for resources: security_group.")
@@ -134,7 +154,7 @@ func TestSecurityGroupQuotaV1AndV3(t *testing.T) {
 	status, out = e.call(t, http.MethodPost, "/security-groups", `{"security_group": {"name": "db"}}`)
 	assertV1Error(t, status, out, http.StatusConflict, "VPC.0604", "Quota exceeded for resources: ['security_group'].")
 
-	if status, out := e.call3(t, http.MethodDelete, "/security-groups/"+g.ID, ""); status != http.StatusNoContent {
+	if status, out := e.call3(t, http.MethodDelete, "/security-groups/"+firstID, ""); status != http.StatusNoContent {
 		t.Fatalf("delete security group: %d %s", status, out)
 	}
 	_ = e.mustCreateSecGroup(t, "db")
@@ -142,18 +162,25 @@ func TestSecurityGroupQuotaV1AndV3(t *testing.T) {
 
 func TestSecurityGroupRuleQuotaV1AndV3(t *testing.T) {
 	t.Parallel()
-	// Creating "default" + "web" groups inserts 4+4 = 8 default rules; limit 9 allows 1 more.
-	e := newEnvWithQuotas(t, store.NewMemory(), quota.For(map[quota.Key]int{quota.VPCSecurityGroupRule: 9}))
+	// Creating "default" + "web" groups inserts 4+4 = 8 default rules; allow userRules more.
+	defaultRules, userRules := 8, 1
+	limit := defaultRules + userRules
+	e := newEnvWithQuotas(t, store.NewMemory(), quota.For(map[quota.Key]int{quota.VPCSecurityGroupRule: limit}))
 	g := e.mustCreateSecGroup(t, "web")
 
-	status, out := e.call3(t, http.MethodPost, "/security-group-rules", fmt.Sprintf(
-		`{"security_group_rule": {"security_group_id": %q, "direction": "ingress", "protocol": "tcp", "multiport": "80"}}`, g.ID))
-	if status != http.StatusCreated {
-		t.Fatalf("create rule 1: %d %s", status, out)
+	var firstRuleID string
+	for i := range userRules {
+		status, out := e.call3(t, http.MethodPost, "/security-group-rules", fmt.Sprintf(
+			`{"security_group_rule": {"security_group_id": %q, "direction": "ingress", "protocol": "tcp", "multiport": "%d"}}`, g.ID, 80+i))
+		if status != http.StatusCreated {
+			t.Fatalf("create rule %d: %d %s", i+1, status, out)
+		}
+		if i == 0 {
+			firstRuleID = decodeInto[securityGroupRuleResponse](t, out).SecurityGroupRule.ID
+		}
 	}
-	rID := decodeInto[securityGroupRuleResponse](t, out).SecurityGroupRule.ID
 
-	status, out = e.call3(t, http.MethodPost, "/security-group-rules", fmt.Sprintf(
+	status, out := e.call3(t, http.MethodPost, "/security-group-rules", fmt.Sprintf(
 		`{"security_group_rule": {"security_group_id": %q, "direction": "ingress", "protocol": "tcp", "multiport": "443"}}`, g.ID))
 	assertV3Error(t, status, out, http.StatusConflict, "VPC.9905", "Quota exceeded for resources: ['security_group_rule'].")
 
@@ -162,11 +189,12 @@ func TestSecurityGroupRuleQuotaV1AndV3(t *testing.T) {
 	assertV1Error(t, status, out, http.StatusConflict, "VPC.0602", "Quota exceeded for resources: ['security_group_rule'].")
 
 	// A multi-item request (want > 1) that would cross the limit is refused before creating anything.
-	if err := checkQuota(t.Context(), e.svc.quotas, e.svc.secGroupRules(testTenant), quota.VPCSecurityGroupRule, 2, errSecGroupRuleQuotaExceeded); err == nil {
-		t.Fatal("expected checkQuota with want=2 to refuse")
+	batch := userRules + 1
+	if err := checkQuota(t.Context(), e.svc.quotas, e.svc.secGroupRules(testTenant), quota.VPCSecurityGroupRule, batch, errSecGroupRuleQuotaExceeded); err == nil {
+		t.Fatalf("expected checkQuota with want=%d to refuse", batch)
 	}
 
-	if status, out := e.call3(t, http.MethodDelete, "/security-group-rules/"+rID, ""); status != http.StatusNoContent {
+	if status, out := e.call3(t, http.MethodDelete, "/security-group-rules/"+firstRuleID, ""); status != http.StatusNoContent {
 		t.Fatalf("delete rule: %d %s", status, out)
 	}
 	status, out = e.call3(t, http.MethodPost, "/security-group-rules", fmt.Sprintf(
@@ -178,18 +206,20 @@ func TestSecurityGroupRuleQuotaV1AndV3(t *testing.T) {
 
 func TestUnlimitedQuotaNeverRefuses(t *testing.T) {
 	t.Parallel()
+	creates := 5
 	e := newEnvWithQuotas(t, store.NewMemory(), quota.For(map[quota.Key]int{quota.VPCVPC: quota.Unlimited}))
 
-	for i := range 5 {
+	for i := range creates {
 		_ = e.mustCreateVPC(t, fmt.Sprintf("v-%d", i), fmt.Sprintf("10.%d.0.0/16", i))
 	}
 }
 
 func TestExistingDataOverLimitKeptAndNewRefused(t *testing.T) {
 	t.Parallel()
+	limit, seeded := 1, 3
 	st := store.NewMemory()
 	col := store.Of[VPC](st, store.Scope{Region: testRegion, ProjectID: testProject, Kind: kindVPC})
-	for i := range 3 {
+	for i := range seeded {
 		id := fmt.Sprintf("00000000-0000-0000-0000-00000000000%d", i+1)
 		if err := col.Create(t.Context(), id, VPC{
 			ID: id, Name: fmt.Sprintf("pre-%d", i), Status: VPCStatusOK, TenantID: testProject,
@@ -198,11 +228,11 @@ func TestExistingDataOverLimitKeptAndNewRefused(t *testing.T) {
 		}
 	}
 
-	e := newEnvWithQuotas(t, st, quota.For(map[quota.Key]int{quota.VPCVPC: 1}))
+	e := newEnvWithQuotas(t, st, quota.For(map[quota.Key]int{quota.VPCVPC: limit}))
 
 	vpcs, err := e.svc.ListVPCs(t.Context(), testTenant, ListVPCsFilter{})
-	if err != nil || len(vpcs) != 3 {
-		t.Fatalf("existing VPCs = %d (err %v), want 3", len(vpcs), err)
+	if err != nil || len(vpcs) != seeded {
+		t.Fatalf("existing VPCs = %d (err %v), want %d", len(vpcs), err, seeded)
 	}
 
 	status, out := e.call(t, http.MethodPost, "/vpcs", `{"vpc": {"name": "new-one", "cidr": "10.9.0.0/16"}}`)
@@ -211,9 +241,10 @@ func TestExistingDataOverLimitKeptAndNewRefused(t *testing.T) {
 
 func TestParallelVPCCreatesRespectQuota(t *testing.T) {
 	t.Parallel()
-	e := newEnvWithQuotas(t, store.NewMemory(), quota.For(map[quota.Key]int{quota.VPCVPC: 10}))
+	limit, extra := 10, 6
+	total := limit + extra
+	e := newEnvWithQuotas(t, store.NewMemory(), quota.For(map[quota.Key]int{quota.VPCVPC: limit}))
 
-	const total = 16
 	var okCount, deniedCount atomic.Int32
 	var wg sync.WaitGroup
 	wg.Add(total)
@@ -235,11 +266,11 @@ func TestParallelVPCCreatesRespectQuota(t *testing.T) {
 	wg.Wait()
 	e.settle(t)
 
-	if okCount.Load() != 10 || deniedCount.Load() != 6 {
-		t.Fatalf("ok=%d denied=%d, want 10 and 6", okCount.Load(), deniedCount.Load())
+	if okCount.Load() != int32(limit) || deniedCount.Load() != int32(extra) {
+		t.Fatalf("ok=%d denied=%d, want %d and %d", okCount.Load(), deniedCount.Load(), limit, extra)
 	}
 	vpcs, err := e.svc.ListVPCs(t.Context(), testTenant, ListVPCsFilter{})
-	if err != nil || len(vpcs) != 10 {
-		t.Fatalf("stored VPCs = %d (err %v), want 10", len(vpcs), err)
+	if err != nil || len(vpcs) != limit {
+		t.Fatalf("stored VPCs = %d (err %v), want %d", len(vpcs), err, limit)
 	}
 }

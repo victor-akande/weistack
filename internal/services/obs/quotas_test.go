@@ -1,6 +1,7 @@
 package obs
 
 import (
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -61,13 +62,15 @@ func wantTooManyBuckets(t *testing.T, got resp) {
 
 func TestBucketQuotaEnforced(t *testing.T) {
 	t.Parallel()
-	e := newQuotaEnv(t, store.NewMemory(), quota.For(map[quota.Key]int{quota.OBSBuckets: 2}))
+	limit := 2
+	e := newQuotaEnv(t, store.NewMemory(), quota.For(map[quota.Key]int{quota.OBSBuckets: limit}))
 
-	mustStatus(t, e.as(t, alice, http.MethodPut, "/bucket-1"), http.StatusOK)
-	mustStatus(t, e.as(t, alice, http.MethodPut, "/bucket-2"), http.StatusOK)
+	for i := range limit {
+		mustStatus(t, e.as(t, alice, http.MethodPut, fmt.Sprintf("/bucket-%d", i+1)), http.StatusOK)
+	}
 
-	// 3rd bucket for alice is refused with 400 TooManyBuckets.
-	wantTooManyBuckets(t, e.as(t, alice, http.MethodPut, "/bucket-3"))
+	// Next bucket for alice is refused with 400 TooManyBuckets.
+	wantTooManyBuckets(t, e.as(t, alice, http.MethodPut, "/bucket-extra"))
 
 	// Re-creating a bucket alice already owns keeps its 409 BucketAlreadyOwnedByYou.
 	wantError(t, e.as(t, alice, http.MethodPut, "/bucket-1"), http.StatusConflict, "BucketAlreadyOwnedByYou")
@@ -79,34 +82,43 @@ func TestBucketQuotaEnforced(t *testing.T) {
 
 	// Deleting one of alice's buckets frees a slot.
 	mustStatus(t, e.as(t, alice, http.MethodDelete, "/bucket-1"), http.StatusNoContent)
-	mustStatus(t, e.as(t, alice, http.MethodPut, "/bucket-3"), http.StatusOK)
+	mustStatus(t, e.as(t, alice, http.MethodPut, "/bucket-extra"), http.StatusOK)
 }
 
 func TestBucketQuotaCountsAllRegions(t *testing.T) {
 	t.Parallel()
-	e := newQuotaEnv(t, store.NewMemory(), quota.For(map[quota.Key]int{quota.OBSBuckets: 2}))
+	limit := 2
+	e := newQuotaEnv(t, store.NewMemory(), quota.For(map[quota.Key]int{quota.OBSBuckets: limit}))
 
 	if _, err := e.svc.CreateBucket(t.Context(), "AKALICE", "cn-north-4", "north-1"); err != nil {
 		t.Fatalf("CreateBucket cn-north-4: %v", err)
 	}
-	mustStatus(t, e.as(t, alice, http.MethodPut, "/south-1"), http.StatusOK)
-	wantTooManyBuckets(t, e.as(t, alice, http.MethodPut, "/south-2"))
+	for i := range limit - 1 {
+		mustStatus(t, e.as(t, alice, http.MethodPut, fmt.Sprintf("/south-%d", i+1)), http.StatusOK)
+	}
+	wantTooManyBuckets(t, e.as(t, alice, http.MethodPut, "/south-extra"))
 }
 
 func TestBucketQuotaUnlimited(t *testing.T) {
 	t.Parallel()
+	creates := 3
 	e := newQuotaEnv(t, store.NewMemory(), quota.For(map[quota.Key]int{quota.OBSBuckets: quota.Unlimited}))
 
-	for _, path := range []string{"/unlim-1", "/unlim-2", "/unlim-3"} {
-		mustStatus(t, e.as(t, alice, http.MethodPut, path), http.StatusOK)
+	for i := range creates {
+		mustStatus(t, e.as(t, alice, http.MethodPut, fmt.Sprintf("/unlim-%d", i+1)), http.StatusOK)
 	}
 }
 
 func TestBucketQuotaExistingOverLimit(t *testing.T) {
 	t.Parallel()
+	limit, over := 2, 1
+	seeded := limit + over
 	st := store.NewMemory()
 	coll := store.Of[Bucket](st, store.Scope{Region: globalRegion, ProjectID: store.Global, Kind: kindBucket})
-	for _, name := range []string{"pre-1", "pre-2", "pre-3"} {
+	var names []string
+	for i := range seeded {
+		name := fmt.Sprintf("pre-%d", i+1)
+		names = append(names, name)
 		if err := coll.Create(t.Context(), name, Bucket{
 			Name:    name,
 			Owner:   "AKALICE",
@@ -117,22 +129,23 @@ func TestBucketQuotaExistingOverLimit(t *testing.T) {
 		}
 	}
 
-	e := newQuotaEnv(t, st, quota.For(map[quota.Key]int{quota.OBSBuckets: 2}))
+	e := newQuotaEnv(t, st, quota.For(map[quota.Key]int{quota.OBSBuckets: limit}))
 
-	// Existing 3 buckets over the limit of 2 are all kept.
+	// Existing buckets over the limit are all kept.
 	buckets, err := e.svc.ListBuckets(t.Context(), "AKALICE")
 	if err != nil {
 		t.Fatalf("ListBuckets: %v", err)
 	}
-	if len(buckets) != 3 {
-		t.Fatalf("len(buckets) = %d, want 3", len(buckets))
+	if len(buckets) != seeded {
+		t.Fatalf("len(buckets) = %d, want %d", len(buckets), seeded)
 	}
 
 	// New create is refused.
 	wantTooManyBuckets(t, e.as(t, alice, http.MethodPut, "/new-bucket"))
 
-	// Deleting 2 buckets brings usage to 1 (< 2), allowing a new create.
-	mustStatus(t, e.as(t, alice, http.MethodDelete, "/pre-1"), http.StatusNoContent)
-	mustStatus(t, e.as(t, alice, http.MethodDelete, "/pre-2"), http.StatusNoContent)
+	// Deleting over+1 buckets brings usage below limit, allowing a new create.
+	for _, name := range names[:over+1] {
+		mustStatus(t, e.as(t, alice, http.MethodDelete, "/"+name), http.StatusNoContent)
+	}
 	mustStatus(t, e.as(t, alice, http.MethodPut, "/new-bucket"), http.StatusOK)
 }
