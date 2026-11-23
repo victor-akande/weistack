@@ -1,18 +1,19 @@
 package config
 
 import (
-	"github.com/victor-akande/weistack/internal/core/quota"
-
 	"errors"
 	"flag"
 	"io"
 	"log/slog"
+	"net/netip"
 	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/victor-akande/weistack/internal/core/quota"
 )
 
 func env(kv map[string]string) func(string) string {
@@ -29,6 +30,8 @@ func TestLoadDefaults(t *testing.T) {
 	want := Config{
 		Host:             "127.0.0.1",
 		Port:             8780,
+		LANPort:          8781,
+		LANClients:       DefaultLANClients,
 		Region:           "ap-southeast-1",
 		ProxyDomains:     []string{"myhuaweicloud.com"},
 		ProxyBypass:      DefaultProxyBypass,
@@ -56,6 +59,7 @@ func TestLoadPrecedence(t *testing.T) {
 		"WEISTACK_PORT":            "9000",
 		"WEISTACK_REGION":          "af-south-1",
 		"WEISTACK_HOST":            "0.0.0.0",
+		"WEISTACK_IN_CONTAINER":    "1",
 		"WEISTACK_PROJECT_ID":      "0123456789abcdef0123456789abcdef",
 		"WEISTACK_PERSIST":         "1",
 		"WEISTACK_DATA_DIR":        "/var/lib/weistack",
@@ -311,6 +315,59 @@ func TestLoadQuotas(t *testing.T) {
 	} {
 		if v := got.Quotas.Get(k); v != want {
 			t.Errorf("%s = %d, want %d", k, v, want)
+		}
+	}
+}
+
+func TestHostBeyondLoopback(t *testing.T) {
+	t.Parallel()
+	for _, host := range []string{"0.0.0.0", "::", "192.168.1.5"} {
+		_, err := Load([]string{"-host", host}, env(nil), io.Discard)
+		if err == nil || !strings.Contains(err.Error(), "-lan") {
+			t.Errorf("-host %s outside a container: %v, want a refusal naming -lan", host, err)
+		}
+		if _, err := Load([]string{"-host", host}, env(map[string]string{"WEISTACK_IN_CONTAINER": "1"}), io.Discard); err != nil {
+			t.Errorf("-host %s in a container: %v", host, err)
+		}
+	}
+	for _, host := range []string{"127.0.0.1", "127.0.0.2", "::1", "localhost"} {
+		if _, err := Load([]string{"-host", host}, env(nil), io.Discard); err != nil {
+			t.Errorf("-host %s: %v", host, err)
+		}
+	}
+}
+
+func TestLANClients(t *testing.T) {
+	t.Parallel()
+	cfg, err := Load([]string{"-lan"}, env(nil), io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for addr, want := range map[string]bool{
+		"127.0.0.1": true, "192.168.1.20": true, "10.1.2.3": true, "172.20.0.1": true, "100.100.1.1": true,
+		"::1": true, "fd00::1": true, "::ffff:192.168.1.20": true,
+		"8.8.8.8": false, "172.32.0.1": false, "2001:db8::1": false,
+	} {
+		if got := cfg.LANClientAllowed(netip.MustParseAddr(addr)); got != want {
+			t.Errorf("default LANClientAllowed(%s) = %v, want %v", addr, got, want)
+		}
+	}
+	cfg, err = Load([]string{"-lan", "-lan-clients", "192.168.1.0/24, 10.0.0.7"}, env(nil), io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for addr, want := range map[string]bool{"192.168.1.20": true, "192.168.2.1": false, "10.0.0.7": true, "10.0.0.8": false, "127.0.0.1": false} {
+		if got := cfg.LANClientAllowed(netip.MustParseAddr(addr)); got != want {
+			t.Errorf("LANClientAllowed(%s) = %v, want %v", addr, got, want)
+		}
+	}
+	for _, args := range [][]string{
+		{"-lan", "-lan-clients", "everyone"},
+		{"-lan", "-lan-port", "8780"},
+		{"-lan", "-lan-port", "70000"},
+	} {
+		if _, err := Load(args, env(nil), io.Discard); err == nil {
+			t.Errorf("Load(%q) succeeded", args)
 		}
 	}
 }

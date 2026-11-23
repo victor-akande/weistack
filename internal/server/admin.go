@@ -33,8 +33,8 @@ func (s *Server) newAdmin() http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(s.adminAuth)
 			r.Get("/services", s.adminOp("ListServices", s.handleServices))
-			r.Get("/state", s.adminOp("DumpState", s.handleState))
-			r.Post("/reset", s.adminOp("Reset", s.handleReset))
+			r.With(s.localOnly).Get("/state", s.adminOp("DumpState", s.handleState))
+			r.With(s.localOnly).Post("/reset", s.adminOp("Reset", s.handleReset))
 			if s.accounts != nil {
 				r.Get("/accounts", s.adminOp("ListAccounts", s.handleListAccounts))
 				r.Post("/accounts", s.adminOp("NewAccount", s.handleNewAccount))

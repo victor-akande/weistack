@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -135,5 +136,23 @@ func TestAdminRefusesOtherSites(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != http.StatusOK || res.Header.Get("Access-Control-Allow-Origin") != "*" {
 		t.Errorf("service from another site: status %d, Allow-Origin %q", res.StatusCode, res.Header.Get("Access-Control-Allow-Origin"))
+	}
+}
+
+// TestHostGuardOffForTheNetwork: other machines (-lan) reach WeiStack by
+// its own names, which it cannot know, and always need credentials.
+func TestHostGuardOffForTheNetwork(t *testing.T) {
+	t.Parallel()
+	e := newEnforceEnv(t, config.IAMAccept)
+	r := request(http.MethodGet, "http://mypc.home.arpa:8781/_weistack/health", "")
+	w := httptest.NewRecorder()
+	e.srv.NetworkHandler().ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("network request by the machine's name = %d, want 200", w.Code)
+	}
+	w = httptest.NewRecorder()
+	e.srv.Handler().ServeHTTP(w, request(http.MethodGet, "http://mypc.home.arpa:8781/_weistack/health", ""))
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("loopback request by the same name = %d, want 403", w.Code)
 	}
 }

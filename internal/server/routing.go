@@ -81,7 +81,7 @@ func (s *Server) dispatch(m *mounted, w http.ResponseWriter, r *http.Request, re
 	if m.maxBody > 0 {
 		r.Body = http.MaxBytesReader(w, r.Body, m.maxBody)
 	}
-	if s.enforcing() {
+	if s.enforcing(r) {
 		if r = s.authenticate(m, w, r, received); r == nil {
 			return
 		}

@@ -189,7 +189,7 @@ func New(opts Options) (*Server, error) {
 	if s.hosts, err = s.newHostGuard(); err != nil {
 		return nil, fmt.Errorf("server: %w", err)
 	}
-	if s.enforcing() && s.dir == nil {
+	if (s.cfg.IAM == config.IAMEnforce || s.cfg.LAN) && s.dir == nil {
 		return nil, errors.New("server: enforcing credentials needs a Directory")
 	}
 	s.admin = s.newAdmin()

@@ -62,6 +62,9 @@ type Env struct {
 	// OnReady, if set, is called with the bound address once the server
 	// is accepting connections.
 	OnReady func(addr net.Addr)
+	// OnLAN, if set, is called with the -lan listener's address before
+	// OnReady.
+	OnLAN func(addr net.Addr)
 }
 
 // Run executes the command line and blocks until the server stops. It
@@ -223,11 +226,23 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		servicePorts[name] = group[0].Addr().String()
 	}
 
+	var lanAddr string
+	if cfg.LAN {
+		lan, err := listenLAN(ctx, cfg, ca, log)
+		if err != nil {
+			return err
+		}
+		servers = append(servers, newHTTPServer(srv.NetworkHandler(), log))
+		bound = append(bound, []net.Listener{lan})
+		lanAddr = lan.Addr().String()
+	}
+
 	log.Info("weistack started",
 		"version", version.Version,
 		"address", ln.Addr().String(),
 		"ipv6_loopback", len(listeners) > 1,
 		"service_ports", servicePorts,
+		"lan", lanAddr,
 		"region", cfg.Region,
 		"project_id", projectID,
 		"account_id", account.ID,
@@ -240,8 +255,17 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		"services", srv.ServiceNames(),
 	)
 	warnExposure(log, cfg)
+	if cfg.LAN {
+		_, port, _ := net.SplitHostPort(lanAddr)
+		p, _ := strconv.Atoi(port)
+		log.Info("serving other machines over HTTPS (-lan); every request needs valid credentials",
+			"address", lanAddr, "urls", lanURLs(p), "clients", cfg.LANClients)
+	}
 	if isTerminal(env.Stdout) {
-		printBanner(env.Stdout, cfg, ln.Addr().String(), projectID, account, admin)
+		printBanner(env.Stdout, cfg, ln.Addr().String(), lanAddr, projectID, account, admin)
+	}
+	if env.OnLAN != nil && lanAddr != "" {
+		env.OnLAN(bound[len(bound)-1][0].Addr())
 	}
 	if env.OnReady != nil {
 		env.OnReady(ln.Addr())
@@ -588,7 +612,7 @@ func warnExposure(log *slog.Logger, cfg config.Config) {
 
 // printBanner tells a person at a terminal how to use the emulator that
 // just started. Logs carry the same facts for machines.
-func printBanner(w io.Writer, cfg config.Config, addr, projectID string, account identity.Account, admin identity.Credentials) {
+func printBanner(w io.Writer, cfg config.Config, addr, lanAddr, projectID string, account identity.Account, admin identity.Credentials) {
 	base := "http://" + addr
 	project := "new on every start; -persist keeps it"
 	if cfg.Persist {
@@ -606,6 +630,16 @@ func printBanner(w io.Writer, cfg config.Config, addr, projectID string, account
 		{"Guide", "https://github.com/victor-akande/weistack/blob/main/docs/getting-started.md"},
 	} {
 		fmt.Fprintf(w, "    %-14s%s\n", line[0], line[1])
+	}
+	if lanAddr != "" {
+		_, port, _ := net.SplitHostPort(lanAddr)
+		p, _ := strconv.Atoi(port)
+		urls := lanURLs(p)
+		if len(urls) == 0 {
+			urls = []string{"https://<this machine>:" + port}
+		}
+		fmt.Fprintf(w, "\n    %-14s%s\n", "Network", strings.Join(urls, "  "))
+		fmt.Fprintf(w, "    %-14s%s\n", "", "HTTPS with the CA above; every request needs valid credentials (-lan)")
 	}
 	fmt.Fprintln(w)
 }

@@ -218,8 +218,11 @@ defaults. Run `weistack -h` for the full list.
 
 | Flag | Environment variable | Default | Meaning |
 | --- | --- | --- | --- |
-| `-host` | `WEISTACK_HOST` | `127.0.0.1` (`0.0.0.0` in the image) | Address to bind. The default also listens on `::1` |
+| `-host` | `WEISTACK_HOST` | `127.0.0.1` (`0.0.0.0` in the image) | Address to bind. The default also listens on `::1`. Addresses beyond loopback are refused outside a container (the image sets `WEISTACK_IN_CONTAINER=1`): use `-lan` |
 | `-port` | `WEISTACK_PORT` | `8780` | Port to listen on |
+| `-lan` | `WEISTACK_LAN` | off | Serve other machines over HTTPS on `-lan-port`, always checking credentials (see [Other machines](docs/lan.md)) |
+| `-lan-port` | `WEISTACK_LAN_PORT` | `8781` | The HTTPS port `-lan` opens on every interface |
+| `-lan-clients` | `WEISTACK_LAN_CLIENTS` | private and loopback ranges | Address ranges `-lan` admits, for example `192.168.1.0/24` |
 | `-region` | `WEISTACK_REGION` | `ap-southeast-1` | Region when a request names none |
 | `-project-id` | `WEISTACK_PROJECT_ID` | generated | Default project, 32 hex characters |
 | `-persist` | `WEISTACK_PERSIST` | off | Keep state on disk across restarts |
