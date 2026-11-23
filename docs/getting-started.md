@@ -178,5 +178,5 @@ WeiStack refuses to start on a data directory other users can write to
   stored resource.
 - **Docker:** `docker compose up --build` runs the image with `/data` as a
   volume.
-- **All options:** `./bin/weistack -h`, or the table in the
-  [README](../README.md#configuration).
+- **All options:** `./bin/weistack -h`, or the tables in
+  [Configuration](configuration.md).
