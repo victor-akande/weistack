@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -137,4 +138,44 @@ func parseIP(t *testing.T, s string) net.IP {
 		t.Fatalf("not an IP: %s", s)
 	}
 	return ip
+}
+
+// TestLeafVerifiesWithOpenSSL: OpenSSL, which curl and Python use, accepts
+// the certificates a constrained CA issues, for an address as well as a
+// name. OpenSSL checks a common name that looks like a host name against
+// the DNS name constraints, which Go's verifier does not, so this needs
+// the openssl command; the test is skipped without it.
+func TestLeafVerifiesWithOpenSSL(t *testing.T) {
+	t.Parallel()
+	openssl, err := exec.LookPath("openssl")
+	if err != nil {
+		t.Skip("no openssl command")
+	}
+	a, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	ca := filepath.Join(dir, "ca.pem")
+	if err := os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: a.cert.Raw}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, host := range []string{"10.1.1.64", "192.168.1.20", "fd00::1", "nas.lan", "vpc.ap-southeast-1.myhuaweicloud.com"} {
+		c, err := a.Certificate(host)
+		if err != nil {
+			t.Fatalf("%s: %v", host, err)
+		}
+		leaf := filepath.Join(dir, "leaf.pem")
+		if err := os.WriteFile(leaf, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: c.Certificate[0]}), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		check := "-verify_hostname"
+		if net.ParseIP(host) != nil {
+			check = "-verify_ip"
+		}
+		out, err := exec.Command(openssl, "verify", "-CAfile", ca, "-purpose", "sslserver", check, host, leaf).CombinedOutput()
+		if err != nil {
+			t.Errorf("openssl refused the certificate for %s: %v\n%s", host, err, out)
+		}
+	}
 }
