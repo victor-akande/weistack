@@ -82,7 +82,9 @@ Rules that keep the emulator correct under load:
 
 1. Request and response types match the SDK model, field for field.
 2. A golden-file HTTP test covers success and every documented error.
-3. Service rules have table-driven unit tests.
+3. Service rules have table-driven unit tests. Tests of quotas and
+   limits take the limit from a variable or the service's constant and
+   derive every count from it (see CONTRIBUTING.md, Code conventions).
 4. An SDK integration test exercises it through the official client.
 5. The operation is listed in the service's coverage table under `docs/`.
 6. [`docs/coverage.md`](coverage.md) is regenerated with

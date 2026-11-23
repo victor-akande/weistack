@@ -42,6 +42,16 @@ add such a parser.
 - `context.Context` is the first parameter of anything that does I/O or waits.
 - Wrap errors with `%w`; compare with `errors.Is` / `errors.As`.
 - Table-driven tests; all tests must pass with `-race`.
+- **Limits in tests come from variables, never literals.** A test that
+  checks a quota or a service limit sets it in a variable (with
+  `quota.For` for quotas) or reads the service's constant, and derives
+  every count and expected result from it: `limit := 10`, create
+  `limit + 6`, want `limit` created and `6` refused. A test that creates
+  more resources than a default quota allows, and is not about quotas,
+  raises that quota from its own count, as in
+  `"WEISTACK_QUOTAS=" + quota.Format(map[quota.Key]int{quota.VPCVPC: n})`.
+  The one place Huawei's published defaults are written out is
+  `internal/core/quota/quota_test.go`, which checks the table itself.
 
 ## Fidelity
 

@@ -1,6 +1,7 @@
 package quota
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -85,5 +86,21 @@ func TestParse(t *testing.T) {
 		if _, err := Parse(Limits{}, spec, reserved); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("Parse(%q) = %v, want an error with %q", spec, err, want)
 		}
+	}
+}
+
+func TestFormat(t *testing.T) {
+	t.Parallel()
+	vpcs := 1000
+	spec := Format(map[Key]int{VPCVPC: vpcs, ELBLoadBalancer: Unlimited})
+	if spec != "elb.loadbalancer=-1,vpc.vpc="+strconv.Itoa(vpcs) {
+		t.Fatalf("Format = %q", spec)
+	}
+	l, err := Parse(Limits{}, spec, nil)
+	if err != nil || l.Get(VPCVPC) != vpcs || l.Get(ELBLoadBalancer) != Unlimited {
+		t.Fatalf("Parse(Format(...)) = %v, %v", l.set, err)
+	}
+	if Format(nil) != "" {
+		t.Error("Format(nil) is not empty")
 	}
 }
