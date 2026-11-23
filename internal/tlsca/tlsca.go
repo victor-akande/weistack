@@ -3,6 +3,13 @@
 // (vpc.ap-southeast-1.myhuaweicloud.com, ...) that clients send through
 // it as a proxy: each host gets a certificate signed by a CA created on
 // first use and kept on disk, so a client can trust it once.
+//
+// Clients trust the CA as much as any public one, so a CA that could sign
+// for any name would let whoever holds its key impersonate any site to
+// them. A new CA is therefore limited by name constraints (RFC 5280
+// 4.2.1.10) to the names WeiStack answers: the emulated domains, local
+// names and private addresses. CAs created before v0.3 have none and are
+// reported by Constrained.
 package tlsca
 
 import (
@@ -28,8 +35,22 @@ import (
 // File names in the CA directory.
 const (
 	CertFile = "ca.pem"
-	keyFile  = "ca-key.pem"
+	KeyFile  = "ca-key.pem"
 )
+
+// DefaultDomain is Huawei Cloud's, which every new CA may sign for.
+const DefaultDomain = "myhuaweicloud.com"
+
+// localDomains are names that resolve only on a machine or a local
+// network: a CA may sign for them and their subdomains.
+var localDomains = []string{"localhost", "local", "lan", "internal", "home.arpa"}
+
+// localRanges are the addresses a CA may sign for: loopback, private,
+// shared (carrier-grade NAT, as VPN meshes use) and link-local.
+var localRanges = []string{
+	"127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "169.254.0.0/16",
+	"::1/128", "fc00::/7", "fe80::/10",
+}
 
 const (
 	caValidity   = 10 * 365 * 24 * time.Hour
@@ -60,21 +81,23 @@ const createWait = 5 * time.Second
 var errClaimed = errors.New("tlsca: another process is creating the CA")
 
 // Load reads the CA from dir, creating it (and dir) on first use. An
-// empty dir gives an in-memory CA that lasts as long as the process.
+// empty dir gives an in-memory CA that lasts as long as the process. A new
+// CA may sign for DefaultDomain, domains, local names and private
+// addresses, and nothing else.
 //
 // Several processes may start on the same new directory at once: the one
 // that creates the key file creates the CA, and the others wait for its
 // certificate, which is written last (see create).
-func Load(dir string) (*Authority, error) {
+func Load(dir string, domains ...string) (*Authority, error) {
 	if dir == "" {
-		return generate()
+		return generate(domains)
 	}
-	return load(dir, createWait)
+	return load(dir, domains, createWait)
 }
 
-func load(dir string, wait time.Duration) (*Authority, error) {
-	certPath, keyPath := filepath.Join(dir, CertFile), filepath.Join(dir, keyFile)
-	half := fmt.Errorf("tlsca: %s holds only half of a CA (%s or %s is missing); delete the directory to create a new one", dir, CertFile, keyFile)
+func load(dir string, domains []string, wait time.Duration) (*Authority, error) {
+	certPath, keyPath := filepath.Join(dir, CertFile), filepath.Join(dir, KeyFile)
+	half := fmt.Errorf("tlsca: %s holds only half of a CA (%s or %s is missing); delete the directory to create a new one", dir, CertFile, KeyFile)
 	deadline := time.Now().Add(wait)
 	for {
 		// The certificate first: once it exists, the key is complete.
@@ -91,7 +114,7 @@ func load(dir string, wait time.Duration) (*Authority, error) {
 		case !certMissing: // a certificate without its key
 			return nil, half
 		case keyMissing:
-			a, err := create(dir)
+			a, err := create(dir, domains)
 			if !errors.Is(err, errClaimed) {
 				return a, err
 			}
@@ -117,7 +140,7 @@ func serial() (*big.Int, error) {
 	return rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
 }
 
-func generate() (*Authority, error) {
+func generate(domains []string) (*Authority, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("tlsca: generating CA key: %w", err)
@@ -136,6 +159,17 @@ func generate() (*Authority, error) {
 		BasicConstraintsValid: true,
 		IsCA:                  true,
 		MaxPathLenZero:        true,
+		// RFC 5280 says name constraints MUST be critical, so a client
+		// that cannot check them refuses the CA rather than ignores them.
+		PermittedDNSDomainsCritical: true,
+		PermittedDNSDomains:         permittedDomains(domains),
+	}
+	for _, r := range localRanges {
+		_, n, err := net.ParseCIDR(r)
+		if err != nil {
+			return nil, err
+		}
+		tmpl.PermittedIPRanges = append(tmpl.PermittedIPRanges, n)
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
 	if err != nil {
@@ -176,11 +210,11 @@ func parse(certPEM, keyPEM []byte) (*Authority, error) {
 // of several processes starting at once only one creates the CA; the
 // others get errClaimed. The certificate is renamed into place last, so a
 // reader that finds it also finds the whole key.
-func create(dir string) (*Authority, error) {
+func create(dir string, domains []string) (*Authority, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("tlsca: creating %s: %w", dir, err)
 	}
-	a, err := generate()
+	a, err := generate(domains)
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +222,7 @@ func create(dir string) (*Authority, error) {
 	if err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(filepath.Join(dir, keyFile), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // operator-chosen directory
+	f, err := os.OpenFile(filepath.Join(dir, KeyFile), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // operator-chosen directory
 	if errors.Is(err, os.ErrExist) {
 		return nil, errClaimed
 	}
@@ -232,11 +266,17 @@ func (a *Authority) Pool() *x509.CertPool {
 	return p
 }
 
-// Certificate returns a certificate for host, issuing it on first use.
+// Certificate returns a certificate for host, issuing it on first use. A
+// constrained CA refuses hosts outside its constraints, whose
+// certificates every client would reject.
 func (a *Authority) Certificate(host string) (*tls.Certificate, error) {
 	host = strings.ToLower(strings.TrimSuffix(host, "."))
 	if host == "" {
 		return nil, errors.New("tlsca: no host name")
+	}
+	if !a.Permits(host) {
+		return nil, fmt.Errorf("tlsca: the CA does not sign for %s (it signs for %s, local names and private addresses)",
+			host, strings.Join(a.cert.PermittedDNSDomains, ", "))
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -292,4 +332,54 @@ func (a *Authority) ServerConfig(fallback string) *tls.Config {
 			return a.Certificate(name)
 		},
 	}
+}
+
+// permittedDomains are the DNS names a new CA may sign for, without
+// duplicates.
+func permittedDomains(domains []string) []string {
+	out := []string{DefaultDomain}
+	seen := map[string]bool{DefaultDomain: true}
+	for _, d := range append(append([]string(nil), domains...), localDomains...) {
+		d = strings.ToLower(strings.Trim(d, "."))
+		if d != "" && !seen[d] {
+			seen[d] = true
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// Constrained reports whether the CA is limited by name constraints, as
+// every CA created since v0.3 is.
+func (a *Authority) Constrained() bool {
+	return len(a.cert.PermittedDNSDomains) > 0 || len(a.cert.PermittedIPRanges) > 0
+}
+
+// Permits reports whether the CA may sign for host, a name or an
+// address. An unconstrained CA signs for anything.
+func (a *Authority) Permits(host string) bool {
+	if !a.Constrained() {
+		return true
+	}
+	host = strings.ToLower(strings.TrimSuffix(strings.Trim(host, "[]"), "."))
+	if ip := net.ParseIP(host); ip != nil {
+		for _, n := range a.cert.PermittedIPRanges {
+			if n.Contains(ip) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, d := range a.cert.PermittedDNSDomains {
+		// As RFC 5280 and crypto/x509 read them: "example.com" is the
+		// domain and its subdomains, ".example.com" only its subdomains.
+		if strings.HasPrefix(d, ".") {
+			if strings.HasSuffix(host, d) {
+				return true
+			}
+		} else if host == d || strings.HasSuffix(host, "."+d) {
+			return true
+		}
+	}
+	return false
 }

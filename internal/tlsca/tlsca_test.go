@@ -73,7 +73,7 @@ func TestPersistedCAIsReused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	info, err := os.Stat(filepath.Join(dir, keyFile))
+	info, err := os.Stat(filepath.Join(dir, KeyFile))
 	if err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("CA key file: %v, mode %v", err, info.Mode())
 	}
@@ -113,15 +113,15 @@ func TestBrokenCADirectories(t *testing.T) {
 	// A key without its certificate: Load waits for the process creating
 	// the CA, then gives up.
 	keyOnly := t.TempDir()
-	if err := os.WriteFile(filepath.Join(keyOnly, keyFile), []byte("x"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(keyOnly, KeyFile), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := load(keyOnly, 50*time.Millisecond); err == nil || !strings.Contains(err.Error(), "half") {
+	if _, err := load(keyOnly, nil, 50*time.Millisecond); err == nil || !strings.Contains(err.Error(), "half") {
 		t.Errorf("a key without its certificate: %v", err)
 	}
 
 	junk := t.TempDir()
-	for _, f := range []string{CertFile, keyFile} {
+	for _, f := range []string{CertFile, KeyFile} {
 		if err := os.WriteFile(filepath.Join(junk, f), []byte("not pem"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -132,11 +132,11 @@ func TestBrokenCADirectories(t *testing.T) {
 
 	// A leaf certificate where the CA should be.
 	a, _ := Load("")
-	leaf, _ := a.Certificate("x.example")
+	leaf, _ := a.Certificate("x.myhuaweicloud.com")
 	notCA := t.TempDir()
 	keyDER, _ := x509.MarshalPKCS8PrivateKey(a.leafKey)
 	_ = os.WriteFile(filepath.Join(notCA, CertFile), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Leaf.Raw}), 0o600)
-	_ = os.WriteFile(filepath.Join(notCA, keyFile), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), 0o600)
+	_ = os.WriteFile(filepath.Join(notCA, KeyFile), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), 0o600)
 	if _, err := Load(notCA); err == nil || !strings.Contains(err.Error(), "not a CA") {
 		t.Errorf("a non-CA certificate: %v", err)
 	}

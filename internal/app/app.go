@@ -479,15 +479,35 @@ func tlsDir(cfg config.Config) string {
 // that trust the CA must fetch it again after every start.
 func loadCA(cfg config.Config, log *slog.Logger) (*tlsca.Authority, error) {
 	dir := tlsDir(cfg)
-	ca, err := tlsca.Load(dir)
+	ca, err := tlsca.Load(dir, cfg.ProxyDomains...)
 	if err == nil {
+		checkCA(log, cfg, ca, dir)
 		return ca, nil
 	}
 	if cfg.TLSDir != "" {
 		return nil, err // an explicit choice must work
 	}
 	log.Warn("using an in-memory CA", "error", err)
-	return tlsca.Load("")
+	return tlsca.Load("", cfg.ProxyDomains...)
+}
+
+// checkCA warns about a CA that can sign for any name, created before
+// v0.3, and about proxy domains the CA cannot sign for, which were added
+// after it was created.
+func checkCA(log *slog.Logger, cfg config.Config, ca *tlsca.Authority, dir string) {
+	rotate := "delete " + filepath.Join(dir, tlsca.CertFile) + " and " + filepath.Join(dir, tlsca.KeyFile) +
+		", restart WeiStack, and trust the new CA (weistack ca) in place of the old one"
+	if !ca.Constrained() {
+		log.Warn("the local CA was created before v0.3 and can sign for any name: whoever obtains its key could impersonate any site to clients that trust it",
+			"ca", filepath.Join(dir, tlsca.CertFile), "fix", rotate)
+		return
+	}
+	for _, d := range cfg.ProxyDomains {
+		if !ca.Permits(d) {
+			log.Warn("the local CA cannot sign for a proxy domain, so clients will refuse WeiStack's certificates for it",
+				"domain", d, "fix", rotate)
+		}
+	}
 }
 
 // printCA writes the local CA certificate to stdout, for clients that
@@ -504,7 +524,7 @@ func printCA(env Env) error {
 	if dir == "" {
 		return errors.New("no directory for the CA: set -tls-dir")
 	}
-	ca, err := tlsca.Load(dir)
+	ca, err := tlsca.Load(dir, cfg.ProxyDomains...)
 	if err != nil {
 		return err
 	}
