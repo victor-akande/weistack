@@ -96,7 +96,7 @@ func TestGatewayCreateErrorCodesGolden(t *testing.T) {
 		}
 	}
 
-	tooManyTags := make([]string, 21)
+	tooManyTags := make([]string, maxTags+1)
 	for i := range tooManyTags {
 		tooManyTags[i] = fmt.Sprintf(`"k%d*v%d"`, i, i)
 	}

@@ -81,7 +81,7 @@ func TestPrivateGatewayCreateErrorCodesGolden(t *testing.T) {
 		}
 	}
 
-	tooManyTags := make([]string, 21)
+	tooManyTags := make([]string, maxTags+1)
 	for i := range tooManyTags {
 		tooManyTags[i] = fmt.Sprintf(`{"key":"k%d","value":"v%d"}`, i, i)
 	}
@@ -196,8 +196,9 @@ func TestPrivateGatewayUpdateDeleteAndListGolden(t *testing.T) {
 	e.expect(t, "private_gateways", "error_bad_json", http.MethodPut, "/gateways/"+gw1.ID, `{"gateway": {"name": "bad name"}}`)
 	e.expect(t, "private_gateways", "error_same_spec", http.MethodPut, "/gateways/"+gw1.ID, `{"gateway": {"spec": "Medium"}}`)
 
-	// Seed 21 private rules on gw1 -> downgrade to Small fails with NAT.1207, delete fails with NAT.1202.
-	for i := range 21 {
+	// Seed rules above Small's cap on gw1 -> downgrade to Small fails with NAT.1207, delete fails with NAT.1202.
+	overSmall := privateRuleMax("Small") + 1
+	for i := range overSmall {
 		rid := fmt.Sprintf("77777777-7777-4777-8777-%012d", i)
 		if err := e.svc.privateSnats(gwTestTenant).Create(ctx, rid, privateSnat{ID: rid, GatewayID: gw1.ID}); err != nil {
 			t.Fatalf("seed snat %d: %v", i, err)
@@ -309,7 +310,7 @@ func TestTransitSubnetErrorsAndListGolden(t *testing.T) {
 	}
 	_ = vpc3
 
-	tooManyTags := make([]string, 21)
+	tooManyTags := make([]string, maxTags+1)
 	for i := range tooManyTags {
 		tooManyTags[i] = fmt.Sprintf(`{"key":"k%d","value":"v"}`, i)
 	}

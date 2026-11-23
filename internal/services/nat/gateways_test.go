@@ -473,9 +473,9 @@ func TestGatewayCreateValidation(t *testing.T) {
 		}
 	}
 
-	twentyOneTags := make([]string, 21)
-	for i := range twentyOneTags {
-		twentyOneTags[i] = fmt.Sprintf("k%d*v%d", i, i)
+	tooManyTags := make([]string, maxTags+1)
+	for i := range tooManyTags {
+		tooManyTags[i] = fmt.Sprintf("k%d*v%d", i, i)
 	}
 
 	base := func() createGatewayInput {
@@ -616,20 +616,20 @@ func TestGatewayCreateValidation(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name:       "tag key > 128 runes",
-			mutate:     func(in *createGatewayInput) { in.Tags = []string{strings.Repeat("k", 129) + "*v"} },
+			name:       "tag key > max runes",
+			mutate:     func(in *createGatewayInput) { in.Tags = []string{strings.Repeat("k", maxTagKeyLen+1) + "*v"} },
 			wantCode:   "NAT.1015",
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name:       "tag value > 255 runes",
-			mutate:     func(in *createGatewayInput) { in.Tags = []string{"k*" + strings.Repeat("v", 256)} },
+			name:       "tag value > max runes",
+			mutate:     func(in *createGatewayInput) { in.Tags = []string{"k*" + strings.Repeat("v", maxTagValueLen+1)} },
 			wantCode:   "NAT.1015",
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name:       "more than 20 tags",
-			mutate:     func(in *createGatewayInput) { in.Tags = twentyOneTags },
+			name:       "more than max tags",
+			mutate:     func(in *createGatewayInput) { in.Tags = tooManyTags },
 			wantCode:   "NAT.1016",
 			wantStatus: http.StatusBadRequest,
 		},

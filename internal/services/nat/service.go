@@ -62,6 +62,8 @@ const (
 	defaultEnterpriseProjectID  = "0"
 	allGrantedEPs               = "all_granted_eps"
 	maxTags                     = 20
+	maxTagKeyLen                = 128
+	maxTagValueLen              = 255
 	maxSnatEIPs                 = 20
 	publicDnatRulesLimit        = 200
 	publicSnatPublicIPLimit     = 20
@@ -314,7 +316,7 @@ func inEP(want, ep string) bool {
 func validTag(k, v string) bool {
 	kl := utf8.RuneCountInString(k)
 	vl := utf8.RuneCountInString(v)
-	return kl >= 1 && kl <= 128 && vl <= 255
+	return kl >= 1 && kl <= maxTagKeyLen && vl <= maxTagValueLen
 }
 
 type handler func(w http.ResponseWriter, r *http.Request, t Tenant) error

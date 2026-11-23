@@ -464,7 +464,7 @@ func TestCertCreateValidation(t *testing.T) {
 	chain12 := certGenChain(t, "chain12.example.com", nil, 12, notAfter)
 	caGood := certGenECDSA(t, "Root CA", nil, true, notAfter)
 
-	tooManyDomains := strings.Repeat("a.example.com,", 101)
+	tooManyDomains := strings.Repeat("a.example.com,", certMaxDomains+1)
 	tooManyDomains = strings.TrimSuffix(tooManyDomains, ",")
 	tooLongDomain := strings.Repeat("a.example.com,", 800)
 	tooLongDomain = strings.TrimSuffix(tooLongDomain, ",")

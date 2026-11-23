@@ -87,9 +87,9 @@ func TestSnatRulesHTTPErrorCodesGolden(t *testing.T) {
 		t.Fatalf("seed any dnat: %d %s", st, out)
 	}
 
-	twentyOne := make([]string, 21)
-	for i := range twentyOne {
-		twentyOne[i] = fmt.Sprintf("10000000-0000-4000-8000-%012d", i+1)
+	tooManyEIPs := make([]string, maxSnatEIPs+1)
+	for i := range tooManyEIPs {
+		tooManyEIPs[i] = fmt.Sprintf("10000000-0000-4000-8000-%012d", i+1)
 	}
 
 	createCases := []struct {
@@ -116,7 +116,7 @@ func TestSnatRulesHTTPErrorCodesGolden(t *testing.T) {
 		{"cidr overlaps existing rule", `{"snat_rule": {"nat_gateway_id": "` + rulesGW1ID + `", "cidr": "10.0.1.0/25", "source_type": 0, "floating_ip_id": "` + rulesEIP2ID + `"}}`, "error_nat_0207"},
 		{"network_id already has rule", `{"snat_rule": {"nat_gateway_id": "` + rulesGW1ID + `", "network_id": "` + rulesSub1ID + `", "floating_ip_id": "` + rulesEIP2ID + `"}}`, "error_nat_0208"},
 		{"invalid floating_ip_id uuid", `{"snat_rule": {"nat_gateway_id": "` + rulesGW1ID + `", "cidr": "172.16.0.0/24", "source_type": 1, "floating_ip_id": "bad-uuid"}}`, "error_nat_0210"},
-		{"more than 20 EIPs", `{"snat_rule": {"nat_gateway_id": "` + rulesGW1ID + `", "cidr": "172.16.0.0/24", "source_type": 1, "floating_ip_id": "` + strings.Join(twentyOne, ",") + `"}}`, "error_nat_0211"},
+		{"more than max EIPs", `{"snat_rule": {"nat_gateway_id": "` + rulesGW1ID + `", "cidr": "172.16.0.0/24", "source_type": 1, "floating_ip_id": "` + strings.Join(tooManyEIPs, ",") + `"}}`, "error_nat_0211"},
 		{"EIP bound to port", `{"snat_rule": {"nat_gateway_id": "` + rulesGW1ID + `", "cidr": "172.16.0.0/24", "source_type": 1, "floating_ip_id": "` + rulesEIPBoundID + `"}}`, "error_nat_0402"},
 		{"duplicate EIP in list", `{"snat_rule": {"nat_gateway_id": "` + rulesGW1ID + `", "cidr": "172.16.0.0/24", "source_type": 1, "floating_ip_id": "` + rulesEIP2ID + `,` + rulesEIP2ID + `"}}`, "error_nat_0403"},
 		{"EIP used by another gateway", `{"snat_rule": {"nat_gateway_id": "` + rulesGW1ID + `", "cidr": "172.16.0.0/24", "source_type": 1, "floating_ip_id": "` + rulesEIPHeldID + `"}}`, "error_nat_0404"},

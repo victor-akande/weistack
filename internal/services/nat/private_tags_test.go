@@ -455,21 +455,21 @@ func TestPrivateTagGoldenErrors(t *testing.T) {
 			}{
 				{"create nil tag", target.basePath + "/" + id + "/tags", `{}`},
 				{"create empty key", target.basePath + "/" + id + "/tags", `{"tag": {"key": "", "value": "v"}}`},
-				{"create key over 128", target.basePath + "/" + id + "/tags", `{"tag": {"key": "` + strings.Repeat("k", 129) + `", "value": "v"}}`},
-				{"create value over 255", target.basePath + "/" + id + "/tags", `{"tag": {"key": "k", "value": "` + strings.Repeat("v", 256) + `"}}`},
+				{"create key over max", target.basePath + "/" + id + "/tags", `{"tag": {"key": "` + strings.Repeat("k", maxTagKeyLen+1) + `", "value": "v"}}`},
+				{"create value over max", target.basePath + "/" + id + "/tags", `{"tag": {"key": "k", "value": "` + strings.Repeat("v", maxTagValueLen+1) + `"}}`},
 				{"batch create empty tags", target.basePath + "/" + id + "/tags/action", `{"action": "create", "tags": []}`},
 				{"batch delete empty tags", target.basePath + "/" + id + "/tags/action", `{"action": "delete", "tags": []}`},
 				{"batch create empty key", target.basePath + "/" + id + "/tags/action", `{"action": "create", "tags": [{"key": "", "value": "v"}]}`},
-				{"batch create key over 128", target.basePath + "/" + id + "/tags/action", `{"action": "create", "tags": [{"key": "` + strings.Repeat("k", 129) + `", "value": "v"}]}`},
-				{"batch create value over 255", target.basePath + "/" + id + "/tags/action", `{"action": "create", "tags": [{"key": "k", "value": "` + strings.Repeat("v", 256) + `"}]}`},
+				{"batch create key over max", target.basePath + "/" + id + "/tags/action", `{"action": "create", "tags": [{"key": "` + strings.Repeat("k", maxTagKeyLen+1) + `", "value": "v"}]}`},
+				{"batch create value over max", target.basePath + "/" + id + "/tags/action", `{"action": "create", "tags": [{"key": "k", "value": "` + strings.Repeat("v", maxTagValueLen+1) + `"}]}`},
 				{"batch create duplicate key", target.basePath + "/" + id + "/tags/action", `{"action": "create", "tags": [{"key": "dup", "value": "v1"}, {"key": "dup", "value": "v2"}]}`},
 				{"batch delete empty key", target.basePath + "/" + id + "/tags/action", `{"action": "delete", "tags": [{"key": ""}]}`},
-				{"batch delete key over 128", target.basePath + "/" + id + "/tags/action", `{"action": "delete", "tags": [{"key": "` + strings.Repeat("k", 129) + `"}]}`},
+				{"batch delete key over max", target.basePath + "/" + id + "/tags/action", `{"action": "delete", "tags": [{"key": "` + strings.Repeat("k", maxTagKeyLen+1) + `"}]}`},
 				{"filter empty key", target.basePath + "/resource_instances/action", `{"action": "filter", "tags": [{"key": "", "values": ["v"]}]}`},
 				{"filter space-only key", target.basePath + "/resource_instances/action", `{"action": "filter", "tags": [{"key": "   ", "values": ["v"]}]}`},
-				{"filter key over 128", target.basePath + "/resource_instances/action", `{"action": "filter", "tags": [{"key": "` + strings.Repeat("k", 129) + `", "values": ["v"]}]}`},
+				{"filter key over max", target.basePath + "/resource_instances/action", `{"action": "filter", "tags": [{"key": "` + strings.Repeat("k", maxTagFilterKeyLen+1) + `", "values": ["v"]}]}`},
 				{"filter duplicate key", target.basePath + "/resource_instances/action", `{"action": "filter", "tags": [{"key": "k", "values": ["v1"]}, {"key": "k", "values": ["v2"]}]}`},
-				{"filter value over 255", target.basePath + "/resource_instances/action", `{"action": "filter", "tags": [{"key": "k", "values": ["` + strings.Repeat("v", 256) + `"]}]}`},
+				{"filter value over max", target.basePath + "/resource_instances/action", `{"action": "filter", "tags": [{"key": "k", "values": ["` + strings.Repeat("v", maxTagFilterValueLen+1) + `"]}]}`},
 				{"filter duplicate value", target.basePath + "/resource_instances/action", `{"action": "filter", "tags": [{"key": "k", "values": ["v1", "v1"]}]}`},
 			}
 			for _, tc := range invalidTags {
@@ -490,7 +490,7 @@ func TestPrivateTagGoldenErrors(t *testing.T) {
 				{"list unknown action", target.basePath + "/resource_instances/action", `{"action": "list"}`},
 				{"limit zero", target.basePath + "/resource_instances/action", `{"action": "filter", "limit": 0}`},
 				{"limit negative", target.basePath + "/resource_instances/action", `{"action": "filter", "limit": -1}`},
-				{"limit over 1000", target.basePath + "/resource_instances/action", `{"action": "filter", "limit": 1001}`},
+				{"limit over max", target.basePath + "/resource_instances/action", fmt.Sprintf(`{"action": "filter", "limit": %d}`, maxTagFilterPage+1)},
 				{"limit bad string", target.basePath + "/resource_instances/action", `{"action": "filter", "limit": "abc"}`},
 				{"limit float", target.basePath + "/resource_instances/action", `{"action": "filter", "limit": 1.5}`},
 				{"limit bool", target.basePath + "/resource_instances/action", `{"action": "filter", "limit": true}`},
@@ -499,7 +499,7 @@ func TestPrivateTagGoldenErrors(t *testing.T) {
 				{"offset bad string", target.basePath + "/resource_instances/action", `{"action": "filter", "offset": "abc"}`},
 				{"offset float", target.basePath + "/resource_instances/action", `{"action": "filter", "offset": 2.5}`},
 				{"unsupported match key", target.basePath + "/resource_instances/action", `{"action": "filter", "matches": [{"key": "resource_id", "value": "x"}]}`},
-				{"match value over 255", target.basePath + "/resource_instances/action", `{"action": "filter", "matches": [{"key": "resource_name", "value": "` + strings.Repeat("a", 256) + `"}]}`},
+				{"match value over max", target.basePath + "/resource_instances/action", `{"action": "filter", "matches": [{"key": "resource_name", "value": "` + strings.Repeat("a", maxMatchValueLen+1) + `"}]}`},
 			}
 			for _, tc := range invalidParams {
 				t.Run("param_"+tc.name, func(t *testing.T) {
@@ -507,16 +507,16 @@ func TestPrivateTagGoldenErrors(t *testing.T) {
 				})
 			}
 
-			// More than 20 tags -> NAT.1016 (400).
+			// More than maxTags -> NAT.1016 (400).
 			var fullTags []tag
 			for i := range maxTags {
 				fullTags = append(fullTags, tag{Key: fmt.Sprintf("k%02d", i), Value: "v"})
 			}
 			fullID := target.seed(e, t, tagTestTenant, "priv-full", fullTags)
 			e.expect(t, "error_nat_1016", http.MethodPost, target.basePath+"/"+fullID+"/tags",
-				`{"tag": {"key": "k20", "value": "v"}}`)
+				fmt.Sprintf(`{"tag": {"key": "k%d", "value": "v"}}`, maxTags))
 			e.expect(t, "error_nat_1016", http.MethodPost, target.basePath+"/"+fullID+"/tags/action",
-				`{"action": "create", "tags": [{"key": "k00", "value": "updated"}, {"key": "k20", "value": "overflow"}]}`)
+				fmt.Sprintf(`{"action": "create", "tags": [{"key": "k00", "value": "updated"}, {"key": "k%d", "value": "overflow"}]}`, maxTags))
 		})
 	}
 }
@@ -530,8 +530,8 @@ func TestPrivateTagOverwriteBoundariesUpdatedAtAndMaxTags(t *testing.T) {
 			id := target.seed(e, t, tagTestTenant, "priv-bounds", nil)
 			initialUpdated := target.updatedAt(e, t, tagTestTenant, id)
 
-			maxKey := strings.Repeat("é", 128)
-			maxVal := strings.Repeat("中", 255)
+			maxKey := strings.Repeat("é", maxTagKeyLen)
+			maxVal := strings.Repeat("中", maxTagValueLen)
 
 			// Advance clock before create and verify UpdatedAt updates.
 			e.clock.Advance(5 * time.Second)
@@ -574,7 +574,7 @@ func TestPrivateTagOverwriteBoundariesUpdatedAtAndMaxTags(t *testing.T) {
 				t.Fatalf("UpdatedAt after batch = %v, want > %v", afterBatch, afterOverwrite)
 			}
 
-			// Add 17 more tags to reach exact limit of 20.
+			// Fill remaining slots to reach exact limit of maxTags (3 tags already present).
 			var batch []tag
 			for i := 4; i <= maxTags; i++ {
 				batch = append(batch, tag{Key: fmt.Sprintf("k%d", i), Value: fmt.Sprintf("v%d", i)})
@@ -585,26 +585,26 @@ func TestPrivateTagOverwriteBoundariesUpdatedAtAndMaxTags(t *testing.T) {
 			}
 			status, out = e.call(t, http.MethodPost, target.basePath+"/"+id+"/tags/action", string(body))
 			if status != http.StatusNoContent {
-				t.Fatalf("fill to 20 tags: %d %s", status, out)
+				t.Fatalf("fill to %d tags: %d %s", maxTags, status, out)
 			}
 
-			// Overwriting an existing key when at 20 tags must still succeed.
+			// Overwriting an existing key when at maxTags must still succeed.
 			status, out = e.call(t, http.MethodPost, target.basePath+"/"+id+"/tags",
 				`{"tag": {"key": "k3", "value": "v3-updated"}}`)
 			if status != http.StatusNoContent {
-				t.Fatalf("overwrite at 20 tags: %d %s", status, out)
+				t.Fatalf("overwrite at %d tags: %d %s", maxTags, status, out)
 			}
 
 			// Failed batch create (NAT.1016) must NOT mutate tags or advance UpdatedAt.
 			beforeFail := target.updatedAt(e, t, tagTestTenant, id)
 			e.clock.Advance(5 * time.Second)
 			e.expect(t, "error_nat_1016", http.MethodPost, target.basePath+"/"+id+"/tags/action",
-				`{"action": "create", "tags": [{"key": "k3", "value": "should-not-apply"}, {"key": "k21", "value": "overflow"}]}`)
+				fmt.Sprintf(`{"action": "create", "tags": [{"key": "k3", "value": "should-not-apply"}, {"key": "k%d", "value": "overflow"}]}`, maxTags+1))
 			if gotUpdated := target.updatedAt(e, t, tagTestTenant, id); !gotUpdated.Equal(beforeFail) {
 				t.Fatalf("UpdatedAt changed on failed batch: got %v, want %v", gotUpdated, beforeFail)
 			}
 
-			// Verify k3 was NOT mutated and count is still 20.
+			// Verify k3 was NOT mutated and count is still maxTags.
 			status, out = e.call(t, http.MethodGet, target.basePath+"/"+id+"/tags", "")
 			if status != http.StatusOK {
 				t.Fatalf("show tags: %d %s", status, out)
@@ -619,9 +619,10 @@ func TestPrivateTagOverwriteBoundariesUpdatedAtAndMaxTags(t *testing.T) {
 
 			// Single delete and batch delete advance UpdatedAt.
 			e.clock.Advance(5 * time.Second)
-			status, out = e.call(t, http.MethodDelete, target.basePath+"/"+id+"/tags/k20", "")
+			lastKey := fmt.Sprintf("k%d", maxTags)
+			status, out = e.call(t, http.MethodDelete, target.basePath+"/"+id+"/tags/"+lastKey, "")
 			if status != http.StatusNoContent {
-				t.Fatalf("delete k20: %d %s", status, out)
+				t.Fatalf("delete %s: %d %s", lastKey, status, out)
 			}
 			afterDel := target.updatedAt(e, t, tagTestTenant, id)
 			if !afterDel.After(beforeFail) {
@@ -629,10 +630,11 @@ func TestPrivateTagOverwriteBoundariesUpdatedAtAndMaxTags(t *testing.T) {
 			}
 
 			e.clock.Advance(5 * time.Second)
+			prevKey := fmt.Sprintf("k%d", maxTags-1)
 			status, out = e.call(t, http.MethodPost, target.basePath+"/"+id+"/tags/action",
-				`{"action": "delete", "tags": [{"key": "k19"}]}`)
+				fmt.Sprintf(`{"action": "delete", "tags": [{"key": %q}]}`, prevKey))
 			if status != http.StatusNoContent {
-				t.Fatalf("batch delete k19: %d %s", status, out)
+				t.Fatalf("batch delete %s: %d %s", prevKey, status, out)
 			}
 			afterBatchDel := target.updatedAt(e, t, tagTestTenant, id)
 			if !afterBatchDel.After(afterDel) {

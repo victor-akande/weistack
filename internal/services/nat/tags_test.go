@@ -312,21 +312,21 @@ func TestNatGatewayTagGoldenErrors(t *testing.T) {
 			}{
 				{"create nil tag", "/nat_gateways/" + gw.ID + "/tags", `{}`},
 				{"create empty key", "/nat_gateways/" + gw.ID + "/tags", `{"tag": {"key": "", "value": "v"}}`},
-				{"create key over 128", "/nat_gateways/" + gw.ID + "/tags", `{"tag": {"key": "` + strings.Repeat("k", 129) + `", "value": "v"}}`},
-				{"create value over 255", "/nat_gateways/" + gw.ID + "/tags", `{"tag": {"key": "k", "value": "` + strings.Repeat("v", 256) + `"}}`},
+				{"create key over max", "/nat_gateways/" + gw.ID + "/tags", `{"tag": {"key": "` + strings.Repeat("k", maxTagKeyLen+1) + `", "value": "v"}}`},
+				{"create value over max", "/nat_gateways/" + gw.ID + "/tags", `{"tag": {"key": "k", "value": "` + strings.Repeat("v", maxTagValueLen+1) + `"}}`},
 				{"batch create empty tags", "/nat_gateways/" + gw.ID + "/tags/action", `{"action": "create", "tags": []}`},
 				{"batch delete empty tags", "/nat_gateways/" + gw.ID + "/tags/action", `{"action": "delete", "tags": []}`},
 				{"batch create empty key", "/nat_gateways/" + gw.ID + "/tags/action", `{"action": "create", "tags": [{"key": "", "value": "v"}]}`},
-				{"batch create key over 128", "/nat_gateways/" + gw.ID + "/tags/action", `{"action": "create", "tags": [{"key": "` + strings.Repeat("k", 129) + `", "value": "v"}]}`},
-				{"batch create value over 255", "/nat_gateways/" + gw.ID + "/tags/action", `{"action": "create", "tags": [{"key": "k", "value": "` + strings.Repeat("v", 256) + `"}]}`},
+				{"batch create key over max", "/nat_gateways/" + gw.ID + "/tags/action", `{"action": "create", "tags": [{"key": "` + strings.Repeat("k", maxTagKeyLen+1) + `", "value": "v"}]}`},
+				{"batch create value over max", "/nat_gateways/" + gw.ID + "/tags/action", `{"action": "create", "tags": [{"key": "k", "value": "` + strings.Repeat("v", maxTagValueLen+1) + `"}]}`},
 				{"batch create duplicate key", "/nat_gateways/" + gw.ID + "/tags/action", `{"action": "create", "tags": [{"key": "dup", "value": "v1"}, {"key": "dup", "value": "v2"}]}`},
 				{"batch delete empty key", "/nat_gateways/" + gw.ID + "/tags/action", `{"action": "delete", "tags": [{"key": ""}]}`},
-				{"batch delete key over 128", "/nat_gateways/" + gw.ID + "/tags/action", `{"action": "delete", "tags": [{"key": "` + strings.Repeat("k", 129) + `"}]}`},
+				{"batch delete key over max", "/nat_gateways/" + gw.ID + "/tags/action", `{"action": "delete", "tags": [{"key": "` + strings.Repeat("k", maxTagKeyLen+1) + `"}]}`},
 				{"filter empty key", "/nat_gateways/resource_instances/action", `{"action": "filter", "tags": [{"key": "", "values": ["v"]}]}`},
 				{"filter space-only key", "/nat_gateways/resource_instances/action", `{"action": "filter", "tags": [{"key": "   ", "values": ["v"]}]}`},
-				{"filter key over 128", "/nat_gateways/resource_instances/action", `{"action": "filter", "tags": [{"key": "` + strings.Repeat("k", 129) + `", "values": ["v"]}]}`},
+				{"filter key over max", "/nat_gateways/resource_instances/action", `{"action": "filter", "tags": [{"key": "` + strings.Repeat("k", maxTagFilterKeyLen+1) + `", "values": ["v"]}]}`},
 				{"filter duplicate key", "/nat_gateways/resource_instances/action", `{"action": "filter", "tags": [{"key": "k", "values": ["v1"]}, {"key": "k", "values": ["v2"]}]}`},
-				{"filter value over 255", "/nat_gateways/resource_instances/action", `{"action": "filter", "tags": [{"key": "k", "values": ["` + strings.Repeat("v", 256) + `"]}]}`},
+				{"filter value over max", "/nat_gateways/resource_instances/action", `{"action": "filter", "tags": [{"key": "k", "values": ["` + strings.Repeat("v", maxTagFilterValueLen+1) + `"]}]}`},
 				{"filter duplicate value", "/nat_gateways/resource_instances/action", `{"action": "filter", "tags": [{"key": "k", "values": ["v1", "v1"]}]}`},
 			}
 			for _, tc := range invalidTags {
@@ -347,7 +347,7 @@ func TestNatGatewayTagGoldenErrors(t *testing.T) {
 				{"list unknown action", "/nat_gateways/resource_instances/action", `{"action": "list"}`},
 				{"limit zero", "/nat_gateways/resource_instances/action", `{"action": "filter", "limit": 0}`},
 				{"limit negative", "/nat_gateways/resource_instances/action", `{"action": "filter", "limit": -1}`},
-				{"limit over 1000", "/nat_gateways/resource_instances/action", `{"action": "filter", "limit": 1001}`},
+				{"limit over max", "/nat_gateways/resource_instances/action", fmt.Sprintf(`{"action": "filter", "limit": %d}`, maxTagFilterPage+1)},
 				{"limit bad string", "/nat_gateways/resource_instances/action", `{"action": "filter", "limit": "abc"}`},
 				{"limit float", "/nat_gateways/resource_instances/action", `{"action": "filter", "limit": 1.5}`},
 				{"limit bool", "/nat_gateways/resource_instances/action", `{"action": "filter", "limit": true}`},
@@ -356,7 +356,7 @@ func TestNatGatewayTagGoldenErrors(t *testing.T) {
 				{"offset bad string", "/nat_gateways/resource_instances/action", `{"action": "filter", "offset": "abc"}`},
 				{"offset float", "/nat_gateways/resource_instances/action", `{"action": "filter", "offset": 2.5}`},
 				{"unsupported match key", "/nat_gateways/resource_instances/action", `{"action": "filter", "matches": [{"key": "resource_id", "value": "x"}]}`},
-				{"match value over 255", "/nat_gateways/resource_instances/action", `{"action": "filter", "matches": [{"key": "resource_name", "value": "` + strings.Repeat("a", 256) + `"}]}`},
+				{"match value over max", "/nat_gateways/resource_instances/action", `{"action": "filter", "matches": [{"key": "resource_name", "value": "` + strings.Repeat("a", maxMatchValueLen+1) + `"}]}`},
 			}
 			for _, tc := range invalidParams {
 				t.Run("param_"+tc.name, func(t *testing.T) {
@@ -364,16 +364,16 @@ func TestNatGatewayTagGoldenErrors(t *testing.T) {
 				})
 			}
 
-			// More than 20 tags -> NAT.1016 (400).
+			// More than maxTags -> NAT.1016 (400).
 			var fullTags []tag
 			for i := range maxTags {
 				fullTags = append(fullTags, tag{Key: fmt.Sprintf("k%02d", i), Value: "v"})
 			}
 			gwFull := e.seedGateway(t, tagTestTenant, "nat-full", fullTags)
 			e.expect(t, prefix, "error_nat_1016", http.MethodPost, "/nat_gateways/"+gwFull.ID+"/tags",
-				`{"tag": {"key": "k20", "value": "v"}}`)
+				fmt.Sprintf(`{"tag": {"key": "k%d", "value": "v"}}`, maxTags))
 			e.expect(t, prefix, "error_nat_1016", http.MethodPost, "/nat_gateways/"+gwFull.ID+"/tags/action",
-				`{"action": "create", "tags": [{"key": "k00", "value": "updated"}, {"key": "k20", "value": "overflow"}]}`)
+				fmt.Sprintf(`{"action": "create", "tags": [{"key": "k00", "value": "updated"}, {"key": "k%d", "value": "overflow"}]}`, maxTags))
 		})
 	}
 }
@@ -383,9 +383,9 @@ func TestTagOverwriteBoundariesAndMaxTags(t *testing.T) {
 	e := newTagEnv(t)
 	gw := e.seedGateway(t, tagTestTenant, "nat-bounds", nil)
 
-	// Boundary Unicode lengths (key=128 runes, value=255 runes) and empty value.
-	maxKey := strings.Repeat("é", 128)
-	maxVal := strings.Repeat("中", 255)
+	// Boundary Unicode lengths (maxTagKeyLen runes, maxTagValueLen runes) and empty value.
+	maxKey := strings.Repeat("é", maxTagKeyLen)
+	maxVal := strings.Repeat("中", maxTagValueLen)
 
 	status, out := e.call(t, "/v3", http.MethodPost, "/nat_gateways/"+gw.ID+"/tags",
 		`{"tag": {"key": "`+maxKey+`", "value": "`+maxVal+`"}}`)
@@ -410,7 +410,7 @@ func TestTagOverwriteBoundariesAndMaxTags(t *testing.T) {
 		t.Fatalf("batch overwrite: %d %s", status, out)
 	}
 
-	// Add 17 more tags to reach exact limit of 20.
+	// Fill remaining slots to reach exact limit of maxTags (3 tags already present).
 	var batch []tag
 	for i := 4; i <= maxTags; i++ {
 		batch = append(batch, tag{Key: fmt.Sprintf("k%d", i), Value: fmt.Sprintf("v%d", i)})
@@ -421,21 +421,21 @@ func TestTagOverwriteBoundariesAndMaxTags(t *testing.T) {
 	}
 	status, out = e.call(t, "/v3", http.MethodPost, "/nat_gateways/"+gw.ID+"/tags/action", string(body))
 	if status != http.StatusNoContent {
-		t.Fatalf("fill to 20 tags: %d %s", status, out)
+		t.Fatalf("fill to %d tags: %d %s", maxTags, status, out)
 	}
 
-	// Overwriting an existing key when at 20 tags must still succeed.
+	// Overwriting an existing key when at maxTags must still succeed.
 	status, out = e.call(t, "/v3", http.MethodPost, "/nat_gateways/"+gw.ID+"/tags",
 		`{"tag": {"key": "k3", "value": "v3-updated"}}`)
 	if status != http.StatusNoContent {
-		t.Fatalf("overwrite at 20 tags: %d %s", status, out)
+		t.Fatalf("overwrite at %d tags: %d %s", maxTags, status, out)
 	}
 
-	// Batch create with 1 existing key + 1 new key at 20 tags must fail atomically with NAT.1016.
+	// Batch create with 1 existing key + 1 new key at maxTags must fail atomically with NAT.1016.
 	e.expect(t, "/v3", "error_nat_1016", http.MethodPost, "/nat_gateways/"+gw.ID+"/tags/action",
-		`{"action": "create", "tags": [{"key": "k3", "value": "should-not-apply"}, {"key": "k21", "value": "overflow"}]}`)
+		fmt.Sprintf(`{"action": "create", "tags": [{"key": "k3", "value": "should-not-apply"}, {"key": "k%d", "value": "overflow"}]}`, maxTags+1))
 
-	// Verify k3 was NOT mutated by the rejected batch create and count is still 20.
+	// Verify k3 was NOT mutated by the rejected batch create and count is still maxTags.
 	status, out = e.call(t, "/v2.0", http.MethodGet, "/nat_gateways/"+gw.ID+"/tags", "")
 	if status != http.StatusOK {
 		t.Fatalf("show tags: %d %s", status, out)
