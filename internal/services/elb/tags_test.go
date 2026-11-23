@@ -493,11 +493,11 @@ func TestTagGoldenErrors(t *testing.T) {
 						{"empty tags create", `{"action": "create", "tags": []}`},
 						{"empty tags delete", `{"action": "delete", "tags": []}`},
 						{"empty key create", `{"action": "create", "tags": [{"key": "", "value": "v"}]}`},
-						{"key over 128", `{"action": "create", "tags": [{"key": "` + strings.Repeat("k", 129) + `", "value": "v"}]}`},
+						{"key over max", `{"action": "create", "tags": [{"key": "` + strings.Repeat("k", tagMaxFilterKeyLen+1) + `", "value": "v"}]}`},
 						{"invalid key char dot", `{"action": "create", "tags": [{"key": "a.b", "value": "v"}]}`},
 						{"invalid key char star", `{"action": "create", "tags": [{"key": "a*b", "value": "v"}]}`},
 						{"invalid key char space", `{"action": "create", "tags": [{"key": "a b", "value": "v"}]}`},
-						{"value over 255", `{"action": "create", "tags": [{"key": "k", "value": "` + strings.Repeat("v", 256) + `"}]}`},
+						{"value over max", `{"action": "create", "tags": [{"key": "k", "value": "` + strings.Repeat("v", tagMaxFilterValueLen+1) + `"}]}`},
 						{"invalid value char slash", `{"action": "create", "tags": [{"key": "k", "value": "a/b"}]}`},
 						{"invalid value char eq", `{"action": "create", "tags": [{"key": "k", "value": "a=b"}]}`},
 						{"duplicate key create", `{"action": "create", "tags": [{"key": "dup", "value": "v1"}, {"key": "dup", "value": "v2"}]}`},
@@ -510,9 +510,9 @@ func TestTagGoldenErrors(t *testing.T) {
 						})
 					}
 
-					// Overflow > 20 tags -> ELB.8902.
+					// Overflow past maxTags -> ELB.8902.
 					e.expect(t, prefix, "error_invalid_input", http.MethodPost, res.segment+"/"+fullID+"/tags/action",
-						`{"action": "create", "tags": [{"key": "k00", "value": "updated"}, {"key": "k20", "value": "overflow"}]}`)
+						fmt.Sprintf(`{"action": "create", "tags": [{"key": "k00", "value": "updated"}, {"key": "k%d", "value": "overflow"}]}`, maxTags))
 				})
 			}
 
@@ -528,7 +528,7 @@ func TestTagGoldenErrors(t *testing.T) {
 
 				// Overflow on single create -> ELB.8902.
 				e.expect(t, "/v2.0", "error_invalid_input", http.MethodPost, res.segment+"/"+fullID+"/tags",
-					`{"tag": {"key": "k20", "value": "v"}}`)
+					fmt.Sprintf(`{"tag": {"key": "k%d", "value": "v"}}`, maxTags))
 
 				// Single create invalid inputs -> ELB.8902.
 				invalidSingle := []struct {
@@ -539,9 +539,9 @@ func TestTagGoldenErrors(t *testing.T) {
 					{"malformed json", `{"tag":`},
 					{"missing tag", `{}`},
 					{"empty key", `{"tag": {"key": "", "value": "v"}}`},
-					{"key over 128", `{"tag": {"key": "` + strings.Repeat("k", 129) + `", "value": "v"}}`},
+					{"key over max", `{"tag": {"key": "` + strings.Repeat("k", tagMaxFilterKeyLen+1) + `", "value": "v"}}`},
 					{"invalid key char", `{"tag": {"key": "bad/key", "value": "v"}}`},
-					{"value over 255", `{"tag": {"key": "k", "value": "` + strings.Repeat("v", 256) + `"}}`},
+					{"value over max", `{"tag": {"key": "k", "value": "` + strings.Repeat("v", tagMaxFilterValueLen+1) + `"}}`},
 					{"invalid value char", `{"tag": {"key": "k", "value": "bad*val"}}`},
 				}
 				for _, tc := range invalidSingle {
@@ -581,7 +581,7 @@ func TestTagGoldenErrors(t *testing.T) {
 					{"unknown action", `{"action": "list"}`},
 					{"limit zero", `{"action": "filter", "limit": 0}`},
 					{"limit negative", `{"action": "filter", "limit": -1}`},
-					{"limit over 1000", `{"action": "filter", "limit": 1001}`},
+					{"limit over max", fmt.Sprintf(`{"action": "filter", "limit": %d}`, tagMaxFilterPage+1)},
 					{"limit bad string", `{"action": "filter", "limit": "abc"}`},
 					{"limit float", `{"action": "filter", "limit": 1.5}`},
 					{"limit bool", `{"action": "filter", "limit": true}`},
@@ -591,9 +591,9 @@ func TestTagGoldenErrors(t *testing.T) {
 					{"offset float", `{"action": "filter", "offset": 2.5}`},
 					{"filter empty key", `{"action": "filter", "tags": [{"key": "", "values": ["v"]}]}`},
 					{"filter space key", `{"action": "filter", "tags": [{"key": "   ", "values": ["v"]}]}`},
-					{"filter key over 128", `{"action": "filter", "tags": [{"key": "` + strings.Repeat("k", 129) + `", "values": ["v"]}]}`},
+					{"filter key over max", `{"action": "filter", "tags": [{"key": "` + strings.Repeat("k", tagMaxFilterKeyLen+1) + `", "values": ["v"]}]}`},
 					{"filter duplicate key", `{"action": "filter", "tags": [{"key": "k", "values": ["v1"]}, {"key": "k", "values": ["v2"]}]}`},
-					{"filter value over 255", `{"action": "filter", "tags": [{"key": "k", "values": ["` + strings.Repeat("v", 256) + `"]}]}`},
+					{"filter value over max", `{"action": "filter", "tags": [{"key": "k", "values": ["` + strings.Repeat("v", tagMaxFilterValueLen+1) + `"]}]}`},
 					{"filter duplicate value", `{"action": "filter", "tags": [{"key": "k", "values": ["v1", "v1"]}]}`},
 					{"filter too many keys", string(tooManyKeysBody)},
 					{"filter too many values", string(tooManyValsBody)},
@@ -601,7 +601,7 @@ func TestTagGoldenErrors(t *testing.T) {
 					{"not_tags invalid", `{"action": "filter", "not_tags": [{"key": "", "values": ["v"]}]}`},
 					{"not_tags_any invalid", `{"action": "filter", "not_tags_any": [{"key": "", "values": ["v"]}]}`},
 					{"unsupported match key", `{"action": "filter", "matches": [{"key": "description", "value": "x"}]}`},
-					{"match value over 255", `{"action": "filter", "matches": [{"key": "resource_name", "value": "` + strings.Repeat("a", 256) + `"}]}`},
+					{"match value over max", `{"action": "filter", "matches": [{"key": "resource_name", "value": "` + strings.Repeat("a", tagMaxMatchValueLen+1) + `"}]}`},
 				}
 				for _, tc := range invalidQuery {
 					t.Run("query_"+tc.name, func(t *testing.T) {
@@ -657,7 +657,7 @@ func TestTagOverwriteBoundariesAndMaxTags(t *testing.T) {
 				t.Fatalf("batch overwrite: %d %s", st, out)
 			}
 
-			// Add 17 more tags to reach exact limit of 20.
+			// Fill remaining slots to reach exact limit of maxTags (3 tags already present).
 			var batch []tag
 			for i := 4; i <= maxTags; i++ {
 				batch = append(batch, tag{Key: fmt.Sprintf("k%d", i), Value: fmt.Sprintf("v%d", i)})
@@ -668,21 +668,21 @@ func TestTagOverwriteBoundariesAndMaxTags(t *testing.T) {
 			}
 			st, out = e.call(t, "/v3", http.MethodPost, base+"/tags/action", string(body))
 			if st != http.StatusNoContent {
-				t.Fatalf("fill to 20 tags: %d %s", st, out)
+				t.Fatalf("fill to %d tags: %d %s", maxTags, st, out)
 			}
 
-			// Overwriting an existing key when at 20 tags succeeds.
+			// Overwriting an existing key when at maxTags succeeds.
 			st, out = e.call(t, "/v2.0", http.MethodPost, base+"/tags",
 				`{"tag": {"key": "k3", "value": "v3-updated"}}`)
 			if st != http.StatusNoContent {
-				t.Fatalf("overwrite at 20 tags: %d %s", st, out)
+				t.Fatalf("overwrite at %d tags: %d %s", maxTags, st, out)
 			}
 
-			// Batch create with 1 existing key + 1 new key at 20 tags fails atomically with ELB.8902.
+			// Batch create with 1 existing key + 1 new key at maxTags fails atomically with ELB.8902.
 			e.expect(t, "/v3", "error_invalid_input", http.MethodPost, base+"/tags/action",
-				`{"action": "create", "tags": [{"key": "k3", "value": "should-not-apply"}, {"key": "k21", "value": "overflow"}]}`)
+				fmt.Sprintf(`{"action": "create", "tags": [{"key": "k3", "value": "should-not-apply"}, {"key": "k%d", "value": "overflow"}]}`, maxTags+1))
 
-			// Verify k3 was NOT mutated by the rejected batch create and count is still 20.
+			// Verify k3 was NOT mutated by the rejected batch create and count is still maxTags.
 			st, out = e.call(t, "/v3", http.MethodGet, base+"/tags", "")
 			if st != http.StatusOK {
 				t.Fatalf("show tags: %d %s", st, out)
