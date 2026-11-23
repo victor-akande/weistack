@@ -3,6 +3,7 @@ package eip
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -262,8 +263,8 @@ func TestTagsGoldenErrors(t *testing.T) {
 		{"malformed json", `{"tag":`},
 		{"missing tag object", `{}`},
 		{"empty key", `{"tag": {"key": "", "value": "v"}}`},
-		{"key over 36 chars", `{"tag": {"key": "` + strings.Repeat("k", 37) + `", "value": "v"}}`},
-		{"value over 43 chars", `{"tag": {"key": "k", "value": "` + strings.Repeat("v", 44) + `"}}`},
+		{"key over max", `{"tag": {"key": "` + strings.Repeat("k", maxTagKeyLen+1) + `", "value": "v"}}`},
+		{"value over max", `{"tag": {"key": "k", "value": "` + strings.Repeat("v", maxTagValueLen+1) + `"}}`},
 	}
 	for _, tc := range createBad {
 		t.Run("create_"+tc.name, func(t *testing.T) {
@@ -283,10 +284,10 @@ func TestTagsGoldenErrors(t *testing.T) {
 		{"empty tags on create", `{"action": "create", "tags": []}`},
 		{"empty tags on delete", `{"action": "delete", "tags": []}`},
 		{"empty key on create", `{"action": "create", "tags": [{"key": "", "value": "v"}]}`},
-		{"overlong key on create", `{"action": "create", "tags": [{"key": "` + strings.Repeat("k", 37) + `", "value": "v"}]}`},
-		{"overlong value on create", `{"action": "create", "tags": [{"key": "k", "value": "` + strings.Repeat("v", 44) + `"}]}`},
+		{"overlong key on create", `{"action": "create", "tags": [{"key": "` + strings.Repeat("k", maxTagKeyLen+1) + `", "value": "v"}]}`},
+		{"overlong value on create", `{"action": "create", "tags": [{"key": "k", "value": "` + strings.Repeat("v", maxTagValueLen+1) + `"}]}`},
 		{"empty key on delete", `{"action": "delete", "tags": [{"key": ""}]}`},
-		{"overlong key on delete", `{"action": "delete", "tags": [{"key": "` + strings.Repeat("k", 37) + `"}]}`},
+		{"overlong key on delete", `{"action": "delete", "tags": [{"key": "` + strings.Repeat("k", maxTagKeyLen+1) + `"}]}`},
 	}
 	for _, tc := range batchBad {
 		t.Run("batch_"+tc.name, func(t *testing.T) {
@@ -305,7 +306,7 @@ func TestTagsGoldenErrors(t *testing.T) {
 		{"unknown action", `{"action": "list"}`},
 		{"limit zero", `{"action": "filter", "limit": 0}`},
 		{"limit negative", `{"action": "filter", "limit": -1}`},
-		{"limit over 1000", `{"action": "filter", "limit": 1001}`},
+		{"limit over max", fmt.Sprintf(`{"action": "filter", "limit": %d}`, maxTagFilterPage+1)},
 		{"limit bad string", `{"action": "filter", "limit": "abc"}`},
 		{"limit float", `{"action": "filter", "limit": 1.5}`},
 		{"limit bool", `{"action": "filter", "limit": true}`},
@@ -329,10 +330,10 @@ func TestTagOverwriteAndBoundaryLengths(t *testing.T) {
 	e := newTagEnv(t)
 	pip := e.seedPublicIP(t, tagTestTenant, "eip-bounds", "192.0.2.20", nil)
 
-	maxKey := strings.Repeat("k", 36)
-	maxVal := strings.Repeat("v", 43)
+	maxKey := strings.Repeat("k", maxTagKeyLen)
+	maxVal := strings.Repeat("v", maxTagValueLen)
 
-	// Boundary lengths (key=36, value=43) and empty value (value="") are valid.
+	// Boundary lengths (maxTagKeyLen, maxTagValueLen) and empty value (value="") are valid.
 	status, out := e.callV20(t, http.MethodPost, "/publicips/"+pip.ID+"/tags",
 		`{"tag": {"key": "`+maxKey+`", "value": "`+maxVal+`"}}`)
 	if status != http.StatusNoContent {

@@ -464,7 +464,7 @@ func TestInsertAndRemovePublicIPsAllOrNothingAndLimits(t *testing.T) {
 	}
 }
 
-func TestSharedBandwidthMax20EIPsLimit(t *testing.T) {
+func TestSharedBandwidthMaxEIPsLimit(t *testing.T) {
 	t.Parallel()
 	e := newBWEnv(t)
 	ctx := context.Background()

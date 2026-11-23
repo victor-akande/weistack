@@ -107,8 +107,9 @@ func TestBandwidthErrorGoldenFilesPerOperation(t *testing.T) {
 		})
 	}
 
+	sharedLimit := (quota.Limits{}).Get(quota.VPCShareBandwidth)
 	var sharedIDs []string
-	for i := 1; i <= (quota.Limits{}).Get(quota.VPCShareBandwidth); i++ {
+	for i := 1; i <= sharedLimit; i++ {
 		status, out := e.callV20(t, http.MethodPost, "/bandwidths",
 			fmt.Sprintf(`{"bandwidth": {"name": "shared-%d", "size": 10}}`, i))
 		if status != http.StatusOK {
