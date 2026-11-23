@@ -476,13 +476,14 @@ resource, key and object. **On the cloud machine**, back it up while it
 runs, then rehearse losing it:
 
 ```bash
-cd /var/lib/weistack
-sudo install -d -o weistack -g weistack -m 700 backups
-sudo -u weistack weistack backup "backups/weistack-$(date -u +%Y%m%dT%H%M%SZ).tar.gz" -data-dir data -tls-dir tls
+W=/var/lib/weistack      # readable by the weistack user only
+sudo install -d -o weistack -g weistack -m 700 $W/backups
+sudo -u weistack weistack backup "$W/backups/weistack-$(date -u +%Y%m%dT%H%M%SZ).tar.gz" -data-dir $W/data -tls-dir $W/tls
 
 sudo systemctl stop weistack
-sudo mv data data.lost
-sudo -u weistack weistack restore "$(ls -t backups/*.tar.gz | head -1)" -data-dir data
+sudo mv $W/data $W/data.lost
+latest="$(sudo -u weistack sh -c "ls -t $W/backups/*.tar.gz | head -1")"
+sudo -u weistack weistack restore "$latest" -data-dir $W/data
 sudo systemctl start weistack
 ```
 
