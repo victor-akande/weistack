@@ -1,0 +1,23 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "keypair": {
+      "name": "demo-ed25519",
+      "id": 1,
+      "type": "ssh",
+      "scope": "user",
+      "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINdamAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1Ea",
+      "fingerprint": "cf:07:be:9d:68:ae:65:54:6d:a0:93:c3:6f:bd:0d:82",
+      "is_key_protection": false,
+      "deleted": false,
+      "description": "",
+      "user_id": "<hex32>",
+      "create_time": 1795514400000,
+      "delete_time": null,
+      "update_time": null,
+      "frozen_state": 0,
+      "algorithm": "ssh-ed25519"
+    }
+  }
+}

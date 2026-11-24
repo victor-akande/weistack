@@ -23,7 +23,6 @@ var (
 	errNotFound            = kpsErr(http.StatusNotFound, "KPS.6004", "No Keypair find.")
 	errNoPrivateKey        = kpsErr(http.StatusBadRequest, "KPS.6005", "No private key managed.")
 	errEncryptFailed       = kpsErr(http.StatusBadRequest, "KPS.6008", "Encrypt private key failed.")
-	errSavePrivateFailed   = kpsErr(http.StatusBadRequest, "KPS.6010", "Save privatekey failed.")
 	errKeyMismatch         = kpsErr(http.StatusBadRequest, "KPS.6011", "The imported private key not match public key.")
 )
 

@@ -1,0 +1,8 @@
+{
+  "source": "docs",
+  "status": 400,
+  "body": {
+    "error_code": "KPS.7004",
+    "error_msg": "<string>"
+  }
+}

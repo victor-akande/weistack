@@ -1,0 +1,8 @@
+{
+  "source": "docs",
+  "status": 404,
+  "body": {
+    "error_code": "KPS.6004",
+    "error_msg": "No Keypair find."
+  }
+}
