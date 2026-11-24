@@ -111,3 +111,21 @@ func (s *Service) OpenDataKey(ctx context.Context, region string, sealed []byte)
 	}
 	return open(k.Spec, m, sealed, nil)
 }
+
+// ResolveAlias implements cmk.Keys.
+func (s *Service) ResolveAlias(ctx context.Context, region, alias string) (string, error) {
+	if alias == "" {
+		return "", cmk.ErrNotFound
+	}
+	t := s.projectOf(ctx, region)
+	keys, err := s.projectKeys(ctx, t)
+	if err != nil {
+		return "", err
+	}
+	for _, k := range keys {
+		if k.Alias == alias {
+			return k.ID, nil
+		}
+	}
+	return "", cmk.ErrNotFound
+}

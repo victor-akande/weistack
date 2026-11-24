@@ -79,6 +79,7 @@ queries. OBS is the exception: objects are stored and served.
 | Security | [IAM](docs/services/iam.md) | Users, groups, access keys, tokens, roles, custom and IAM 5.0 policies, agencies, temporary credentials |
 | | [STS](docs/services/iam.md#caller-identity) | Caller identity, authorization messages, assuming agencies |
 | | [KMS](docs/services/kms.md) | Keys with real cryptography, data keys, rotation, grants, tags |
+| | [KPS](docs/services/kps.md) | SSH key pairs, private key protection (vault or KMS), ECS association tasks |
 | Management | [EPS](docs/services/eps.md) | The default enterprise project |
 
 [Coverage](docs/coverage.md) lists every operation served, by service and

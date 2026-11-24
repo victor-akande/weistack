@@ -32,6 +32,10 @@ func (fakeKeys) Check(_ context.Context, _, _, keyID, service string) (string, e
 	return "", cmk.ErrNotFound
 }
 
+func (fakeKeys) ResolveAlias(context.Context, string, string) (string, error) {
+	return "", cmk.ErrNotFound
+}
+
 func TestEncryptedDisks(t *testing.T) {
 	t.Parallel()
 	e := newEnv(t)

@@ -1,0 +1,24 @@
+{
+  "source": "sdk-model",
+  "status": 200,
+  "body": {
+    "keypairs": [
+      {
+        "keypair": {
+          "fingerprint": "<string>",
+          "name": "gen-key",
+          "public_key": "<string>",
+          "type": "ssh"
+        }
+      },
+      {
+        "keypair": {
+          "fingerprint": "<string>",
+          "name": "imp-key",
+          "public_key": "<string>",
+          "type": "ssh"
+        }
+      }
+    ]
+  }
+}

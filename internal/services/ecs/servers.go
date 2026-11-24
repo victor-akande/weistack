@@ -193,6 +193,15 @@ func (s *Service) validate(ctx context.Context, t Tenant, opt CreateServerOption
 			return p, err
 		}
 	}
+	if opt.KeyName != "" && s.keypairs != nil {
+		ok, err := s.keypairs.Exists(ctx, t.Region, t.ProjectID, opt.KeyName)
+		if err != nil {
+			return p, err
+		}
+		if !ok {
+			return p, errKeypairNotFound(opt.KeyName)
+		}
+	}
 
 	// Flavor and image.
 	if opt.FlavorRef == "" {

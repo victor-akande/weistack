@@ -127,3 +127,8 @@ func errSameFlavor(name string) *apierr.Error {
 func errFlavorSwitch(from, to string) *apierr.Error {
 	return bad("Ecs.0804", "The ECS cannot be changed from flavor %s to flavor %s: the CPU architectures differ.", from, to)
 }
+
+// errKeypairNotFound is Ecs.0314.
+func errKeypairNotFound(name string) *apierr.Error {
+	return bad("Ecs.0314", "The key pair %s does not exist.", name)
+}

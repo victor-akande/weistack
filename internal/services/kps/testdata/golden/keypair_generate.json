@@ -1,0 +1,14 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "keypair": {
+      "name": "gen-rsa",
+      "type": "ssh",
+      "public_key": "<string>",
+      "private_key": "<string>",
+      "fingerprint": "<string>",
+      "user_id": "<hex32>"
+    }
+  }
+}

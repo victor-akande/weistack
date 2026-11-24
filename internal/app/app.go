@@ -39,6 +39,7 @@ import (
 	"github.com/victor-akande/weistack/internal/services/iam"
 	"github.com/victor-akande/weistack/internal/services/ims"
 	"github.com/victor-akande/weistack/internal/services/kms"
+	"github.com/victor-akande/weistack/internal/services/kps"
 	"github.com/victor-akande/weistack/internal/services/nat"
 	"github.com/victor-akande/weistack/internal/services/obs"
 	"github.com/victor-akande/weistack/internal/services/rds"
@@ -438,6 +439,19 @@ func buildServices(
 	imsSvc.SetServers(ecsSvc)
 	// VPC shows the NICs of ECS servers as ports.
 	vpcSvc.SetPorts(ecsSvc)
+
+	kpsSvc, err := kps.New(kps.Deps{
+		Store: st, IDs: gen, Engine: engine, Logger: log, Vault: vlt,
+		Keys: kmsSvc, Servers: ecsSvc, Directory: directory,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := kpsSvc.Resume(ctx); err != nil {
+		return nil, err
+	}
+	ecsSvc.SetKeypairs(kpsSvc)
+	kmsSvc.Extend(kpsSvc.KMSExtension())
 
 	natSvc, err := nat.New(nat.Deps{Quotas: cfg.Quotas, Store: st, Engine: engine, IDs: gen, Logger: log, VPC: vpcSvc, EIPs: eipSvc})
 	if err != nil {

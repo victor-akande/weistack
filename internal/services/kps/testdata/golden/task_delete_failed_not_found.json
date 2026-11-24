@@ -1,0 +1,8 @@
+{
+  "source": "docs",
+  "status": 400,
+  "body": {
+    "error_code": "KPS.0005",
+    "error_msg": "Failed task is not found."
+  }
+}

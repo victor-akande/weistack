@@ -1,0 +1,10 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "keypair": {
+      "name": "kp-export",
+      "private_key": "<string>"
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "source": "docs",
+  "status": 400,
+  "body": {
+    "error_code": "KPS.0002",
+    "error_msg": "parameter error."
+  }
+}

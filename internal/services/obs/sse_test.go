@@ -47,6 +47,10 @@ func (f *fakeKeys) Check(context.Context, string, string, string, string) (strin
 	return "", nil
 }
 
+func (f *fakeKeys) ResolveAlias(context.Context, string, string) (string, error) {
+	return "", cmk.ErrNotFound
+}
+
 func newSSEEnv(t *testing.T) (*env, *fakeKeys) {
 	t.Helper()
 	e := newEnv(t)

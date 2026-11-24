@@ -1,0 +1,14 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "keypair": {
+      "fingerprint": "<string>",
+      "name": "gen-key",
+      "public_key": "<string>",
+      "private_key": "<string>",
+      "user_id": "<hex32>",
+      "type": "ssh"
+    }
+  }
+}

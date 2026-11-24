@@ -1,0 +1,23 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "keypairs": [
+      {
+        "keypair": {
+          "name": "kp-4",
+          "type": "ssh",
+          "scope": "domain",
+          "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINdamAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1Ea",
+          "fingerprint": "cf:07:be:9d:68:ae:65:54:6d:a0:93:c3:6f:bd:0d:82",
+          "is_key_protection": false,
+          "frozen_state": "0"
+        }
+      }
+    ],
+    "page_info": {
+      "previous_marker": "kp-4",
+      "current_count": 1
+    }
+  }
+}

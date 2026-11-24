@@ -1,0 +1,9 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "server_id": "srv-missing",
+    "task_id": "<uuid>",
+    "task_status": "FAILED_RESET"
+  }
+}

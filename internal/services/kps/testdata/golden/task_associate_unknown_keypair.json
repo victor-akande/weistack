@@ -1,0 +1,8 @@
+{
+  "source": "docs",
+  "status": 400,
+  "body": {
+    "error_code": "KPS.4016",
+    "error_msg": "The key pair is not exist."
+  }
+}

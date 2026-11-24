@@ -1,0 +1,18 @@
+{
+  "source": "sdk-model",
+  "status": 200,
+  "body": {
+    "keypair": {
+      "public_key": "<string>",
+      "name": "gen-key",
+      "fingerprint": "<string>",
+      "created_at": "<time-z>",
+      "deleted": false,
+      "deleted_at": null,
+      "id": 1,
+      "updated_at": null,
+      "user_id": "<hex32>",
+      "type": "ssh"
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "total": 1,
+    "tasks": [
+      {
+        "task_id": "<uuid>",
+        "operate_type": "FAILED_RESET",
+        "task_time": "<string>",
+        "server_name": "web-1",
+        "server_id": "srv-1",
+        "keypair_name": "kp-1"
+      }
+    ]
+  }
+}

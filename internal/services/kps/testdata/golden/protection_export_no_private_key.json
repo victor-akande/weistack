@@ -1,0 +1,8 @@
+{
+  "source": "docs",
+  "status": 400,
+  "body": {
+    "error_code": "KPS.6005",
+    "error_msg": "No private key managed."
+  }
+}

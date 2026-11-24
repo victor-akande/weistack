@@ -1,0 +1,23 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "failed_keypairs": [
+      {
+        "keypair_name": "dup-kp",
+        "failed_reason": "{\"error_code\":\"KPS.7004\",\"error_msg\":\"Key pair 'dup-kp' already exists.\"}"
+      }
+    ],
+    "succeeded_keypairs": [
+      {
+        "keypair": {
+          "name": "new-kp",
+          "type": "ssh",
+          "public_key": "<string>",
+          "fingerprint": "<string>",
+          "user_id": "<hex32>"
+        }
+      }
+    ]
+  }
+}

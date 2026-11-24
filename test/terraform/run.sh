@@ -97,6 +97,10 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
 TF_VAR_elb_certificate="$(cat "$work/elb.crt")"
 TF_VAR_elb_private_key="$(cat "$work/elb.key")"
 export TF_VAR_elb_certificate TF_VAR_elb_private_key
+# Ephemeral SSH key pair for KPS/Nova import (never committed).
+ssh-keygen -t ed25519 -N "" -f "$work/tf_imported" >/dev/null
+TF_VAR_kps_public_key="$(cat "$work/tf_imported.pub")"
+export TF_VAR_kps_public_key
 if [[ $iam == enforce ]]; then
 	# Exports HW_ACCESS_KEY and HW_SECRET_KEY, among others.
 	eval "$("$bin" credentials -tls-dir "$work/tls" 2>/dev/null)"
@@ -144,6 +148,10 @@ want = {"server_status": "ACTIVE", "rds_status": "ACTIVE",
         "evs": {"attached_status": "in-use", "encrypted_status": "available",
                 "snapshot_status": "available", "web_volumes_count": 3,
                 "snapshots_count": 1, "has_azs": True, "volume_types_count": 7},
+        "kps": {"generated_name": "tf-kps-generated", "generated_managed": False,
+                "imported_name": "tf-kps-imported", "kms_managed": True,
+                "nova_name": "tf-nova-keypair", "keypairs_count": 4,
+                "web_key_pair": "tf-kps-generated"},
         "quotas": {"vpc_quota": 150, "vpc_used": 2,
                    "elb_lb_quota": 50, "elb_listener_quota": 100,
                    "evs_volumes_limit": -1, "evs_volumes_used": 5,
@@ -275,6 +283,9 @@ if any(name != "default" for name in groups.values()):
 orphans = [r["id"] for r in records("vpc.secgroup-rule") if r.get("security_group_id") not in groups]
 if orphans:
     left["rules of deleted groups"] = orphans
+for kind in ("kps.keypair", "kps.task", "kps.failed_task"):
+    if records(kind):
+        left[kind] = len(records(kind))
 if left:
     sys.exit(f"resources left after destroy: {left}")
 '

@@ -89,6 +89,7 @@ resource "huaweicloud_compute_instance" "web" {
   name               = "tf-web"
   image_id           = data.huaweicloud_images_image.ubuntu.id
   flavor_id          = "s6.small.1"
+  key_pair           = huaweicloud_kps_keypair.generated.name
   security_group_ids = [huaweicloud_networking_secgroup.web.id]
   availability_zone  = data.huaweicloud_availability_zones.zones.names[0]
   system_disk_type            = "SSD"
