@@ -24,7 +24,8 @@ var regionLabelRE = regexp.MustCompile(`^[a-z]{2,}(-[a-z0-9]+)+$`)
 // errNoSuchAPI is what Huawei's API gateway returns for a URL that maps
 // to no API.
 var errNoSuchAPI = apierr.New(http.StatusNotFound, "APIGW.0101",
-	"The API does not exist or has not been published in the environment")
+	"The API does not exist or has not been published in the environment").
+	WithHint("no emulated service matches this host and path: use the proxy with Huawei's endpoint names, or the /{service} prefix (http://127.0.0.1:8780/vpc/v1/...); docs/coverage.md lists what is served")
 
 func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	info := reqctx.From(r.Context())

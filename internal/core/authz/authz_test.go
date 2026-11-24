@@ -317,6 +317,11 @@ func TestAnotherAccountsProject(t *testing.T) {
 		if !ok || !strings.Contains(plain, "the project belongs to another account") {
 			t.Errorf("%s: decoded %q, %v", c.name, plain, ok)
 		}
+		// The hint points at the explanation without giving it away.
+		hint := w.Header().Get(apierr.HintHeader)
+		if !strings.Contains(hint, "DecodeAuthorizationMessage") || strings.Contains(hint, "vpc:") || strings.Contains(hint, "another account") {
+			t.Errorf("%s: hint %q", c.name, hint)
+		}
 	}
 }
 

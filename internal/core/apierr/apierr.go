@@ -50,7 +50,8 @@ const (
 // -max-data-bytes (internal/core/budget). Internal passes it through, so
 // every service answers it as it is.
 var ErrDataFull = New(http.StatusInsufficientStorage, CodeDataFull,
-	"WeiStack's data has reached its limit (-max-data-bytes): delete resources or objects, or start WeiStack with a higher limit")
+	"WeiStack's data has reached its limit (-max-data-bytes): delete resources or objects, or start WeiStack with a higher limit").
+	WithHint("delete resources or objects, or restart with a higher -max-data-bytes (0 is no limit); changes and deletes still work")
 
 // Error is an API error with the HTTP status and service error code that
 // the client will see.
@@ -63,8 +64,18 @@ type Error struct {
 	// that Huawei documents for denials (api-iam5 ErrorCode) and the SDKs
 	// parse. It is not part of the XML envelope.
 	AuthorizationMessage string
-	cause                error
+	// Hint says what to do about the error, for people and agents. It is
+	// sent in the HintHeader response header, never in the body, so the
+	// body stays exactly as Huawei Cloud sends it.
+	Hint  string
+	cause error
 }
+
+// HintHeader carries an error's Hint.
+const HintHeader = "X-WeiStack-Hint"
+
+// maxHint bounds a hint, so a header stays small.
+const maxHint = 512
 
 // New builds an Error. The message is formatted like fmt.Sprintf.
 func New(status int, code, format string, args ...any) *Error {
@@ -75,7 +86,8 @@ func New(status int, code, format string, args ...any) *Error {
 // The message names the gap so it is not mistaken for a bug.
 func NotImplemented(service, operation string) *Error {
 	return New(http.StatusNotImplemented, CodeNotImplemented,
-		"weistack does not implement %s %s yet", service, operation)
+		"weistack does not implement %s %s yet", service, operation).
+		WithHint("docs/coverage.md lists every operation WeiStack serves; ask for this one in an issue")
 }
 
 // Internal wraps an unexpected failure. The cause is kept for logs but is
@@ -102,6 +114,28 @@ func (e *Error) WithAuthorizationMessage(m string) *Error {
 	c := *e
 	c.AuthorizationMessage = m
 	return &c
+}
+
+// WithHint returns a copy of e that carries a hint.
+func (e *Error) WithHint(hint string) *Error {
+	c := *e
+	c.Hint = hint
+	return &c
+}
+
+// headerSafe makes s a single-line header value of printable ASCII, at
+// most maxHint bytes.
+func headerSafe(s string) string {
+	b := make([]byte, 0, min(len(s), maxHint))
+	for i := 0; i < len(s) && len(b) < maxHint; i++ {
+		switch c := s[i]; {
+		case c == '\t' || c == '\n' || c == '\r':
+			b = append(b, ' ')
+		case c >= 0x20 && c < 0x7f:
+			b = append(b, c)
+		}
+	}
+	return string(b)
 }
 
 // Error implements the error interface.
@@ -223,6 +257,9 @@ func Write(w http.ResponseWriter, r *http.Request, style Style, err error) {
 
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if h := headerSafe(e.Hint); h != "" {
+		w.Header().Set(HintHeader, h)
+	}
 	w.WriteHeader(e.Status)
 	if r.Method != http.MethodHead {
 		_, _ = w.Write(body)

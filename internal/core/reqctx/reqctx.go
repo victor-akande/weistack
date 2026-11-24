@@ -18,6 +18,16 @@ type Info struct {
 	Service string
 	// Region is the region the request addressed.
 	Region string
+	// TraceID is the W3C trace the request belongs to: the caller's,
+	// from its traceparent header, or a new one. It links an agent's own
+	// traces to WeiStack's logs and audit trail.
+	TraceID string
+	// ParentSpanID is the caller's span from traceparent, or "".
+	ParentSpanID string
+	// SpanID is WeiStack's span for this request.
+	SpanID string
+	// TraceFlags are the caller's trace flags, "00" without traceparent.
+	TraceFlags string
 
 	mu        sync.Mutex
 	operation string
