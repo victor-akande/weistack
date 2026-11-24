@@ -97,6 +97,7 @@ policies, jobs, tasks and access keys are not.
 
 | Type | Service | Huawei name |
 | --- | --- | --- |
+| `csms.secrets` | CSMS | Documented |
 | `ecs.cloudservers` | ECS | Documented |
 | `elb.certificates` | ELB | WeiStack's |
 | `elb.healthmonitors` | ELB | WeiStack's |

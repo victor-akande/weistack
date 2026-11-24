@@ -85,7 +85,7 @@ func TestCatalogue(t *testing.T) {
 	// The names Huawei documents for Config: changing this list needs a
 	// source (see the catalogue's comment).
 	want := []string{
-		"ecs.cloudservers", "elb.listeners", "elb.loadbalancers", "elb.members", "evs.volumes",
+		"csms.secrets", "ecs.cloudservers", "elb.listeners", "elb.loadbalancers", "elb.members", "evs.volumes",
 		"iam.agencies", "iam.groups", "iam.policies", "iam.roles", "iam.users",
 		"ims.images", "kms.keys", "nat.natGateways", "nat.privateNatGateways",
 		"obs.buckets", "rds.instances",

@@ -123,6 +123,9 @@ var (
 	// KMS: kms.keys is documented.
 	KMSKeys = Type{"kms", "keys"}
 
+	// CSMS: csms.secrets is documented.
+	CSMSSecrets = Type{"csms", "secrets"}
+
 	// KPS.
 	KPSKeypairs = Type{"kps", "keypairs"}
 
@@ -149,7 +152,7 @@ var catalogue = func() map[Type]TypeInfo {
 		VPCs, VPCSubnets, VPCSecurityGroups, EIPPublicIPs, EIPBandwidths,
 		NATGateways, NATPrivateGateways,
 		ELBLoadBalancers, ELBListeners, ELBMembers,
-		IMSImages, KMSKeys, RDSInstances)
+		IMSImages, KMSKeys, CSMSSecrets, RDSInstances)
 	add(InProject, false,
 		EVSSnapshots, VPCSecurityGroupRules,
 		NATSNATRules, NATDNATRules, NATPrivateSNATRules, NATPrivateDNATRules,
