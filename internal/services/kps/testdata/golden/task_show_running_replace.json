@@ -1,0 +1,9 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "server_id": "srv-1",
+    "task_id": "<uuid>",
+    "task_status": "RUNNING_REPLACE"
+  }
+}

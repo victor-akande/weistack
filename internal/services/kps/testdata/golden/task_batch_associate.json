@@ -1,0 +1,19 @@
+{
+  "source": "docs",
+  "status": 202,
+  "body": {
+    "tasks": [
+      {
+        "task_id": "<uuid>",
+        "server_id": "srv-1",
+        "status": "SUCCESS"
+      },
+      {
+        "server_id": "srv-2",
+        "status": "FAILED",
+        "error_code": "KPS.4016",
+        "error_msg": "The key pair is not exist."
+      }
+    ]
+  }
+}

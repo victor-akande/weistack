@@ -1,0 +1,8 @@
+{
+  "source": "docs",
+  "status": 400,
+  "body": {
+    "error_code": "KPS.0001",
+    "error_msg": "taskId is illegal."
+  }
+}

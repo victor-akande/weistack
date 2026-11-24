@@ -1,0 +1,19 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "total": 1,
+    "tasks": [
+      {
+        "task_id": "<uuid>",
+        "operate_type": "FAILED_RESET",
+        "task_time": "<string>",
+        "task_error_code": "Ecs.0114",
+        "task_error_msg": "The ECS srv-missing does not exist.",
+        "server_name": "",
+        "server_id": "srv-missing",
+        "keypair_name": "kp-1"
+      }
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "source": "sdk-model",
+  "status": 202,
+  "body": {
+    "task_id": "<uuid>",
+    "server_id": "srv-1",
+    "status": "SUCCESS"
+  }
+}
