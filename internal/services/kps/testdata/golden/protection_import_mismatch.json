@@ -1,0 +1,8 @@
+{
+  "source": "docs",
+  "status": 400,
+  "body": {
+    "error_code": "KPS.6011",
+    "error_msg": "The imported private key not match public key."
+  }
+}

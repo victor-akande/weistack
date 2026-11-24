@@ -1,0 +1,8 @@
+{
+  "source": "docs",
+  "status": 400,
+  "body": {
+    "error_code": "KPS.6008",
+    "error_msg": "Encrypt private key failed."
+  }
+}
