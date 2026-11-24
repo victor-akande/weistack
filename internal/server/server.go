@@ -25,6 +25,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/faults"
 	"github.com/victor-akande/weistack/internal/core/identity"
 	"github.com/victor-akande/weistack/internal/core/ids"
+	"github.com/victor-akande/weistack/internal/core/inventory"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/reqctx"
 	"github.com/victor-akande/weistack/internal/core/store"
@@ -136,6 +137,7 @@ type Server struct {
 	temporary auth.TemporaryResolver
 	faults    *faults.Registry
 	backups   Backups
+	inventory *inventory.Inventory
 	now       func() time.Time
 	hosts     *hostGuard // nil: any Host name
 }
@@ -200,6 +202,7 @@ func New(opts Options) (*Server, error) {
 	s.temporary = opts.Temporary
 	s.backups = opts.Backups
 	s.faults = opts.Faults
+	s.inventory = s.newInventory()
 	s.now = opts.Now
 	if s.now == nil {
 		s.now = time.Now

@@ -276,6 +276,9 @@ func TestCancelledContext(t *testing.T) {
 		if _, err := s.Dump(cctx); !errors.Is(err, context.Canceled) {
 			t.Errorf("Dump: err = %v, want context.Canceled", err)
 		}
+		if _, err := s.Scopes(cctx, scope.Kind); !errors.Is(err, context.Canceled) {
+			t.Errorf("Scopes: err = %v, want context.Canceled", err)
+		}
 		if _, err := Update(cctx, s, scope, "a", func(b []byte) ([]byte, error) { return b, nil }); !errors.Is(err, context.Canceled) {
 			t.Errorf("Update: err = %v, want context.Canceled", err)
 		}
@@ -309,6 +312,53 @@ func TestUseAfterClose(t *testing.T) {
 		}
 		if _, err := s.Dump(ctx); !errors.Is(err, ErrClosed) {
 			t.Errorf("Dump: err = %v, want ErrClosed", err)
+		}
+		if _, err := s.Scopes(ctx, scope.Kind); !errors.Is(err, ErrClosed) {
+			t.Errorf("Scopes: err = %v, want ErrClosed", err)
+		}
+	})
+}
+
+func TestScopes(t *testing.T) {
+	t.Parallel()
+	eachStore(t, func(t *testing.T, s Store) {
+		const kind = "vpc.vpc"
+		inB := Scope{Region: "r2", ProjectID: "p1", Kind: kind}
+		inA := Scope{Region: "r1", ProjectID: "p2", Kind: kind}
+		global := Scope{Region: Global, ProjectID: Global, Kind: kind}
+		other := Scope{Region: "r1", ProjectID: "p2", Kind: "vpc.subnet"}
+		prefixed := Scope{Region: "r1", ProjectID: "p2", Kind: kind + ".x"}
+		emptied := Scope{Region: "r3", ProjectID: "p1", Kind: kind}
+		for _, sc := range []Scope{inB, inA, global, other, prefixed, emptied} {
+			mustCreate(t, s, sc, "a", "{}")
+		}
+		mustCreate(t, s, inA, "b", "{}")
+		if err := s.Delete(ctx, emptied, "a"); err != nil {
+			t.Fatalf("Delete: %v", err)
+		}
+
+		got, err := s.Scopes(ctx, kind)
+		if err != nil {
+			t.Fatalf("Scopes: %v", err)
+		}
+		// Sorted by String: "_/_/...", "r1/p2/...", "r2/p1/...". The
+		// emptied scope, other kinds and kinds that merely share a prefix
+		// are left out.
+		want := []Scope{global, inA, inB}
+		if fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Fatalf("Scopes = %v, want %v", got, want)
+		}
+
+		none, err := s.Scopes(ctx, "nothing")
+		if err != nil || none == nil || len(none) != 0 {
+			t.Fatalf("Scopes(unknown kind) = %#v, %v; want an empty, non-nil slice", none, err)
+		}
+
+		if err := s.Reset(ctx); err != nil {
+			t.Fatalf("Reset: %v", err)
+		}
+		if got, err := s.Scopes(ctx, kind); err != nil || len(got) != 0 {
+			t.Fatalf("Scopes after Reset = %v, %v; want none", got, err)
 		}
 	})
 }

@@ -139,6 +139,7 @@ Every header can be read by pages in a browser (CORS).
 | --- | --- |
 | `GET /_weistack/health` | Liveness and version |
 | `GET /_weistack/services` | Enabled services, default region, project ID and account |
+| `GET /_weistack/inventory` | Every resource, with its tags and relationships, in the shape of Huawei Cloud's Config (see [Inventory](inventory.md)) |
 | `GET /_weistack/state` | Dump of every stored resource as JSON |
 | `POST /_weistack/reset` | Wipe all state, pending transitions and injected faults; with `-persist`, after keeping a backup in `backups/` in the data directory |
 | `GET /_weistack/backup` | A backup of the persisted data, as `.tar.gz` (only with `-persist`; `weistack backup` fetches it, and `weistack restore` restores it) |

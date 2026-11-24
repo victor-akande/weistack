@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -99,6 +100,9 @@ type Store interface {
 	Reset(ctx context.Context) error
 	// Dump returns all records keyed by Scope.String(), each in creation order.
 	Dump(ctx context.Context) (map[string][]Record, error)
+	// Scopes returns the scopes of kind that hold at least one record,
+	// sorted by their String form.
+	Scopes(ctx context.Context, kind string) ([]Scope, error)
 	// Close releases resources. The store must not be used afterwards.
 	Close() error
 }
@@ -127,6 +131,24 @@ func Update(ctx context.Context, s Store, scope Scope, id string, fn func(data [
 		}
 		return rec, err
 	}
+}
+
+// scopesOf returns the scopes of kind among the collection keys, sorted.
+// A key that is not a scope means the data is damaged: it fails rather
+// than being skipped.
+func scopesOf(keys []string, kind string) ([]Scope, error) {
+	sort.Strings(keys)
+	out := []Scope{}
+	for _, key := range keys {
+		sc, err := ParseScope(key)
+		if err != nil {
+			return nil, err
+		}
+		if sc.Kind == kind {
+			out = append(out, sc)
+		}
+	}
+	return out, nil
 }
 
 func clone(b []byte) []byte {

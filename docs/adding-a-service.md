@@ -37,6 +37,11 @@ Optional interfaces:
   `POST /_weistack/reset`.
 - `server.BodyLimiter`: override the JSON body limit; return `0` for
   unlimited (OBS uploads).
+- `inventory.Reporter`: report the service's resources, tags and
+  relationships for `/_weistack/inventory`. Use the type names in
+  `core/inventory` and `inventory.Each` to read every region and project;
+  `internal/services/vpc/inventory.go` is an example. A service that holds
+  resources for accounts implements it.
 
 Then construct the service in `buildServices` in `internal/app/app.go`.
 
