@@ -154,6 +154,11 @@ func TestUpgradeFromReleasedData(t *testing.T) {
 			expect("/evs/v2/"+p+"/cloudvolumes/detail?server_id="+ids.Server, `"status":"in-use"`, `"bootable":"true"`)
 			expect("/rds/v3/"+p+"/instances?id="+ids.RDS, `"name":"fixture-mysql"`, `"status":"ACTIVE"`)
 
+			// The inventory reads every scope of the release's data, and its
+			// records.
+			expect("/_weistack/inventory", `"id":"`+ids.VPC+`"`, `"id":"`+ids.Subnet+`"`, `"id":"`+ids.SecurityGroup+`"`)
+			expect("/_weistack/inventory?type=vpc.vpcs&id="+ids.VPC, `"count":1`, `"name":"fixture-vpc"`, `"provisioning_state":"Succeeded"`)
+
 			_, body := inst.get(t, "/ims/v1/"+p+"/jobs/"+ids.ImageJob)
 			var job struct {
 				Status   string `json:"status"`

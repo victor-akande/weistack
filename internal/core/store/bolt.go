@@ -300,6 +300,28 @@ func (b *Bolt) Dump(ctx context.Context) (map[string][]Record, error) {
 	return out, nil
 }
 
+// Scopes implements Store. Buckets left empty by deletes are skipped.
+func (b *Bolt) Scopes(ctx context.Context, kind string) ([]Scope, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	var keys []string
+	err := b.db.View(func(tx *bolt.Tx) error {
+		return tx.ForEach(func(name []byte, bkt *bolt.Bucket) error {
+			if string(name) != metaBucket {
+				if k, _ := bkt.Cursor().First(); k != nil {
+					keys = append(keys, string(name))
+				}
+			}
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, mapBoltErr(err)
+	}
+	return scopesOf(keys, kind)
+}
+
 // Size returns the size of the database file.
 func (b *Bolt) Size() int64 {
 	info, err := os.Stat(b.db.Path())

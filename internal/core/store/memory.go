@@ -201,6 +201,25 @@ func (m *Memory) Dump(ctx context.Context) (map[string][]Record, error) {
 	return out, nil
 }
 
+// Scopes implements Store.
+func (m *Memory) Scopes(ctx context.Context, kind string) ([]Scope, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if m.closed {
+		return nil, ErrClosed
+	}
+	var keys []string
+	for key, entries := range m.scopes {
+		if len(entries) > 0 {
+			keys = append(keys, key)
+		}
+	}
+	return scopesOf(keys, kind)
+}
+
 // Close implements Store. It is safe to call more than once.
 func (m *Memory) Close() error {
 	m.mu.Lock()

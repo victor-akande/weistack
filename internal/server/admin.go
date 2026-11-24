@@ -33,6 +33,7 @@ func (s *Server) newAdmin() http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(s.adminAuth)
 			r.Get("/services", s.adminOp("ListServices", s.handleServices))
+			r.Get("/inventory", s.adminOp("ListInventory", s.handleInventory))
 			r.With(s.localOnly).Get("/state", s.adminOp("DumpState", s.handleState))
 			r.With(s.localOnly).Post("/reset", s.adminOp("Reset", s.handleReset))
 			if s.backups != nil {

@@ -171,9 +171,15 @@ and acts as its own owner, as in v0.1; with `-iam=enforce` it is refused.
 
 ## The admin API
 
-`/_weistack/services`, `state`, `reset`, `ca`, `health`, `metrics` and
-`accounts` serve the emulator itself. They are not Huawei APIs and are not protected by
-`-iam`.
+`/_weistack/services`, `inventory`, `state`, `reset`, `backup`, `ca`,
+`health`, `metrics`, `accounts` and `faults` serve the emulator itself.
+They are not Huawei APIs. Under `-iam=enforce`, and over `-lan`, all but
+`health` and `ca` answer only the administrator.
+
+`/_weistack/inventory` joins what each service reports through
+`inventory.Reporter` (`core/inventory`): every resource, its tags, and
+the relationships Huawei Cloud's Config documents. The console, the MCP
+server and an emulated Config read the same inventory.
 
 ## Testing
 

@@ -25,6 +25,9 @@ func TestAdminNeedsTheAdministratorUnderEnforce(t *testing.T) {
 		{name: "a bad signature", method: http.MethodGet, target: services, ak: admin, sk: userSecret, status: http.StatusUnauthorized, code: "APIGW.0301"},
 		{name: "an IAM user", method: http.MethodGet, target: services, ak: userKey, sk: userSecret, status: http.StatusForbidden, code: "WeiStack.0403"},
 		{name: "an IAM user's token", method: http.MethodGet, target: services, header: []string{"X-Auth-Token", goodToken}, status: http.StatusForbidden, code: "WeiStack.0403"},
+		{name: "inventory unsigned", method: http.MethodGet, target: "http://localhost/_weistack/inventory", status: http.StatusUnauthorized, code: "APIGW.0305"},
+		{name: "inventory by an IAM user", method: http.MethodGet, target: "http://localhost/_weistack/inventory", ak: userKey, sk: userSecret, status: http.StatusForbidden, code: "WeiStack.0403"},
+		{name: "inventory by the administrator", method: http.MethodGet, target: "http://localhost/_weistack/inventory", ak: admin, sk: secret, status: http.StatusOK},
 		{name: "state unsigned", method: http.MethodGet, target: "http://localhost/_weistack/state", status: http.StatusUnauthorized, code: "APIGW.0305"},
 		{name: "reset unsigned", method: http.MethodPost, target: "http://localhost/_weistack/reset", status: http.StatusUnauthorized, code: "APIGW.0305"},
 		{name: "reset by an IAM user", method: http.MethodPost, target: "http://localhost/_weistack/reset", ak: userKey, sk: userSecret, status: http.StatusForbidden, code: "WeiStack.0403"},
@@ -43,7 +46,7 @@ func TestAdminNeedsTheAdministratorUnderEnforce(t *testing.T) {
 func TestAdminOpenInAcceptMode(t *testing.T) {
 	t.Parallel()
 	e := newEnforceEnv(t, config.IAMAccept)
-	for _, path := range []string{"/_weistack/services", "/_weistack/state"} {
+	for _, path := range []string{"/_weistack/services", "/_weistack/state", "/_weistack/inventory"} {
 		if status, out := e.send(t, http.MethodGet, "http://localhost"+path, "", "", "", ""); status != http.StatusOK {
 			t.Errorf("GET %s = %d %v", path, status, out)
 		}

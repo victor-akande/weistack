@@ -201,6 +201,7 @@ they combine.
 | Serve other machines on your network, over HTTPS | `weistack -lan` | [Other machines](docs/lan.md) |
 | Test how your code handles failures and slow responses | `weistack admin POST faults ...` | [Injecting faults](docs/faults.md) |
 | Hit a quota on purpose, or lift one | `weistack -quotas vpc.vpc=1` | [Quotas](docs/quotas.md) |
+| See every resource and how they relate | `weistack admin GET inventory` | [Inventory](docs/inventory.md) |
 | Back up and restore the data | `weistack backup`, `weistack restore` | [Getting started](docs/getting-started.md#5-keep-state-across-restarts) |
 | Run it in a GitHub Actions job | `uses: victor-akande/weistack@v0.3.0` | [In GitHub Actions](docs/github-action.md) |
 | Run it as a service for a team | the hardened systemd unit | [Web-app example, step 1](examples/web-app/README.md#1-the-cloud-machine-weistack-as-a-service) |
@@ -249,6 +250,7 @@ and the admin API.
 | [Other machines](docs/lan.md) | `-lan`: serving your network over HTTPS |
 | [Injecting faults](docs/faults.md) | Failing lifecycles and requests on purpose |
 | [Quotas](docs/quotas.md) | Every limit, its default, and how to change it |
+| [Inventory](docs/inventory.md) | Every resource and how they relate, in one call |
 | [In GitHub Actions](docs/github-action.md) | The action's inputs, outputs and examples |
 | [Coverage](docs/coverage.md) | Every operation served, with its IAM action |
 | [Services](docs/services) | How each service behaves, and its gaps |
