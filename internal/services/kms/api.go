@@ -69,6 +69,9 @@ func (s *Service) Routes(r chi.Router) {
 		r.With(act("kms::getInstance")).Get("/user-instances", s.handle("ShowUserInstances", s.handleUserInstances))
 		r.With(act("kms::getQuota")).Get("/user-quotas", s.handle("ShowUserQuotas", s.handleUserQuotas))
 	})
+	for _, ext := range s.exts {
+		ext.Routes(r)
+	}
 }
 
 type handler func(w http.ResponseWriter, r *http.Request, t tenant) error

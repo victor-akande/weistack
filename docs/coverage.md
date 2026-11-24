@@ -10,13 +10,13 @@ A request for anything else answers `501 WeiStack.0501`. The pages under
 
 | Service | API versions | Operations |
 | --- | --- | --- |
-| [ECS](#ecs) | v1, v2.1 | 20 |
+| [ECS](#ecs) | v1, v2.1 | 24 |
 | [ELB](#elb) | v3 (dedicated) | 82 |
 | [EPS](#eps) | v1.0 (the default enterprise project) | 1 |
 | [EVS](#evs) | v2, v2.1 | 19 |
 | [IAM](#iam) | v3, v3.0, v5 (users, groups, tokens, access keys, roles, custom policies, role assignments, identity policies) | 133 |
 | [IMS](#ims) | v1, v2 | 7 |
-| [KMS](#kms) | v1.0 (keys, encryption, data keys, rotation, tags) | 38 |
+| [KMS](#kms) | v1.0 (keys, encryption, data keys, rotation, tags) | 56 |
 | [NAT](#nat) | v2 (public), v3 (private, tags) | 73 |
 | [OBS](#obs) | S3-compatible | 31 |
 | [RDS](#rds) | v3 | 12 |
@@ -49,6 +49,10 @@ Endpoint: `ecs.{region}.myhuaweicloud.com`. Details: [ECS](services/ecs.md).
 | `POST` | `/v1/{project_id}/cloudservers` | `ecs:cloudServers:createServers` |
 | `GET` | `/v1/{project_id}/jobs/{job_id}` | None needed |
 | `GET` | `/v2.1/{project_id}/os-availability-zone` | `ecs:cloudServers:listServersDetails` |
+| `DELETE` | `/v2.1/{project_id}/os-keypairs/{keypair_name}` | `ecs:serverKeypairs:delete` |
+| `GET` | `/v2.1/{project_id}/os-keypairs/{keypair_name}` | `ecs:serverKeypairs:get` |
+| `GET` | `/v2.1/{project_id}/os-keypairs` | `ecs:serverKeypairs:list` |
+| `POST` | `/v2.1/{project_id}/os-keypairs` | `ecs:serverKeypairs:create` |
 
 ## ELB
 
@@ -371,6 +375,24 @@ Endpoint: `kms.{region}.myhuaweicloud.com`. Details: [KMS](services/kms.md).
 | `DELETE` | `/v1.0/{project_id}/kms/{key_id}/tags/{key}` | `kms:cmk:deleteTag` |
 | `GET` | `/v1.0/{project_id}/kms/{key_id}/tags` | `kms:cmk:getTags` |
 | `POST` | `/v1.0/{project_id}/kms/{key_id}/tags` | `kms:cmk:createTag` |
+| `DELETE` | `/v3/{project_id}/failed-tasks/{task_id}` | `kps::deleteFailedTask` |
+| `DELETE` | `/v3/{project_id}/failed-tasks` | `kps::deleteFailedTask` |
+| `GET` | `/v3/{project_id}/failed-tasks` | `kps::getFailedTask` |
+| `POST` | `/v3/{project_id}/keypairs/associate` | `kps:SSHKeyPair:bind` |
+| `POST` | `/v3/{project_id}/keypairs/batch-associate` | `kps:SSHKeyPair:bind` |
+| `POST` | `/v3/{project_id}/keypairs/batch-import` | `kps:SSHKeyPair:create` |
+| `POST` | `/v3/{project_id}/keypairs/disassociate` | `kps:SSHKeyPair:unbind` |
+| `POST` | `/v3/{project_id}/keypairs/private-key/batch-export` | `kps:SSHKeyPair:exportPrivateKey` |
+| `POST` | `/v3/{project_id}/keypairs/private-key/export` | `kps:SSHKeyPair:exportPrivateKey` |
+| `POST` | `/v3/{project_id}/keypairs/private-key/import` | `kps:SSHKeyPair:importPrivateKey` |
+| `DELETE` | `/v3/{project_id}/keypairs/{keypair_name}/private-key` | `kps:SSHKeyPair:clearPrivateKey` |
+| `DELETE` | `/v3/{project_id}/keypairs/{keypair_name}` | `kps:SSHKeyPair:delete` |
+| `GET` | `/v3/{project_id}/keypairs/{keypair_name}` | `kps:SSHKeyPair:get` |
+| `PUT` | `/v3/{project_id}/keypairs/{keypair_name}` | `kps:SSHKeyPair:update` |
+| `GET` | `/v3/{project_id}/keypairs` | `kps:SSHKeyPair:list` |
+| `POST` | `/v3/{project_id}/keypairs` | `kps:SSHKeyPair:create` |
+| `GET` | `/v3/{project_id}/running-tasks` | `kps::getRunningTask` |
+| `GET` | `/v3/{project_id}/tasks/{task_id}` | `kps::getTask` |
 
 ## NAT
 

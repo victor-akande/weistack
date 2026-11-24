@@ -38,4 +38,7 @@ type Keys interface {
 	// Check returns the ID of a usable key of the caller's project, as
 	// NewDataKey would use it.
 	Check(ctx context.Context, region, projectID, keyID, service string) (string, error)
+	// ResolveAlias returns the ID of the key with the given alias in the
+	// caller's project in region, or ErrNotFound.
+	ResolveAlias(ctx context.Context, region, alias string) (string, error)
 }

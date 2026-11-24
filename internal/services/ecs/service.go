@@ -60,6 +60,8 @@ type Deps struct {
 	Volumes *evs.Service
 	// Keys checks the KMS keys of encrypted disks. Nil refuses them.
 	Keys cmk.Keys
+	// Keypairs validates server key_name and backs the Nova os-keypairs routes.
+	Keypairs Keypairs
 	// Quota bounds what one project may hold. Zero fields get defaults.
 	Quota Quota
 	// SeedDir optionally holds flavors.yaml, extending the built-in
@@ -83,12 +85,13 @@ type Service struct {
 	log    *slog.Logger
 	now    func() time.Time
 
-	network *vpc.Service
-	eips    EIPs
-	images  *ims.Service
-	volumes *evs.Service
-	keys    cmk.Keys
-	quotas  quota.Limits
+	network  *vpc.Service
+	eips     EIPs
+	images   *ims.Service
+	volumes  *evs.Service
+	keys     cmk.Keys
+	keypairs Keypairs
+	quotas   quota.Limits
 
 	// mu serialises operations that check then write across records:
 	// quota accounting on create, and delete.
@@ -112,7 +115,7 @@ func New(d Deps) (*Service, error) {
 	}
 	s := &Service{
 		store: d.Store, engine: d.Engine, ids: d.IDs, log: d.Logger, now: d.Now,
-		network: d.Network, eips: d.EIPs, images: d.Images, volumes: d.Volumes, keys: d.Keys, quotas: d.Quotas,
+		network: d.Network, eips: d.EIPs, images: d.Images, volumes: d.Volumes, keys: d.Keys, keypairs: d.Keypairs, quotas: d.Quotas,
 		flavors:      flavors,
 		flavorByName: make(map[string]FlavorSpec, len(flavors)),
 	}

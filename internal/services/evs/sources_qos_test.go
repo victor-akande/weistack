@@ -32,6 +32,10 @@ func (f *fakeKeys) Check(ctx context.Context, region, projectID, keyID, service 
 	return f.checkFn(ctx, region, projectID, keyID, service)
 }
 
+func (f *fakeKeys) ResolveAlias(context.Context, string, string) (string, error) {
+	return "", cmk.ErrNotFound
+}
+
 func newTestServiceWithDeps(t *testing.T, keys cmk.Keys) (*Service, store.Store, *ims.Service) {
 	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))

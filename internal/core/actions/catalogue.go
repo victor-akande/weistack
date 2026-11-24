@@ -189,6 +189,10 @@ var all = []Action{
 	{"ecs:cloudServers:batchCreateServerTags", []string{"ecs:cloudServers:put", "ecs:cloudServers:batchSetServerTags"}, Write, "instance"},
 	{"ecs:cloudServers:batchDeleteServerTags", []string{"ecs:cloudServers:put", "ecs:cloudServers:batchSetServerTags"}, Write, "instance"},
 	{"ecs:cloudServerQuotas:get", nil, Read, ""},
+	{"ecs:serverKeypairs:create", nil, Write, "keypair"},
+	{"ecs:serverKeypairs:list", nil, List, "keypair"},
+	{"ecs:serverKeypairs:get", nil, Read, "keypair"},
+	{"ecs:serverKeypairs:delete", nil, Write, "keypair"},
 
 	// EVS: support.huaweicloud.com/intl/en-us/api-evs (Permission: IAM 5.0 actions; evs_04_0045: classic)
 	{"evs:volumes:create", nil, Write, "volume"},
@@ -309,6 +313,22 @@ var all = []Action{
 	{"kms:cmk:deleteTag", []string{"kms:cmkTag:delete"}, Tagging, "KeyId"},
 	{"kms:cmk:getTags", []string{"kms:cmkTag:list"}, Read, "KeyId"},
 	{"kms::listAllTags", nil, List, ""},
+
+	// KPS: support.huaweicloud.com/intl/en-us/api-dew (each operation's page; DEW classic policy actions table)
+	{"kps:SSHKeyPair:create", []string{"kps:domainKeypairs:create"}, Write, "SSHKeyPair"},
+	{"kps:SSHKeyPair:list", []string{"kps:domainKeypairs:list"}, List, "SSHKeyPair"},
+	{"kps:SSHKeyPair:get", []string{"kps:domainKeypairs:get"}, Read, "SSHKeyPair"},
+	{"kps:SSHKeyPair:update", []string{"kps:domainKeypairs:update"}, Write, "SSHKeyPair"},
+	{"kps:SSHKeyPair:delete", []string{"kps:domainKeypairs:delete"}, Write, "SSHKeyPair"},
+	{"kps:SSHKeyPair:importPrivateKey", []string{"kps:domainKeypairs:importpk"}, Write, "SSHKeyPair"},
+	{"kps:SSHKeyPair:exportPrivateKey", []string{"kps:domainKeypairs:exportpk"}, Write, "SSHKeyPair"},
+	{"kps:SSHKeyPair:clearPrivateKey", []string{"kps:domainKeypairs:clearpk"}, Write, "SSHKeyPair"},
+	{"kps:SSHKeyPair:bind", []string{"kps:domainKeypairs:bind"}, Write, "SSHKeyPair"},
+	{"kps:SSHKeyPair:unbind", []string{"kps:domainKeypairs:unbind"}, Write, "SSHKeyPair"},
+	{"kps::getTask", []string{"kps:domainKeypairs:gettask"}, List, ""},
+	{"kps::getRunningTask", []string{"kps:domainKeypairs:getrunningtask"}, List, ""},
+	{"kps::getFailedTask", []string{"kps:domainKeypairs:getfailtask"}, List, ""},
+	{"kps::deleteFailedTask", []string{"kps:domainKeypairs:deletefailtask", "kps:domainKeypairs:deletefailtasks"}, Write, ""},
 
 	// STS: support.huaweicloud.com/intl/en-us/usermanual-permissions/iam_11_0106.html
 	{"sts::decodeAuthorizationMessage", nil, Write, ""},

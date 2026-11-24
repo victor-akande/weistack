@@ -22,7 +22,7 @@ import (
 // iam_11_0007, checked against each operation's API page); start, stop,
 // reboot, delete and tag changes name theirs once the body is read.
 func (s *Service) Routes(r chi.Router) {
-	act, server := authz.Action, authz.Param("instance", "server_id")
+	act, server, keypair := authz.Action, authz.Param("instance", "server_id"), authz.Param("keypair", "keypair_name")
 	r.Use(authz.Service(authz.ServiceOptions{Name: "ecs", Style: apierr.StyleNested}))
 	r.With(act("ecs:cloudServerFlavors:get")).Get("/v1/{project_id}/cloudservers/flavors", s.handle("ListFlavors", s.handleListFlavors))
 	r.With(act("ecs:cloudServerQuotas:get")).Get("/v1/{project_id}/cloudservers/limits", s.handle("ShowServerLimits", s.handleShowLimits))
@@ -51,6 +51,11 @@ func (s *Service) Routes(r chi.Router) {
 	// replacement, GET /v1/{project_id}/availability-zones (ecs_02_1501),
 	// needs listServersDetails.
 	r.With(act("ecs:cloudServers:listServersDetails")).Get("/v2.1/{project_id}/os-availability-zone", s.handle("NovaListAvailabilityZones", s.handleListZones))
+	// Nova SSH key pairs (DEW historical API v2.1; ECS SSHKeyActions).
+	r.With(act("ecs:serverKeypairs:create")).Post("/v2.1/{project_id}/os-keypairs", s.handle("NovaCreateKeypair", s.handleNovaCreateKeypair))
+	r.With(act("ecs:serverKeypairs:list")).Get("/v2.1/{project_id}/os-keypairs", s.handle("NovaListKeypairs", s.handleNovaListKeypairs))
+	r.With(act("ecs:serverKeypairs:get", keypair)).Get("/v2.1/{project_id}/os-keypairs/{keypair_name}", s.handle("NovaShowKeypair", s.handleNovaShowKeypair))
+	r.With(act("ecs:serverKeypairs:delete", keypair)).Delete("/v2.1/{project_id}/os-keypairs/{keypair_name}", s.handle("NovaDeleteKeypair", s.handleNovaDeleteKeypair))
 }
 
 // instances are the URN resources of servers.

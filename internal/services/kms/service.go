@@ -56,7 +56,8 @@ type Service struct {
 	defaultRegion, defaultProject string
 
 	// mu serialises changes that need unique aliases.
-	mu sync.Mutex
+	mu   sync.Mutex
+	exts []Extension
 }
 
 // New returns the KMS service.
