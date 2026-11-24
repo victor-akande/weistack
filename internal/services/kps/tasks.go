@@ -80,7 +80,7 @@ func (s *Service) runTask(ctx context.Context, t Tenant, taskID string, fault er
 		return
 	}
 	if err != nil {
-		s.log.ErrorContext(ctx, "loading kps task failed", "task_id", taskID, "error", err)
+		s.log.ErrorContext(ctx, "loading kps task failed", "task_id", taskID)
 		return
 	}
 	if task.Status != taskStatusRunning {

@@ -190,8 +190,9 @@ func (s *Service) createKeypair(ctx context.Context, t Tenant, req createKeypair
 	}
 
 	s.log.InfoContext(ctx, "kps keypair created",
-		"name", kp.Name,
-		"scope", kp.Scope,
+		"keypair_id", kp.ID,
+		"name", sanitizeLog(kp.Name),
+		"scope", sanitizeLog(kp.Scope),
 		"algorithm", kp.Algorithm,
 		"protected", len(kp.SealedKey) > 0,
 	)
@@ -265,8 +266,14 @@ func (s *Service) deleteKeypair(ctx context.Context, t Tenant, name string) erro
 	if err != nil {
 		return err
 	}
-	s.log.InfoContext(ctx, "kps keypair deleted", "name", name)
+	s.log.InfoContext(ctx, "kps keypair deleted", "name", sanitizeLog(name))
 	return nil
+}
+
+// sanitizeLog strips line breaks before structured logging.
+func sanitizeLog(s string) string {
+	s = strings.ReplaceAll(s, "\n", "")
+	return strings.ReplaceAll(s, "\r", "")
 }
 
 func (s *Service) handleCreateKeypair(w http.ResponseWriter, r *http.Request, t Tenant) error {
