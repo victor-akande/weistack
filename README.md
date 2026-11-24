@@ -201,7 +201,7 @@ they combine.
 | Test how your code handles failures and slow responses | `weistack admin POST faults ...` | [Injecting faults](docs/faults.md) |
 | Hit a quota on purpose, or lift one | `weistack -quotas vpc.vpc=1` | [Quotas](docs/quotas.md) |
 | Back up and restore the data | `weistack backup`, `weistack restore` | [Getting started](docs/getting-started.md#5-keep-state-across-restarts) |
-| Run it in a GitHub Actions job | `uses: victor-akande/weistack@v0.2.0` | [In GitHub Actions](docs/github-action.md) |
+| Run it in a GitHub Actions job | `uses: victor-akande/weistack@v0.3.0` | [In GitHub Actions](docs/github-action.md) |
 | Run it as a service for a team | the hardened systemd unit | [Web-app example, step 1](examples/web-app/README.md#1-the-cloud-machine-weistack-as-a-service) |
 
 In a workflow:
@@ -209,7 +209,7 @@ In a workflow:
 ```yaml
 steps:
   - uses: actions/checkout@v4
-  - uses: victor-akande/weistack@v0.2.0
+  - uses: victor-akande/weistack@v0.3.0
     with:
       iam: enforce
   - run: terraform init && terraform apply -auto-approve
