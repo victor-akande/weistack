@@ -216,3 +216,66 @@ func TestAuthorizationMessage(t *testing.T) {
 		t.Errorf("an error without a message has the field: %s", rec.Body.String())
 	}
 }
+
+func TestHintGoesInTheHeaderOnly(t *testing.T) {
+	t.Parallel()
+
+	for _, style := range []Style{StyleFlat, StyleNested, StyleXML, StyleCodeMessage, StyleFlatRequestID, StyleNestedFlat} {
+		e := New(http.StatusConflict, "VPC.0101", "plain message").WithHint("raise -quotas vpc.vpc")
+		r := httptest.NewRequest(http.MethodGet, "/v1/x", nil)
+		w := httptest.NewRecorder()
+		Write(w, r, style, e)
+		if got := w.Header().Get(HintHeader); got != "raise -quotas vpc.vpc" {
+			t.Errorf("style %d: %s = %q", style, HintHeader, got)
+		}
+		if strings.Contains(w.Body.String(), "quotas") {
+			t.Errorf("style %d: the hint leaked into the body: %s", style, w.Body.String())
+		}
+	}
+
+	w := httptest.NewRecorder()
+	Write(w, httptest.NewRequest(http.MethodGet, "/", nil), StyleFlat, New(http.StatusBadRequest, "VPC.0101", "no hint"))
+	if w.Header().Get(HintHeader) != "" {
+		t.Errorf("an error without a hint sent %s", HintHeader)
+	}
+}
+
+func TestWithHintCopies(t *testing.T) {
+	t.Parallel()
+
+	base := New(http.StatusBadRequest, "VPC.0101", "x")
+	hinted := base.WithHint("do this")
+	if base.Hint != "" || hinted.Hint != "do this" || hinted.Code != base.Code {
+		t.Errorf("base %+v, hinted %+v", base, hinted)
+	}
+}
+
+func TestHeaderSafe(t *testing.T) {
+	t.Parallel()
+
+	for in, want := range map[string]string{
+		"plain":                  "plain",
+		"two\nlines\r\tand tab":  "two lines  and tab",
+		"no\x00control\x7fchars": "nocontrolchars",
+		"café":                   "caf",
+		"":                       "",
+	} {
+		if got := headerSafe(in); got != want {
+			t.Errorf("headerSafe(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if got := headerSafe(strings.Repeat("a", 3*maxHint)); len(got) != maxHint {
+		t.Errorf("a long hint is %d bytes, want %d", len(got), maxHint)
+	}
+}
+
+func TestGapsAndFullDataHaveHints(t *testing.T) {
+	t.Parallel()
+
+	if NotImplemented("vpc", "GET /x").Hint == "" {
+		t.Error("NotImplemented has no hint")
+	}
+	if ErrDataFull.Hint == "" || Internal(ErrDataFull) != ErrDataFull {
+		t.Error("ErrDataFull lost its hint or its identity")
+	}
+}

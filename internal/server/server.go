@@ -116,7 +116,10 @@ type Server struct {
 	store     store.Store
 	engine    *lifecycle.Engine
 	ids       *ids.Generator
-	started   time.Time
+	// traces makes trace and span IDs. It is apart from ids so that tracing
+	// never changes the resource IDs a seeded generator makes in tests.
+	traces  *ids.Generator
+	started time.Time
 
 	services  map[string]*mounted
 	names     []string // enabled service names, sorted
@@ -157,6 +160,7 @@ func New(opts Options) (*Server, error) {
 		store:     opts.Store,
 		engine:    opts.Engine,
 		ids:       opts.IDs,
+		traces:    ids.New(),
 		started:   time.Now(),
 		services:  make(map[string]*mounted),
 		metrics:   newMetrics(),

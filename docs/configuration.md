@@ -120,6 +120,19 @@ example), so prefer the proxy. The official Go SDK discards any path in
 its endpoint, so use the proxy or a dial override with it. See
 [Connecting clients](clients.md) for each client.
 
+## What every response carries
+
+Response bodies are exactly as Huawei Cloud sends them. WeiStack adds
+only headers:
+
+| Header | When | What it holds |
+| --- | --- | --- |
+| `X-Request-Id` | Always | The request's ID. It also appears in WeiStack's log. |
+| `traceresponse` | Always | W3C Trace Context: `00-<trace-id>-<span-id>-<flags>`. Send a `traceparent` header and the request joins your trace. Without one, WeiStack starts a new trace. WeiStack's log records both IDs as `trace_id` and `span_id`, which links your own traces, an agent's for example, to what WeiStack did. |
+| `X-WeiStack-Hint` | On some errors | What to do about the error, in one line. Examples: which setting refused a request, which fault rule injected an error, how to sign a request. A permission denial's hint says where to decode the explanation, not what it says. |
+
+Every header can be read by pages in a browser (CORS).
+
 ## Admin API
 
 | Endpoint | Purpose |

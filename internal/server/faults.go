@@ -64,6 +64,11 @@ func (s *Server) injectFault(m *mounted, w http.ResponseWriter, r *http.Request)
 }
 
 func faultError(service string, r faults.Rule) *apierr.Error {
+	return injectedError(service, r).WithHint("injected by WeiStack fault rule " + r.ID +
+		": list the rules with weistack admin GET faults, clear them with weistack admin DELETE faults")
+}
+
+func injectedError(service string, r faults.Rule) *apierr.Error {
 	if r.Code == "" {
 		switch {
 		case service == "obs" && r.Status == http.StatusServiceUnavailable:

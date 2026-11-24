@@ -75,7 +75,8 @@ client ──► listener (8780, also [::1])
   requests have `/{service}` stripped, so handlers always see the real API
   path.
 - **Middleware** (`internal/server/middleware.go`). Each request gets an ID
-  (returned in `X-Request-Id`) and a `reqctx.Info` that routing, handlers
+  (returned in `X-Request-Id`), its place in a W3C trace (`traceparent`
+  in, `traceresponse` out) and a `reqctx.Info` that routing, handlers
   and logs share: region, service and operation. `auth.Middleware` parses
   the credentials and resolves the access key to a principal.
 - **Enforcement** (`internal/server/enforce.go`, `enforce_obs.go`). Only

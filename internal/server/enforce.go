@@ -38,15 +38,21 @@ func (s *Server) enforcing(r *http.Request) bool {
 const iamAuthInfo = "Incorrect IAM authentication information: "
 
 var (
-	errNoCredentials = apierr.New(http.StatusUnauthorized, "APIGW.0305", "Incorrect authentication information.")
-	errBadSignature  = apierr.New(http.StatusUnauthorized, "APIGW.0301", iamAuthInfo+"verify aksk signature fail")
-	errLocked        = apierr.New(http.StatusUnauthorized, "APIGW.0301", iamAuthInfo+"AK access failed to reach the limit,forbidden.")
-	errBadToken      = apierr.New(http.StatusUnauthorized, "APIGW.0301", iamAuthInfo+"decrypt token fail")
-	errTokenExpired  = apierr.New(http.StatusUnauthorized, "APIGW.0307", "The token must be updated.")
+	errNoCredentials = apierr.New(http.StatusUnauthorized, "APIGW.0305", "Incorrect authentication information.").
+				WithHint("credentials are checked here: sign the request with an access key (SDK-HMAC-SHA256) or send X-Auth-Token; weistack credentials prints the administrator's keys")
+	errBadSignature = apierr.New(http.StatusUnauthorized, "APIGW.0301", iamAuthInfo+"verify aksk signature fail").
+			WithHint("check the secret key, that the host and path you signed are the ones WeiStack received (a proxy or a /{service} prefix changes them), and the clock in X-Sdk-Date")
+	errLocked = apierr.New(http.StatusUnauthorized, "APIGW.0301", iamAuthInfo+"AK access failed to reach the limit,forbidden.").
+			WithHint("this access key failed its signature too often and is locked for a while: fix the secret key, then retry later")
+	errBadToken = apierr.New(http.StatusUnauthorized, "APIGW.0301", iamAuthInfo+"decrypt token fail").
+			WithHint("the X-Auth-Token is not one this WeiStack issued: get a token from POST /v3/auth/tokens")
+	errTokenExpired = apierr.New(http.StatusUnauthorized, "APIGW.0307", "The token must be updated.").
+			WithHint("the token has expired: get a new one from POST /v3/auth/tokens")
 )
 
 func errUnknownKey(ak string) *apierr.Error {
-	return apierr.New(http.StatusUnauthorized, "APIGW.0301", "%sGet secretKey failed,ak:%s,err:ak not exist", iamAuthInfo, ak)
+	return apierr.New(http.StatusUnauthorized, "APIGW.0301", "%sGet secretKey failed,ak:%s,err:ak not exist", iamAuthInfo, ak).
+		WithHint("WeiStack knows no such access key: create one through IAM, or use the administrator's keys (weistack credentials)")
 }
 
 // noCredentialsNeeded are the requests a client makes before it has

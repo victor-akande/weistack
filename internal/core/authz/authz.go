@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -484,8 +485,17 @@ func (g *Gate) deny(ctx context.Context, o *ServiceOptions, a actions.Action, ur
 	g.log.InfoContext(ctx, "permission denied",
 		"action", a.Name, "resources", urns, "user", g.principal.UserName, "agency", g.principal.AgencyName, "reason", reason,
 		"policy", d.Policy)
-	return o.Deny(denial)
+	err := o.Deny(denial)
+	var e *apierr.Error
+	if errors.As(err, &e) {
+		return e.WithHint(denialHint)
+	}
+	return err
 }
+
+// denialHint points a denied caller at the explanation without giving it
+// away: like Huawei, WeiStack tells only those allowed to decode it.
+const denialHint = "permission denied: decode encoded_authorization_message with STS DecodeAuthorizationMessage, or find the denial in WeiStack's log (\"permission denied\")"
 
 func (g *Gate) grantsFor(ctx context.Context, s Scope) (Grants, error) {
 	g.mu.Lock()

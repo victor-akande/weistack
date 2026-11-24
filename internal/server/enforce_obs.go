@@ -20,12 +20,15 @@ var (
 	errOBSAnonymous = apierr.New(http.StatusForbidden, "AccessDenied", "Access denied.")
 	errOBSNoDate    = apierr.New(http.StatusForbidden, "AccessDenied",
 		"Access denied. The request does not include the date header or the header format is incorrect.")
-	errOBSExpired      = apierr.New(http.StatusForbidden, "AccessDenied", "Request has expired.")
-	errOBSUnknownKey   = apierr.New(http.StatusForbidden, "InvalidAccessKeyId", "The provided access key ID is not found in the system.")
+	errOBSExpired    = apierr.New(http.StatusForbidden, "AccessDenied", "Request has expired.")
+	errOBSUnknownKey = apierr.New(http.StatusForbidden, "InvalidAccessKeyId", "The provided access key ID is not found in the system.").
+				WithHint("WeiStack knows no such access key: create one through IAM, or use the administrator's keys (weistack credentials)")
 	errOBSBadSignature = apierr.New(http.StatusForbidden, "SignatureDoesNotMatch",
-		"The signature included in the request does not match the signature calculated by the system.")
+		"The signature included in the request does not match the signature calculated by the system.").
+		WithHint("check the secret key, and that the client signs the bucket and host WeiStack received (path style or virtual-hosted)")
 	errOBSSkewed = apierr.New(http.StatusForbidden, "RequestTimeTooSkewed",
-		"There is a large difference between the OBS server time and the client's request time.")
+		"There is a large difference between the OBS server time and the client's request time.").
+		WithHint("the request's date differs too much from this machine's clock: check the client's clock")
 	errOBSLocked = apierr.New(http.StatusBadRequest, "TooManyWrongSignature", "The request is rejected due to frequent errors.")
 )
 

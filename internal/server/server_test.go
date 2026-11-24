@@ -563,3 +563,53 @@ func TestNewValidation(t *testing.T) {
 }
 
 var errSeed = errors.New("seed failed")
+
+func TestTraceContext(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t, nil, &fakeService{name: "vpc"})
+	const trace, parent = "4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7"
+	re := regexp.MustCompile(`^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$`)
+
+	res := h.do(t, http.MethodGet, "/vpc/v1/p/things", nil, func(r *http.Request) {
+		r.Host = "localhost"
+		r.Header.Set("traceparent", "00-"+trace+"-"+parent+"-01")
+	})
+	res.Body.Close()
+	m := re.FindStringSubmatch(res.Header.Get("traceresponse"))
+	if m == nil || m[1] != trace || m[2] == parent || m[3] != "01" {
+		t.Errorf("traceresponse = %q, want trace %s, a new span and flags 01", res.Header.Get("traceresponse"), trace)
+	}
+
+	res = h.do(t, http.MethodGet, "/vpc/v1/p/things", nil, func(r *http.Request) {
+		r.Host = "localhost"
+		r.Header.Set("traceparent", "garbage")
+	})
+	res.Body.Close()
+	m = re.FindStringSubmatch(res.Header.Get("traceresponse"))
+	if m == nil || m[1] == trace || m[3] != "00" {
+		t.Errorf("an invalid traceparent gave traceresponse %q, want a new trace", res.Header.Get("traceresponse"))
+	}
+
+	var logged bool
+	for _, line := range strings.Split(strings.TrimSpace(h.logs.String()), "\n") {
+		var e map[string]any
+		if json.Unmarshal([]byte(line), &e) == nil && e["msg"] == "request" && e["trace_id"] == trace {
+			logged = e["span_id"] != nil
+		}
+	}
+	if !logged {
+		t.Errorf("the request log has no trace_id %s with a span_id:\n%s", trace, h.logs.String())
+	}
+}
+
+func TestUnknownAPIHasAHint(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t, nil, &fakeService{name: "vpc"})
+	res := h.do(t, http.MethodGet, "/missing", nil, host("localhost"))
+	res.Body.Close()
+	if res.StatusCode != http.StatusNotFound || !strings.Contains(res.Header.Get("X-WeiStack-Hint"), "/{service}") {
+		t.Errorf("status %d, hint %q", res.StatusCode, res.Header.Get("X-WeiStack-Hint"))
+	}
+}

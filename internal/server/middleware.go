@@ -15,12 +15,19 @@ import (
 // requestIDHeader is the header Huawei Cloud APIs return the request ID in.
 const requestIDHeader = "X-Request-Id"
 
-// requestContext assigns the request ID and seeds the per-request info
-// that routing, handlers and logging share.
+// requestContext assigns the request ID and the request's place in a W3C
+// trace, and seeds the per-request info that routing, handlers and
+// logging share.
 func (s *Server) requestContext(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		info := &reqctx.Info{RequestID: s.ids.Hex32(), Region: s.cfg.Region}
+		info := &reqctx.Info{RequestID: s.ids.Hex32(), Region: s.cfg.Region, SpanID: s.traces.Hex32()[:16]}
+		if trace, parent, flags, ok := reqctx.ParseTraceParent(r.Header.Get(reqctx.TraceParent)); ok {
+			info.TraceID, info.ParentSpanID, info.TraceFlags = trace, parent, flags
+		} else {
+			info.TraceID, info.TraceFlags = s.traces.Hex32(), "00"
+		}
 		w.Header().Set(requestIDHeader, info.RequestID)
+		w.Header().Set(reqctx.TraceResponse, reqctx.FormatTraceResponse(info))
 		next.ServeHTTP(w, r.WithContext(reqctx.With(r.Context(), info)))
 	})
 }
@@ -59,6 +66,8 @@ func (s *Server) observe(next http.Handler) http.Handler {
 			slog.Int64("bytes", sw.bytes),
 			slog.Duration("latency", elapsed),
 			slog.String("request_id", info.RequestID),
+			slog.String("trace_id", info.TraceID),
+			slog.String("span_id", info.SpanID),
 		)
 	})
 }
@@ -95,6 +104,7 @@ func (s *Server) recoverPanics(next http.Handler) http.Handler {
 var corsExposed = strings.Join([]string{
 	requestIDHeader, "ETag", "Content-Length", "Content-Range", "Last-Modified",
 	"X-Obs-Request-Id", "X-Obs-Id-2", "X-Amz-Request-Id", "X-Subject-Token", "X-IAM-Trace-Id",
+	reqctx.TraceResponse, apierr.HintHeader,
 }, ", ")
 
 // cors lets browser-based tools (and a future dashboard) call the
