@@ -98,7 +98,7 @@ func readOnly(services ...string) []systemStatement {
 
 // tenantServices are the services of the account-wide roles Tenant
 // Administrator and Tenant Guest, which cover every service but IAM.
-var tenantServices = []string{"ecs", "evs", "ims", "vpc", "obs", "rds", "eps", "nat", "elb", "kms"}
+var tenantServices = []string{"ecs", "evs", "ims", "vpc", "obs", "rds", "eps", "nat", "elb", "kms", "kps"}
 
 // OBS's documented permissions (usermanual-permissions iam_01_0001,
 // and the statement of Huawei's policy example in iam_01_0019).

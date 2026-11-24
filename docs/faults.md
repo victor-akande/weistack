@@ -41,6 +41,7 @@ The kinds of transition:
 | IMS | `ims.image.save`, `ims.image.activate` |
 | VPC | `vpc.vpc.create`, `vpc.subnet.create` |
 | NAT | `nat.gateway.create`, `nat.snat.create`, `nat.dnat.create` (leaves the gateway or rule `INACTIVE`) |
+| KPS | `kps.keypair.associate`, `kps.keypair.disassociate` |
 
 ### Request faults
 

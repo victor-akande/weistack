@@ -1,0 +1,13 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "keypair": {
+      "fingerprint": "<string>",
+      "name": "imp-key",
+      "public_key": "<string>",
+      "user_id": "<hex32>",
+      "type": "ssh"
+    }
+  }
+}
