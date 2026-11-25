@@ -3,8 +3,9 @@
 // Usage:
 //
 //	weistack [flags]              run the emulator
-//	weistack version              print the version
+//	weistack version [flags]      print the version
 //	weistack healthcheck [flags]  exit 0 if a running emulator is healthy
+//	weistack ca [flags]           print the local CA certificate
 //	weistack credentials [flags]  print the administrator's keys as shell exports
 //	weistack admin METHOD PATH [BODY] [flags]
 //	                              call the admin API, signed as the administrator
@@ -12,11 +13,13 @@
 //	                              archive the data directory, running or not
 //	weistack restore FILE [flags] unpack an archive into an empty data directory
 //	weistack -h                   list flags
+//
+// Every subcommand accepts -output json (or WEISTACK_OUTPUT=json) for
+// machine-readable output.
 package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -33,15 +36,12 @@ func main() {
 		stop()
 	}()
 
-	err := app.Run(ctx, app.Env{
+	code := app.Main(ctx, app.Env{
 		Args:   os.Args[1:],
 		Getenv: os.Getenv,
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
 	})
 	stop()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "weistack:", err)
-		os.Exit(1)
-	}
+	os.Exit(code)
 }

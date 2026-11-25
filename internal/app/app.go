@@ -3,6 +3,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -19,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/victor-akande/weistack/internal/core/apierr"
 	"github.com/victor-akande/weistack/internal/core/auth"
 	"github.com/victor-akande/weistack/internal/core/authz"
 	"github.com/victor-akande/weistack/internal/core/budget"
@@ -69,6 +71,57 @@ type Env struct {
 	OnLAN func(addr net.Addr)
 }
 
+type versionOutput struct {
+	Version string `json:"version"`
+	Commit  string `json:"commit"`
+	Built   string `json:"built"`
+}
+
+func printVersion(env Env) error {
+	def := config.DefaultOutput
+	if env.Getenv != nil {
+		if v := strings.TrimSpace(env.Getenv(config.EnvPrefix + "OUTPUT")); v != "" {
+			def = v
+		}
+	}
+	var (
+		buf bytes.Buffer
+		out string
+	)
+	fs := flag.NewFlagSet("weistack version", flag.ContinueOnError)
+	fs.SetOutput(&buf)
+	fs.StringVar(&out, "output", def, "command output format: text or json")
+	if err := fs.Parse(env.Args[1:]); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			if env.Stderr != nil {
+				_, _ = env.Stderr.Write(buf.Bytes())
+			}
+			return nil
+		}
+		if detectOutputMode(env.Args, env.Getenv) != config.OutputJSON && env.Stderr != nil {
+			_, _ = env.Stderr.Write(buf.Bytes())
+		}
+		return usageError(err)
+	}
+	if fs.NArg() > 0 {
+		return usageError(fmt.Errorf("unexpected argument %q", fs.Arg(0)))
+	}
+	out = strings.ToLower(strings.TrimSpace(out))
+	switch out {
+	case config.OutputText:
+		_, err := fmt.Fprintln(env.Stdout, version.String())
+		return err
+	case config.OutputJSON:
+		return writeJSON(env.Stdout, versionOutput{
+			Version: version.Version,
+			Commit:  version.Commit,
+			Built:   version.Date,
+		})
+	default:
+		return usageError(fmt.Errorf("output format %q must be text or json", out))
+	}
+}
+
 // Run executes the command line and blocks until the server stops. It
 // returns nil on a clean shutdown (ctx cancelled) or after a one-shot
 // subcommand succeeds.
@@ -76,8 +129,7 @@ func Run(ctx context.Context, env Env) error {
 	if len(env.Args) > 0 {
 		switch env.Args[0] {
 		case "version":
-			fmt.Fprintln(env.Stdout, version.String())
-			return nil
+			return printVersion(env)
 		case "healthcheck":
 			return healthcheck(ctx, env)
 		case "ca":
@@ -93,8 +145,8 @@ func Run(ctx context.Context, env Env) error {
 		}
 	}
 
-	cfg, err := config.Load(env.Args, env.Getenv, env.Stderr)
-	if errors.Is(err, flag.ErrHelp) {
+	cfg, help, err := loadConfig(env.Args, env)
+	if help {
 		return nil
 	}
 	if err != nil {
@@ -108,12 +160,12 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 
 	if cfg.Persist {
 		if err := checkDataDir(cfg, log); err != nil {
-			return err
+			return dataError(err)
 		}
 	}
 	st, err := openStore(cfg)
 	if err != nil {
-		return err
+		return dataError(err)
 	}
 	defer func() {
 		// Flushes the on-disk store; report a failed flush if nothing
@@ -126,7 +178,7 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 	gen := ids.New()
 	projectID, err := resolveProjectID(cfg, gen)
 	if err != nil {
-		return err
+		return dataError(err)
 	}
 
 	// Faults injected through the admin API reach the lifecycle engine
@@ -545,7 +597,7 @@ func loadCA(cfg config.Config, log *slog.Logger) (*tlsca.Authority, error) {
 		return ca, nil
 	}
 	if cfg.TLSDir != "" {
-		return nil, err // an explicit choice must work
+		return nil, dataError(err) // an explicit choice must work
 	}
 	log.Warn("using an in-memory CA", "error", err)
 	return tlsca.Load("", cfg.ProxyDomains...)
@@ -570,11 +622,16 @@ func checkCA(log *slog.Logger, cfg config.Config, ca *tlsca.Authority, dir strin
 	}
 }
 
+type caOutput struct {
+	Path           string `json:"path"`
+	CertificatePEM string `json:"certificate_pem"`
+}
+
 // printCA writes the local CA certificate to stdout, for clients that
 // verify TLS.
 func printCA(env Env) error {
-	cfg, err := config.Load(env.Args[1:], env.Getenv, env.Stderr)
-	if errors.Is(err, flag.ErrHelp) {
+	cfg, help, err := loadConfig(env.Args[1:], env)
+	if help {
 		return nil
 	}
 	if err != nil {
@@ -582,11 +639,17 @@ func printCA(env Env) error {
 	}
 	dir := tlsDir(cfg)
 	if dir == "" {
-		return errors.New("no directory for the CA: set -tls-dir")
+		return dataError(errors.New("no directory for the CA: set -tls-dir"))
 	}
 	ca, err := tlsca.Load(dir, cfg.ProxyDomains...)
 	if err != nil {
-		return err
+		return dataError(err)
+	}
+	if cfg.Output == config.OutputJSON {
+		return writeJSON(env.Stdout, caOutput{
+			Path:           filepath.Join(dir, tlsca.CertFile),
+			CertificatePEM: string(ca.CertPEM()),
+		})
 	}
 	fmt.Fprintf(env.Stderr, "WeiStack CA certificate, from %s\n", filepath.Join(dir, tlsca.CertFile))
 	_, err = env.Stdout.Write(ca.CertPEM())
@@ -763,8 +826,8 @@ func resolveProjectID(cfg config.Config, gen *ids.Generator) (string, error) {
 // It exists because the distroless image has no curl or shell for a
 // Docker HEALTHCHECK to use.
 func healthcheck(ctx context.Context, env Env) error {
-	cfg, err := config.Load(env.Args[1:], env.Getenv, env.Stderr)
-	if errors.Is(err, flag.ErrHelp) {
+	cfg, help, err := loadConfig(env.Args[1:], env)
+	if help {
 		return nil
 	}
 	if err != nil {
@@ -780,12 +843,23 @@ func healthcheck(ctx context.Context, env Env) error {
 	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("healthcheck: %w", err)
+		return unreachableError(fmt.Errorf("healthcheck: %w", err))
 	}
 	defer res.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, 1<<16))
+	body, err := io.ReadAll(io.LimitReader(res.Body, 1<<16))
+	if err != nil {
+		return fmt.Errorf("healthcheck: reading response: %w", err)
+	}
 	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf("healthcheck: %s returned %s", url, res.Status)
+		return apiError(res.StatusCode, body, res.Header.Get(apierr.HintHeader),
+			fmt.Errorf("healthcheck: %s returned %s", url, res.Status))
+	}
+	if cfg.Output == config.OutputJSON {
+		if len(body) > 0 && body[len(body)-1] != '\n' {
+			body = append(body, '\n')
+		}
+		_, err = env.Stdout.Write(body)
+		return err
 	}
 	fmt.Fprintln(env.Stdout, "ok")
 	return nil
