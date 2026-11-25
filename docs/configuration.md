@@ -71,6 +71,7 @@ WEISTACK_PERSIST=1 WEISTACK_IAM=enforce weistack   # the same, from the environm
 | --- | --- | --- | --- |
 | `-log-level` | `WEISTACK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `-log-format` | `WEISTACK_LOG_FORMAT` | `auto` | `json`, `text`, or `auto`: text at a terminal, JSON otherwise |
+| `-output` | `WEISTACK_OUTPUT` | `text` | Output format of one-shot commands: `text` or `json` (see [Output and exit codes](#output-and-exit-codes)) |
 | `-metrics` | `WEISTACK_METRICS` | off | Serve Prometheus metrics at `/_weistack/metrics` |
 
 ## Commands
@@ -88,6 +89,65 @@ WEISTACK_PERSIST=1 WEISTACK_IAM=enforce weistack   # the same, from the environm
 
 Commands that talk to a running emulator or its data take the same flags
 it was started with, such as `-data-dir` or `-port`.
+
+## Output and exit codes
+
+Every one-shot command (`version`, `healthcheck`, `ca`, `credentials`,
+`admin`, `backup` and `restore`) accepts `-output text|json` (or
+`WEISTACK_OUTPUT`). `version` accepts only `-output` and `-h`. The
+server itself accepts `-output` and ignores it; its logs use
+`-log-format`.
+
+In `json` mode, stdout carries one JSON document followed by a newline:
+an object for each command except `admin`, which passes the response
+body through unchanged. The status notes that commands print to stderr
+in `text` mode (such as where credentials came from or what `backup`
+wrote) are omitted, since their fields are in the JSON. Log lines may
+still go to stderr.
+
+### Exit codes
+
+Exit codes apply in both `text` and `json` modes. When the server itself
+fails to start, the same codes apply: `2` for a configuration error, `5`
+for a data directory problem, and `1` for anything else.
+
+| Code | `kind` in JSON | When |
+| --- | --- | --- |
+| `0` | — | Success, and `-h` |
+| `1` | `internal` | Anything not below |
+| `2` | `usage` | A bad flag or flag value, a missing or extra argument, or an unknown `-output` value |
+| `3` | `unreachable` | No WeiStack answered: the HTTP request failed before any response, such as a refused connection, a timeout or a DNS failure |
+| `4` | `api` | WeiStack answered with a status outside 2xx (`admin`, `healthcheck`, and `backup` when it asks a running server) |
+| `5` | `data` | The data directory, the TLS directory, the credentials or a backup archive is the problem: missing, not WeiStack's, in use, not empty (`restore`), written by a newer release, unsafe permissions, or a damaged archive |
+
+### JSON stdout
+
+| Command | stdout in `json` mode |
+| --- | --- |
+| `version` | `{"version": "0.3.0", "commit": "...", "built": "..."}` |
+| `healthcheck` | The body `/_weistack/health` returned, unchanged |
+| `ca` | `{"path": "<dir>/ca.pem", "certificate_pem": "-----BEGIN..."}` |
+| `credentials` | `{"source": "<from>", "access_key": "...", "secret_key": "...", "env": {"HUAWEICLOUD_SDK_AK": "...", "HUAWEICLOUD_SDK_SK": "...", "HW_ACCESS_KEY": "...", "HW_SECRET_KEY": "..."}}` (`env` has those four keys) |
+| `admin` | The response body, unchanged, on 2xx. Every admin endpoint answers JSON except `metrics`, `ca` and `backup`, whose bytes pass through unchanged in both modes |
+| `backup` | `{"file": "<path>", "data_dir": "<dir>", "from": "server"}` when a running WeiStack made it, or `"from": "directory"` when read from the directory |
+| `restore` | `{"data_dir": "<dir>", "made_by": "<version>", "made_at": "<RFC 3339 UTC>", "vault_key": true}` (`vault_key` is `false` when the archive holds no vault key) |
+
+### Errors
+
+In `text` mode, errors go to stderr as `weistack: <message>`. In `json`
+mode, stderr receives one JSON document:
+
+```json
+{"error": {"kind": "api", "exit_code": 4, "message": "admin: GET /_weistack/nothing returned 404 Not Found", "status": 404, "response": {"error_code": "WeiStack.0404", "error_msg": "..."}}}
+```
+
+- `kind`, `exit_code` and `message` are always present. `message` has no
+  `weistack: ` prefix.
+- `status` and `response` appear only for `api` errors. `response` is
+  the body as JSON when it is valid JSON, and a JSON string otherwise.
+- When the response carried an `X-WeiStack-Hint` header,
+  `"hint": "<header>"` is added to `error`; in `text` mode,
+  `hint: <header>` is printed on a second line.
 
 ## How requests are routed
 

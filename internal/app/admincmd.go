@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/victor-akande/weistack/internal/core/apierr"
 	"github.com/victor-akande/weistack/internal/core/config"
 	"github.com/victor-akande/weistack/internal/core/sigcheck"
 )
@@ -27,8 +27,14 @@ const adminUsage = "usage: weistack admin METHOD PATH [BODY] [flags]\n" +
 // a leading slash is under /_weistack. The response body goes to stdout.
 func adminCommand(ctx context.Context, env Env) error {
 	args := env.Args[1:]
+	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help") {
+		if env.Stderr != nil {
+			fmt.Fprintln(env.Stderr, adminUsage)
+		}
+		return nil
+	}
 	if len(args) < 2 || strings.HasPrefix(args[0], "-") || strings.HasPrefix(args[1], "-") {
-		return errors.New(adminUsage)
+		return usageError(errors.New(adminUsage))
 	}
 	method, path, args := strings.ToUpper(args[0]), args[1], args[2:]
 	var body string
@@ -38,8 +44,8 @@ func adminCommand(ctx context.Context, env Env) error {
 	if !strings.HasPrefix(path, "/") {
 		path = adminPrefixPath + "/" + path
 	}
-	cfg, err := config.Load(args, env.Getenv, env.Stderr)
-	if errors.Is(err, flag.ErrHelp) {
+	cfg, help, err := loadConfig(args, env)
+	if help {
 		return nil
 	}
 	if err != nil {
@@ -57,7 +63,8 @@ func adminCommand(ctx context.Context, env Env) error {
 		return fmt.Errorf("admin: reading the response: %w", err)
 	}
 	if res.StatusCode/100 != 2 {
-		return fmt.Errorf("admin: %s %s returned %s: %s", method, path, res.Status, bytes.TrimSpace(out))
+		return apiError(res.StatusCode, out, res.Header.Get(apierr.HintHeader),
+			fmt.Errorf("admin: %s %s returned %s: %s", method, path, res.Status, bytes.TrimSpace(out)))
 	}
 	_, err = env.Stdout.Write(out)
 	return err
@@ -79,7 +86,11 @@ func adminRequest(ctx context.Context, cfg config.Config, env Env, method, path,
 		req.Header.Set("Content-Type", "application/json")
 	}
 	sigcheck.SignSDKHMAC(req, creds.AccessKey, creds.SecretKey, req.URL.Path, []byte(body), time.Now())
-	return http.DefaultClient.Do(req)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, unreachableError(err)
+	}
+	return res, nil
 }
 
 // adminPrefixPath is the root of the admin API.

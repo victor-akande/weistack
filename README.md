@@ -202,6 +202,7 @@ they combine.
 | Test how your code handles failures and slow responses | `weistack admin POST faults ...` | [Injecting faults](docs/faults.md) |
 | Hit a quota on purpose, or lift one | `weistack -quotas vpc.vpc=1` | [Quotas](docs/quotas.md) |
 | See every resource and how they relate | `weistack admin GET inventory` | [Inventory](docs/inventory.md) |
+| Script it, or let an agent drive it | `weistack admin GET inventory -output json` | [Configuration, Output and exit codes](docs/configuration.md#output-and-exit-codes) |
 | Back up and restore the data | `weistack backup`, `weistack restore` | [Getting started](docs/getting-started.md#5-keep-state-across-restarts) |
 | Run it in a GitHub Actions job | `uses: victor-akande/weistack@v0.3.0` | [In GitHub Actions](docs/github-action.md) |
 | Run it as a service for a team | the hardened systemd unit | [Web-app example, step 1](examples/web-app/README.md#1-the-cloud-machine-weistack-as-a-service) |

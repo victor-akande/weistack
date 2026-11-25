@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -50,14 +49,14 @@ func loadVault(cfg config.Config) (*vault.Vault, error) {
 	if cfg.Persist {
 		path, err := vaultKeyPath(cfg)
 		if err != nil {
-			return nil, err
+			return nil, dataError(err)
 		}
 		key, err = loadOrCreate(path, newVaultKey, vaultKey.valid)
 		switch {
 		case errors.Is(err, errInvalid):
-			return nil, fmt.Errorf("%s does not hold a valid key; the access keys stored with it cannot be used", path)
+			return nil, dataError(fmt.Errorf("%s does not hold a valid key; the access keys stored with it cannot be used", path))
 		case err != nil:
-			return nil, fmt.Errorf("the vault key: %w", err)
+			return nil, dataError(fmt.Errorf("the vault key: %w", err))
 		}
 	}
 	return vault.New(key.Key)
@@ -117,9 +116,9 @@ func loadAccount(cfg config.Config) (identity.Account, error) {
 	acct, err := loadOrCreate(path, identity.NewAccount, identity.Account.Valid)
 	switch {
 	case errors.Is(err, errInvalid):
-		return identity.Account{}, fmt.Errorf("%s does not describe a valid account; delete it to create a new one", path)
+		return identity.Account{}, dataError(fmt.Errorf("%s does not describe a valid account; delete it to create a new one", path))
 	case err != nil:
-		return identity.Account{}, fmt.Errorf("the account: %w", err)
+		return identity.Account{}, dataError(fmt.Errorf("the account: %w", err))
 	}
 	return acct, nil
 }
@@ -152,9 +151,9 @@ func adminFromDir(dir string) (identity.Credentials, error) {
 	creds, err := loadOrCreate(path, identity.NewCredentials, identity.Credentials.Valid)
 	switch {
 	case errors.Is(err, errInvalid):
-		return identity.Credentials{}, fmt.Errorf("%s does not hold valid credentials; delete it to generate new ones", path)
+		return identity.Credentials{}, dataError(fmt.Errorf("%s does not hold valid credentials; delete it to generate new ones", path))
 	case err != nil:
-		return identity.Credentials{}, fmt.Errorf("the administrator's credentials: %w", err)
+		return identity.Credentials{}, dataError(fmt.Errorf("the administrator's credentials: %w", err))
 	}
 	return creds, nil
 }
@@ -233,13 +232,27 @@ func createJSON(path string, v any) error {
 	return os.Link(tmp, path)
 }
 
+type credentialsEnvOutput struct {
+	HuaweiCloudSDKAK string `json:"HUAWEICLOUD_SDK_AK"`
+	HuaweiCloudSDKSK string `json:"HUAWEICLOUD_SDK_SK"`
+	HWAccessKey      string `json:"HW_ACCESS_KEY"`
+	HWSecretKey      string `json:"HW_SECRET_KEY"`
+}
+
+type credentialsOutput struct {
+	Source    string               `json:"source"`
+	AccessKey string               `json:"access_key"`
+	SecretKey string               `json:"secret_key"`
+	Env       credentialsEnvOutput `json:"env"`
+}
+
 // printCredentials writes the administrator's credentials as shell
 // exports, for the SDKs and Terraform:
 //
 //	eval "$(weistack credentials)"
 func printCredentials(env Env) error {
-	cfg, err := config.Load(env.Args[1:], env.Getenv, env.Stderr)
-	if errors.Is(err, flag.ErrHelp) {
+	cfg, help, err := loadConfig(env.Args[1:], env)
+	if help {
 		return nil
 	}
 	if err != nil {
@@ -248,6 +261,19 @@ func printCredentials(env Env) error {
 	creds, from, err := loadAdmin(cfg, slog.New(slog.NewTextHandler(env.Stderr, nil)))
 	if err != nil {
 		return err
+	}
+	if cfg.Output == config.OutputJSON {
+		return writeJSON(env.Stdout, credentialsOutput{
+			Source:    from,
+			AccessKey: creds.AccessKey,
+			SecretKey: creds.SecretKey,
+			Env: credentialsEnvOutput{
+				HuaweiCloudSDKAK: creds.AccessKey,
+				HuaweiCloudSDKSK: creds.SecretKey,
+				HWAccessKey:      creds.AccessKey,
+				HWSecretKey:      creds.SecretKey,
+			},
+		})
 	}
 	fmt.Fprintf(env.Stderr, "WeiStack administrator, from %s\n", from)
 	_, err = fmt.Fprintf(env.Stdout,
