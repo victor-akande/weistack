@@ -45,6 +45,7 @@ func TestLoadDefaults(t *testing.T) {
 		LifecycleDelay:   2 * time.Second,
 		LogLevel:         slog.LevelInfo,
 		LogFormat:        "auto",
+		Output:           "text",
 		MaxBodyBytes:     10 << 20,
 		MaxDataBytes:     20 << 30,
 		ShutdownTimeout:  10 * time.Second,
@@ -162,6 +163,8 @@ func TestLoadErrors(t *testing.T) {
 		{"zero vcpu quota", nil, map[string]string{"WEISTACK_ECS_MAX_VCPUS": "0"}, "ECS quotas"},
 		{"bad log level", []string{"-log-level", "loud"}, nil, "log level"},
 		{"bad log format", []string{"-log-format", "xml"}, nil, "log format"},
+		{"bad output format", []string{"-output", "yaml"}, nil, "output format"},
+		{"bad env output format", nil, map[string]string{"WEISTACK_OUTPUT": "xml"}, "output format"},
 		{"bad service name", []string{"-services", "vpc,e c s"}, nil, "service name"},
 		{"zero body limit", []string{"-max-body-bytes", "0"}, nil, "max body bytes"},
 		{"zero shutdown timeout", []string{"-shutdown-timeout", "0s"}, nil, "shutdown timeout"},
@@ -288,6 +291,37 @@ func TestLogFormats(t *testing.T) {
 		if _, err := Load([]string{"-log-format", f}, env(nil), io.Discard); err != nil {
 			t.Errorf("-log-format %s: %v", f, err)
 		}
+	}
+}
+
+func TestOutputFormat(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args []string
+		env  map[string]string
+		want string
+	}{
+		{"default", nil, nil, OutputText},
+		{"env json", nil, map[string]string{"WEISTACK_OUTPUT": "json"}, OutputJSON},
+		{"env uppercase", nil, map[string]string{"WEISTACK_OUTPUT": "JSON"}, OutputJSON},
+		{"flag json", []string{"-output", "json"}, nil, OutputJSON},
+		{"flag uppercase", []string{"-output", "JSON"}, nil, OutputJSON},
+		{"flag text overrides env json", []string{"-output", "text"}, map[string]string{"WEISTACK_OUTPUT": "json"}, OutputText},
+		{"flag json overrides env text", []string{"-output", "json"}, map[string]string{"WEISTACK_OUTPUT": "text"}, OutputJSON},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg, err := Load(tt.args, env(tt.env), io.Discard)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if cfg.Output != tt.want {
+				t.Fatalf("Output = %q, want %q", cfg.Output, tt.want)
+			}
+		})
 	}
 }
 

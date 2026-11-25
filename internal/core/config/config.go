@@ -34,7 +34,9 @@ const (
 	DefaultRegion         = "ap-southeast-1"
 	DefaultLifecycleDelay = 2 * time.Second
 	// DefaultLogFormat picks text at a terminal and JSON otherwise.
-	DefaultLogFormat    = "auto"
+	DefaultLogFormat = "auto"
+	// DefaultOutput is the default format of one-shot CLI commands.
+	DefaultOutput       = "text"
 	DefaultMaxBodyBytes = 10 << 20 // 10 MiB; services that stream (OBS) opt out per route.
 	// DefaultMaxDataBytes is how much data WeiStack keeps: 20 GiB.
 	DefaultMaxDataBytes     = 20 << 30
@@ -107,6 +109,8 @@ type Config struct {
 	LogLevel slog.Level
 	// LogFormat is "json", "text" or "auto" (text at a terminal).
 	LogFormat string
+	// Output is the format of one-shot CLI commands: "text" or "json".
+	Output string
 	// Services restricts which services are enabled. Empty means all.
 	Services []string
 	// ProxyDomains are the domains WeiStack answers for when clients use
@@ -202,6 +206,7 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 	fs.DurationVar(&cfg.LifecycleDelay, "lifecycle-delay", env.duration("LIFECYCLE_DELAY", DefaultLifecycleDelay), "duration of asynchronous state transitions (0 is instant)")
 	fs.StringVar(&logLevel, "log-level", env.str("LOG_LEVEL", "info"), "log level: debug, info, warn or error")
 	fs.StringVar(&cfg.LogFormat, "log-format", env.str("LOG_FORMAT", DefaultLogFormat), "log format: json, text, or auto for text at a terminal")
+	fs.StringVar(&cfg.Output, "output", env.str("OUTPUT", DefaultOutput), "command output format: text or json")
 	fs.StringVar(&proxyDomains, "proxy-domains", env.str("PROXY_DOMAINS", "myhuaweicloud.com"), "domains answered when WeiStack is used as an HTTPS proxy")
 	fs.StringVar(&proxyBypass, "proxy-bypass", env.str("PROXY_BYPASS", strings.Join(DefaultProxyBypass, ",")),
 		"hosts inside the proxy domains that are passed on, not answered: * is one label, {region} the same label everywhere")
@@ -235,6 +240,7 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 		return Config{}, fmt.Errorf("invalid log level %q: want debug, info, warn or error", logLevel)
 	}
 	cfg.LogFormat = strings.ToLower(cfg.LogFormat)
+	cfg.Output = strings.ToLower(strings.TrimSpace(cfg.Output))
 	cfg.Services = splitList(services)
 	cfg.ProxyDomains = splitList(proxyDomains)
 	cfg.ProxyBypass = splitList(proxyBypass)
@@ -333,6 +339,11 @@ func (c Config) Validate() error {
 	case "json", "text", "auto":
 	default:
 		errs = append(errs, fmt.Errorf("log format %q must be json, text or auto", c.LogFormat))
+	}
+	switch c.Output {
+	case OutputText, OutputJSON:
+	default:
+		errs = append(errs, fmt.Errorf("output format %q must be text or json", c.Output))
 	}
 	used := map[int]string{c.Port: "the main listener"}
 	for name, port := range c.ServicePorts {
@@ -452,6 +463,12 @@ func splitList(s string) []string {
 const (
 	IAMAccept  = "accept"
 	IAMEnforce = "enforce"
+)
+
+// Output formats.
+const (
+	OutputText = "text"
+	OutputJSON = "json"
 )
 
 // DefaultProxyBypass are the hosts under myhuaweicloud.com that Huawei's
