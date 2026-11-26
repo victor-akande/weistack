@@ -44,19 +44,23 @@ type Deps struct {
 	// Budget limits the data WeiStack keeps (-max-data-bytes); uploads
 	// stop when they would pass it. Nil is no limit.
 	Budget *budget.Budget
+	// AccountOf returns the account of an access key, if it is known
+	// (IAM's directory). Nil leaves buckets without an account.
+	AccountOf func(accessKey string) (string, bool)
 	// Now defaults to time.Now.
 	Now func() time.Time
 }
 
 // Service is the OBS emulator.
 type Service struct {
-	quotas quota.Limits
-	store  store.Store
-	ids    *ids.Generator
-	log    *slog.Logger
-	now    func() time.Time
-	blobs  *blobStore
-	keys   cmk.Keys
+	quotas    quota.Limits
+	store     store.Store
+	ids       *ids.Generator
+	log       *slog.Logger
+	now       func() time.Time
+	blobs     *blobStore
+	keys      cmk.Keys
+	accountOf func(string) (string, bool)
 
 	// maxObjectSize bounds a single upload, object or part.
 	maxObjectSize int64
@@ -90,7 +94,7 @@ func New(d Deps) (*Service, error) {
 	}
 	s := &Service{
 		quotas: d.Quotas, store: d.Store, ids: d.IDs, log: d.Logger, now: d.Now, blobs: blobs, keys: d.Keys,
-		maxObjectSize: DefaultMaxObjectSize,
+		accountOf: d.AccountOf, maxObjectSize: DefaultMaxObjectSize,
 	}
 	s.configs = s.configReads()
 	return s, nil
