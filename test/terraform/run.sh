@@ -89,7 +89,9 @@ partner_ak="$(partner_field credentials access_key)" partner_sk="$(partner_field
 fresh_secret() { python3 -c 'import secrets; print("Ws-1" + secrets.token_hex(8))'; }
 TF_VAR_db_password="$(fresh_secret)"
 TF_VAR_iam_password="$(fresh_secret)"
-export TF_VAR_db_password TF_VAR_iam_password
+TF_VAR_csms_secret_text="$(fresh_secret)"
+TF_VAR_csms_binary_payload="$(fresh_secret)"
+export TF_VAR_db_password TF_VAR_iam_password TF_VAR_csms_secret_text TF_VAR_csms_binary_payload
 # Ephemeral self-signed certificate for ELB HTTPS listener (never committed).
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
 	-keyout "$work/elb.key" -out "$work/elb.crt" \
@@ -152,6 +154,11 @@ want = {"server_status": "ACTIVE", "rds_status": "ACTIVE",
                 "imported_name": "tf-kps-imported", "kms_managed": True,
                 "nova_name": "tf-nova-keypair", "keypairs_count": 4,
                 "web_key_pair": "tf-kps-generated"},
+        "csms": {"text_status": "ENABLED", "text_default_key": True,
+                 "text_latest_version": "v1", "binary_status": "ENABLED",
+                 "binary_kms_match": True, "stage_name": "deployed",
+                 "stage_version_id": "v1", "secrets_count": 2,
+                 "read_version": "v1", "version_text_match": True},
         "quotas": {"vpc_quota": 150, "vpc_used": 2,
                    "elb_lb_quota": 50, "elb_listener_quota": 100,
                    "evs_volumes_limit": -1, "evs_volumes_used": 5,
@@ -252,6 +259,32 @@ if [[ $plan -ne 0 ]]; then
 fi
 echo "No changes."
 
+step "Updating CSMS secret (csms_secret_text)"
+TF_VAR_csms_secret_text="$(fresh_secret)"
+export TF_VAR_csms_secret_text
+terraform apply -auto-approve -no-color -var evs_size=30
+terraform output -json csms | python3 -c '
+import json, sys
+csms = json.load(sys.stdin)
+if (csms.get("text_latest_version") != "v2"
+        or csms.get("read_version") != "v2"
+        or csms.get("stage_version_id") != "v1"
+        or not csms.get("version_text_match")):
+    sys.exit(f"unexpected CSMS outputs after secret_text update: {csms}")
+print("CSMS secret updated to v2.")'
+
+step "terraform plan after CSMS update (must show no changes)"
+set +e
+terraform plan -detailed-exitcode -no-color -var evs_size=30 >"$work/plan_csms.txt" 2>&1
+plan=$?
+set -e
+if [[ $plan -ne 0 ]]; then
+	cat "$work/plan_csms.txt"
+	echo "plan exited $plan: the post-CSMS-update plan must find no changes" >&2
+	exit 1
+fi
+echo "No changes."
+
 step "terraform destroy"
 terraform destroy -auto-approve -no-color -var evs_size=30
 
@@ -283,7 +316,7 @@ if any(name != "default" for name in groups.values()):
 orphans = [r["id"] for r in records("vpc.secgroup-rule") if r.get("security_group_id") not in groups]
 if orphans:
     left["rules of deleted groups"] = orphans
-for kind in ("kps.keypair", "kps.task", "kps.failed_task"):
+for kind in ("kps.keypair", "kps.task", "kps.failed_task", "csms.secret", "csms.version"):
     if records(kind):
         left[kind] = len(records(kind))
 if left:
