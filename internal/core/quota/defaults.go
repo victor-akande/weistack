@@ -35,6 +35,8 @@ const (
 
 	KMSCMK Key = "kms.CMK"
 
+	CSMSSecret Key = "csms.secret"
+
 	IAMUser   Key = "iam.user"
 	IAMGroup  Key = "iam.group"
 	IAMAgency Key = "iam.agency"
@@ -82,6 +84,8 @@ var defaults = map[Key]def{
 	RDSInstance: {20, "WeiStack before v0.3 (-rds-max-instances)"},
 
 	KMSCMK: {100, "KMS constraints"},
+
+	CSMSSecret: {5000, "CSMS user guide: Creating a Secret"},
 
 	IAMUser:   {50, "IAM: the default quota of users"},
 	IAMGroup:  {20, "IAM account quota API example"},

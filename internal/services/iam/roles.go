@@ -98,7 +98,7 @@ func readOnly(services ...string) []systemStatement {
 
 // tenantServices are the services of the account-wide roles Tenant
 // Administrator and Tenant Guest, which cover every service but IAM.
-var tenantServices = []string{"ecs", "evs", "ims", "vpc", "obs", "rds", "eps", "nat", "elb", "kms", "kps"}
+var tenantServices = []string{"ecs", "evs", "ims", "vpc", "obs", "rds", "eps", "nat", "elb", "kms", "kps", "csms"}
 
 // OBS's documented permissions (usermanual-permissions iam_01_0001,
 // and the statement of Huawei's policy example in iam_01_0019).
@@ -168,6 +168,11 @@ var systemRoles = []systemRole{
 	{"system_all_55", "ELB ReadOnlyAccess", "Read-only permissions for Elastic Load Balance", "ELB", typeProject, true, readOnly("elb")},
 
 	{"kms_adm", "KMS Administrator", "KMS Administrator", "KMS", typeProject, false, allow("kms:*:*")},
+	// Huawei publishes no internal name for these two CSMS system policies.
+	{"csms_full", "CSMS FullAccess", "All permissions of CSMS in DEW Users with these permissions can perform all the operations allowed by policies.", "CSMS", typeProject, true, allow("csms:*:*")},
+	{"csms_readonly", "CSMS ReadOnlyAccess", "Read-only permissions of CSMS in DEW Users with this permission can only view CSMS data.", "CSMS", typeProject, true, allow(
+		"csms:secret:get", "csms:secret:list", "csms:secretVersion:get", "csms:secretVersion:list", "csms:secretStage:get",
+		"csms:tag:getAll", "csms:tag:getSecretByTag", "csms:tag:getBySecret")},
 	{"system_all_10", "EPS FullAccess", "All operations on the Enterprise Project Management service", "EPS", typeGlobal, true, allow("eps:*:*")},
 }
 

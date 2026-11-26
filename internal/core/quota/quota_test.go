@@ -9,7 +9,7 @@ import (
 func TestDefaults(t *testing.T) {
 	t.Parallel()
 	var l Limits
-	for k, want := range map[Key]int{VPCVPC: 150, EVSVolumes: Unlimited, ELBLoadBalancer: 50, ECSInstances: 20, VPCPublicIP: 50} {
+	for k, want := range map[Key]int{VPCVPC: 150, EVSVolumes: Unlimited, ELBLoadBalancer: 50, ECSInstances: 20, VPCPublicIP: 50, CSMSSecret: 5000} {
 		if got := l.Get(k); got != want {
 			t.Errorf("%s = %d, want %d", k, got, want)
 		}
