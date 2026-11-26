@@ -7,6 +7,8 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"io"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -25,7 +27,14 @@ import (
 // Huawei Cloud's real regional endpoint through the emulator proxy.
 func kpsAs(t *testing.T, ak, sk string) *kpsv3.KpsClient {
 	t.Helper()
-	creds, err := basic.NewCredentialsBuilder().WithAk(ak).WithSk(sk).WithProjectId(projectID).SafeBuild()
+	return kpsIn(t, ak, sk, projectID)
+}
+
+// kpsIn builds a KPS client that signs with ak and sk in project, using
+// Huawei Cloud's real regional endpoint through the emulator proxy.
+func kpsIn(t *testing.T, ak, sk, project string) *kpsv3.KpsClient {
+	t.Helper()
+	creds, err := basic.NewCredentialsBuilder().WithAk(ak).WithSk(sk).WithProjectId(project).SafeBuild()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,22 +271,60 @@ func TestKPSKeypairsAndProtection(t *testing.T) {
 	_, err = c.ListKeypairDetail(&kps.ListKeypairDetailRequest{KeypairName: "no-such-keypair-" + suffix})
 	wantError(t, err, 404, "KPS.6004")
 
-	// 7. ListKeypairs pagination with limit and marker.
-	wantNames := []string{plainName, defName, impName, kmsName, kmsDefName}
-	seenOrder := make([]string, 0, len(wantNames))
-	wantSet := make(map[string]bool, len(wantNames))
-	for _, n := range wantNames {
-		wantSet[n] = true
+	// 7. ListKeypairs: sorted Name order in the shared project, and isolated
+	// limit + marker pagination (including deleted-marker survival) in its own account.
+	sharedNames := []string{plainName, defName, impName, kmsName, kmsDefName}
+	slices.Sort(sharedNames)
+	sharedSet := make(map[string]bool, len(sharedNames))
+	for _, n := range sharedNames {
+		sharedSet[n] = true
 	}
+	sharedList, err := c.ListKeypairs(&kps.ListKeypairsRequest{})
+	if err != nil || sharedList.Keypairs == nil {
+		t.Fatalf("ListKeypairs(unpaginated): %+v, %v", sharedList, err)
+	}
+	gotShared := make([]string, 0, len(sharedNames))
+	for _, item := range *sharedList.Keypairs {
+		if item.Keypair != nil && item.Keypair.Name != nil && sharedSet[*item.Keypair.Name] {
+			gotShared = append(gotShared, *item.Keypair.Name)
+		}
+	}
+	if !slices.Equal(gotShared, sharedNames) {
+		t.Fatalf("ListKeypairs(unpaginated) order = %v, want %v", gotShared, sharedNames)
+	}
+
+	pageAcct := addAccount(t, "sdk-kps-page-"+suffix)
+	pageKPS := kpsIn(t, pageAcct.AK, pageAcct.SK, pageAcct.ProjectID)
+	labels := []string{"d", "a", "e", "b", "c"}
+	wantNames := make([]string, 0, len(labels))
+	for _, label := range labels {
+		name := "sdk-kps-page-" + label + "-" + suffix
+		wantNames = append(wantNames, name)
+		t.Cleanup(func() {
+			_, _ = pageKPS.DeleteKeypair(&kps.DeleteKeypairRequest{KeypairName: name})
+		})
+		if _, err := pageKPS.CreateKeypair(&kps.CreateKeypairRequest{Body: &kps.CreateKeypairRequestBody{
+			Keypair: &kps.CreateKeypairAction{Name: name},
+		}}); err != nil {
+			t.Fatalf("CreateKeypair(%s): %v", name, err)
+		}
+	}
+	slices.Sort(wantNames)
+
+	pageSize := 2
+	maxPages := 100
+	limitStr := strconv.Itoa(pageSize)
+	wantPages := (len(wantNames) + pageSize - 1) / pageSize
+	seenOrder := make([]string, 0, len(wantNames))
 	var marker *string
 	pages := 0
 	for {
 		pages++
-		if pages > 100 {
+		if pages > maxPages {
 			t.Fatal("ListKeypairs pagination did not terminate")
 		}
-		res, err := c.ListKeypairs(&kps.ListKeypairsRequest{
-			Limit:  ptr("2"),
+		res, err := pageKPS.ListKeypairs(&kps.ListKeypairsRequest{
+			Limit:  ptr(limitStr),
 			Marker: marker,
 		})
 		if err != nil {
@@ -286,11 +333,11 @@ func TestKPSKeypairsAndProtection(t *testing.T) {
 		if res.Keypairs == nil || res.PageInfo == nil || res.PageInfo.CurrentCount == nil {
 			t.Fatalf("ListKeypairs(page %d) missing keypairs or page_info: %+v", pages, res)
 		}
-		if int(*res.PageInfo.CurrentCount) != len(*res.Keypairs) || len(*res.Keypairs) > 2 {
+		if int(*res.PageInfo.CurrentCount) != len(*res.Keypairs) || len(*res.Keypairs) > pageSize {
 			t.Fatalf("ListKeypairs(page %d) count=%d len=%d", pages, *res.PageInfo.CurrentCount, len(*res.Keypairs))
 		}
 		for _, item := range *res.Keypairs {
-			if item.Keypair != nil && item.Keypair.Name != nil && wantSet[*item.Keypair.Name] {
+			if item.Keypair != nil && item.Keypair.Name != nil {
 				seenOrder = append(seenOrder, *item.Keypair.Name)
 			}
 		}
@@ -299,17 +346,38 @@ func TestKPSKeypairsAndProtection(t *testing.T) {
 		}
 		marker = res.PageInfo.NextMarker
 	}
-	if pages < 3 {
-		t.Errorf("expected multiple pages with limit=2 and >=5 keypairs, got %d", pages)
+	if pages != wantPages {
+		t.Errorf("ListKeypairs pages = %d, want %d", pages, wantPages)
 	}
-	if len(seenOrder) != len(wantNames) {
-		t.Fatalf("paginated ListKeypairs saw %v, want %v", seenOrder, wantNames)
+	if !slices.Equal(seenOrder, wantNames) {
+		t.Fatalf("paginated ListKeypairs order = %v, want %v", seenOrder, wantNames)
 	}
-	for i := range wantNames {
-		if seenOrder[i] != wantNames[i] {
-			t.Errorf("paginated ListKeypairs order = %v, want %v", seenOrder, wantNames)
-			break
+
+	// Deleting the marker key pair between pages still resumes at the next sorted name.
+	page1, err := pageKPS.ListKeypairs(&kps.ListKeypairsRequest{Limit: ptr(limitStr)})
+	if err != nil || page1.PageInfo == nil || page1.PageInfo.NextMarker == nil || *page1.PageInfo.NextMarker != wantNames[pageSize-1] {
+		t.Fatalf("ListKeypairs(page 1 before delete) = %+v, %v", page1, err)
+	}
+	deletedMarker := *page1.PageInfo.NextMarker
+	if _, err := pageKPS.DeleteKeypair(&kps.DeleteKeypairRequest{KeypairName: deletedMarker}); err != nil {
+		t.Fatalf("DeleteKeypair(%s): %v", deletedMarker, err)
+	}
+	page2AfterDel, err := pageKPS.ListKeypairs(&kps.ListKeypairsRequest{
+		Limit:  ptr(limitStr),
+		Marker: ptr(deletedMarker),
+	})
+	if err != nil || page2AfterDel.Keypairs == nil {
+		t.Fatalf("ListKeypairs(after marker delete): %+v, %v", page2AfterDel, err)
+	}
+	gotAfterDel := make([]string, 0, len(*page2AfterDel.Keypairs))
+	for _, item := range *page2AfterDel.Keypairs {
+		if item.Keypair != nil && item.Keypair.Name != nil {
+			gotAfterDel = append(gotAfterDel, *item.Keypair.Name)
 		}
+	}
+	wantAfterDel := wantNames[pageSize : pageSize*2]
+	if !slices.Equal(gotAfterDel, wantAfterDel) {
+		t.Fatalf("ListKeypairs(after marker delete) = %v, want %v", gotAfterDel, wantAfterDel)
 	}
 
 	// 8. ExportPrivateKey round-trips for default, explicit KMS, and kps/default.
