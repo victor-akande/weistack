@@ -1,0 +1,8 @@
+{
+  "source": "docs",
+  "status": 400,
+  "body": {
+    "error_code": "CSMS.0202",
+    "error_msg": "The number of secret has reached the upper limit."
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "secret": {
+      "id": "<uuid>",
+      "name": "sched-sec",
+      "state": "ENABLED",
+      "kms_key_id": "<uuid>",
+      "description": "scheduled test secret",
+      "create_time": 1795521600000,
+      "update_time": 1795521600000,
+      "secret_type": "COMMON",
+      "auto_rotation": false,
+      "event_subscriptions": [],
+      "enterprise_project_id": "0",
+      "domain_id": "<hex32>",
+      "replica_type": "STANDALONE"
+    }
+  }
+}

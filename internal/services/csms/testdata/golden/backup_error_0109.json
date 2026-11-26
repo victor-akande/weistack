@@ -1,0 +1,8 @@
+{
+  "source": "docs",
+  "status": 403,
+  "body": {
+    "error_code": "CSMS.0109",
+    "error_msg": "The secret state is not enabled."
+  }
+}

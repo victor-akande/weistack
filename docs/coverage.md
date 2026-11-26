@@ -16,7 +16,7 @@ A request for anything else answers `501 WeiStack.0501`. The pages under
 | [EVS](#evs) | v2, v2.1 | 19 |
 | [IAM](#iam) | v3, v3.0, v5 (users, groups, tokens, access keys, roles, custom policies, role assignments, identity policies) | 133 |
 | [IMS](#ims) | v1, v2 | 7 |
-| [KMS](#kms) | v1.0 (keys, encryption, data keys, rotation, tags) | 56 |
+| [KMS](#kms) | v1.0 (keys, encryption, data keys, rotation, tags) | 79 |
 | [NAT](#nat) | v2 (public), v3 (private, tags) | 73 |
 | [OBS](#obs) | S3-compatible | 31 |
 | [RDS](#rds) | v3 | 12 |
@@ -375,6 +375,29 @@ Endpoint: `kms.{region}.myhuaweicloud.com`. Details: [KMS](services/kms.md).
 | `DELETE` | `/v1.0/{project_id}/kms/{key_id}/tags/{key}` | `kms:cmk:deleteTag` |
 | `GET` | `/v1.0/{project_id}/kms/{key_id}/tags` | `kms:cmk:getTags` |
 | `POST` | `/v1.0/{project_id}/kms/{key_id}/tags` | `kms:cmk:createTag` |
+| `POST` | `/v1/{project_id}/csms/generate-password` | None needed |
+| `POST` | `/v1/{project_id}/csms/resource_instances/action` | `csms:secret:getSecretsByTag` |
+| `GET` | `/v1/{project_id}/csms/tags` | `csms::listProjectTags` |
+| `POST` | `/v1/{project_id}/csms/{secret_id}/tags/action` | `csms:secret:batchCreateOrDeleteTags` |
+| `DELETE` | `/v1/{project_id}/csms/{secret_id}/tags/{key}` | `csms:secret:deleteTag` |
+| `GET` | `/v1/{project_id}/csms/{secret_id}/tags` | `csms:secret:listTags` |
+| `POST` | `/v1/{project_id}/csms/{secret_id}/tags` | `csms:secret:createTag` |
+| `POST` | `/v1/{project_id}/secrets/restore` | `csms:secret:create` |
+| `POST` | `/v1/{project_id}/secrets/{secret_name}/backup` | `csms:secret:get` |
+| `POST` | `/v1/{project_id}/secrets/{secret_name}/scheduled-deleted-tasks/cancel` | `csms:secret:restoreSecret` |
+| `POST` | `/v1/{project_id}/secrets/{secret_name}/scheduled-deleted-tasks/create` | `csms:secret:scheduleDeletion` |
+| `DELETE` | `/v1/{project_id}/secrets/{secret_name}/stages/{stage_name}` | `csms:secret:deleteStage` |
+| `GET` | `/v1/{project_id}/secrets/{secret_name}/stages/{stage_name}` | `csms:secret:getStage` |
+| `PUT` | `/v1/{project_id}/secrets/{secret_name}/stages/{stage_name}` | `csms:secret:updateStage` |
+| `GET` | `/v1/{project_id}/secrets/{secret_name}/versions/{version_id}` | `csms:secret:getVersion` |
+| `PUT` | `/v1/{project_id}/secrets/{secret_name}/versions/{version_id}` | `csms:secret:updateVersion` |
+| `GET` | `/v1/{project_id}/secrets/{secret_name}/versions` | `csms:secret:listVersion` |
+| `POST` | `/v1/{project_id}/secrets/{secret_name}/versions` | `csms:secret:createVersion` |
+| `DELETE` | `/v1/{project_id}/secrets/{secret_name}` | `csms:secret:delete` |
+| `GET` | `/v1/{project_id}/secrets/{secret_name}` | `csms:secret:get` |
+| `PUT` | `/v1/{project_id}/secrets/{secret_name}` | `csms:secret:update` |
+| `GET` | `/v1/{project_id}/secrets` | `csms:secret:list` |
+| `POST` | `/v1/{project_id}/secrets` | `csms:secret:create` |
 | `DELETE` | `/v3/{project_id}/failed-tasks/{task_id}` | `kps::deleteFailedTask` |
 | `DELETE` | `/v3/{project_id}/failed-tasks` | `kps::deleteFailedTask` |
 | `GET` | `/v3/{project_id}/failed-tasks` | `kps::getFailedTask` |

@@ -1,0 +1,18 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "version": {
+      "version_metadata": {
+        "id": "v3",
+        "create_time": 1795521610000,
+        "kms_key_id": "<uuid>",
+        "secret_name": "demo-secret",
+        "version_stages": [
+          "SYSCURRENT"
+        ]
+      },
+      "secret_binary": "AAECAw=="
+    }
+  }
+}

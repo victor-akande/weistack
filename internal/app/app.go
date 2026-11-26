@@ -34,6 +34,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/core/vault"
 	"github.com/victor-akande/weistack/internal/server"
+	"github.com/victor-akande/weistack/internal/services/csms"
 	"github.com/victor-akande/weistack/internal/services/ecs"
 	"github.com/victor-akande/weistack/internal/services/eip"
 	"github.com/victor-akande/weistack/internal/services/elb"
@@ -437,6 +438,17 @@ func buildServices(
 	if err != nil {
 		return nil, nil, err
 	}
+	csmsSvc, err := csms.New(csms.Deps{
+		Store: st, IDs: gen, Engine: engine, Logger: log, Vault: vlt,
+		Keys: kmsSvc, Quotas: cfg.Quotas, Directory: directory,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	kmsSvc.Extend(csmsSvc.KMSExtension())
+	if err := csmsSvc.Resume(ctx); err != nil {
+		return nil, nil, err
+	}
 	vpcSvc, err := vpc.New(vpc.Deps{Quotas: cfg.Quotas, Store: st, Engine: engine, IDs: gen, Logger: log})
 	if err != nil {
 		return nil, nil, err
@@ -561,7 +573,7 @@ func buildServices(
 	}
 	hosted := map[string][]inventory.Reporter{
 		"vpc": {eipSvc},
-		"kms": {kpsSvc},
+		"kms": {kpsSvc, csmsSvc},
 	}
 	return []server.Service{vpcSvc, natSvc, elbSvc, imsSvc, ecsSvc, evsSvc, obsSvc, rdsSvc, iamSvc, stsSvc, epsSvc, kmsSvc}, hosted, nil
 }

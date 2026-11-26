@@ -1,0 +1,12 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "stage": {
+      "name": "canary",
+      "update_time": 1795521615000,
+      "secret_name": "stage-demo",
+      "version_id": "v1"
+    }
+  }
+}

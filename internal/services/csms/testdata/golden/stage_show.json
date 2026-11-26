@@ -1,0 +1,12 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "stage": {
+      "name": "SYSCURRENT",
+      "update_time": 1795521610000,
+      "secret_name": "stage-demo",
+      "version_id": "v3"
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "version": {
+      "version_metadata": {
+        "id": "v2",
+        "create_time": 1795521605000,
+        "kms_key_id": "<uuid>",
+        "secret_name": "demo-secret",
+        "version_stages": [
+          "SYSCURRENT"
+        ]
+      },
+      "secret_string": "rotated-secret-v2"
+    }
+  }
+}

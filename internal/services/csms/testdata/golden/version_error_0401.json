@@ -1,0 +1,8 @@
+{
+  "source": "docs",
+  "status": 400,
+  "body": {
+    "error_code": "CSMS.0401",
+    "error_msg": "Can not get the protected secret value using the provided KMS key."
+  }
+}

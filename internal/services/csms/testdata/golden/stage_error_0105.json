@@ -1,0 +1,8 @@
+{
+  "source": "docs",
+  "status": 400,
+  "body": {
+    "error_code": "CSMS.0105",
+    "error_msg": "Can not delete the system internal stage."
+  }
+}

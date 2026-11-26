@@ -1,0 +1,39 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "resources": [
+      {
+        "resource_id": "<uuid>",
+        "resource_name": "app-db-secret",
+        "resource_detail": {
+          "id": "<uuid>",
+          "name": "app-db-secret",
+          "state": "ENABLED",
+          "kms_key_id": "<uuid>",
+          "description": "db credentials",
+          "create_time": 1795521600000,
+          "update_time": 1795521600000,
+          "secret_type": "COMMON",
+          "auto_rotation": false,
+          "event_subscriptions": [],
+          "enterprise_project_id": "0",
+          "domain_id": "<hex32>",
+          "replica_type": "STANDALONE"
+        },
+        "tags": [
+          {
+            "key": "env",
+            "value": "prod"
+          },
+          {
+            "key": "owner",
+            "value": "secops"
+          }
+        ],
+        "sys_tags": []
+      }
+    ],
+    "total_count": 1
+  }
+}

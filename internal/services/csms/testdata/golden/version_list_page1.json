@@ -1,0 +1,21 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "version_metadatas": [
+      {
+        "id": "v1",
+        "create_time": 1795521600000,
+        "kms_key_id": "<uuid>",
+        "secret_name": "demo-secret",
+        "version_stages": [
+          "SYSPREVIOUS"
+        ]
+      }
+    ],
+    "page_info": {
+      "next_marker": "v1",
+      "current_count": 1
+    }
+  }
+}

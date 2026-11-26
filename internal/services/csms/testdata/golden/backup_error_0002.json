@@ -1,0 +1,8 @@
+{
+  "source": "docs",
+  "status": 400,
+  "body": {
+    "error_code": "CSMS.0002",
+    "error_msg": "The value of parameter is invalid."
+  }
+}

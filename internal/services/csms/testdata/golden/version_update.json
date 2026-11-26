@@ -1,0 +1,16 @@
+{
+  "source": "docs",
+  "status": 200,
+  "body": {
+    "version_metadata": {
+      "id": "v2",
+      "create_time": 1795521605000,
+      "expire_time": 1800000000000,
+      "kms_key_id": "<uuid>",
+      "secret_name": "demo-secret",
+      "version_stages": [
+        "SYSPREVIOUS"
+      ]
+    }
+  }
+}
