@@ -1,0 +1,8 @@
+{
+  "source": "docs",
+  "status": 400,
+  "body": {
+    "error_code": "CSMS.0108",
+    "error_msg": "The secret is not in schedule delete state."
+  }
+}

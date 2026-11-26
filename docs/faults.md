@@ -42,6 +42,7 @@ The kinds of transition:
 | VPC | `vpc.vpc.create`, `vpc.subnet.create` |
 | NAT | `nat.gateway.create`, `nat.snat.create`, `nat.dnat.create` (leaves the gateway or rule `INACTIVE`) |
 | KPS | `kps.keypair.associate`, `kps.keypair.disassociate` |
+| CSMS | `csms.secret.delete` (leaves the secret `PENDING_DELETE`) |
 
 ### Request faults
 

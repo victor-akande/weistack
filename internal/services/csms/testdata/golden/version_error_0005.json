@@ -1,0 +1,8 @@
+{
+  "source": "docs",
+  "status": 404,
+  "body": {
+    "error_code": "CSMS.0005",
+    "error_msg": "The resource does not exist."
+  }
+}

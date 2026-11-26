@@ -58,6 +58,7 @@ var openRoutes = map[string]string{
 	"nat GET /v2.0/{project_id}/nat_gateways/quotas":                 "undocumented: no action listed",
 	"iam GET /v3.0/OS-QUOTA/domains/{domain_id}":                     "documented: no permission needed",
 	"iam GET /v3.0/OS-QUOTA/projects/{project_id}":                   "documented: no permission needed",
+	"kms POST /v1/{project_id}/csms/generate-password":               "documented: no permission needed",
 }
 
 // KMS names the key in the body of most operations, and checks the

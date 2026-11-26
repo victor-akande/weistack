@@ -1,0 +1,8 @@
+{
+  "source": "docs",
+  "status": 400,
+  "body": {
+    "error_code": "CSMS.0103",
+    "error_msg": "The secret is in the scheduled deletion state."
+  }
+}

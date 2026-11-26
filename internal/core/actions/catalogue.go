@@ -459,4 +459,27 @@ var all = []Action{
 	// whose policies name agencies in a {"uri": [...]} Resource
 	// (usermanual-iam iam_01_0059).
 	{"iam:tokens:assume", nil, Write, ""},
+
+	// CSMS: support.huaweicloud.com/intl/en-us/usermanual-permissions/iam_11_0037.html
+	{"csms:secret:create", nil, Write, "secretName"},
+	{"csms:secret:list", nil, List, "secretName"},
+	{"csms:secret:get", nil, Read, "secretName"},
+	{"csms:secret:update", nil, Write, "secretName"},
+	{"csms:secret:delete", nil, Write, "secretName"},
+	{"csms:secret:createVersion", []string{"csms:secretVersion:create"}, Write, "secretName"},
+	{"csms:secret:listVersion", []string{"csms:secretVersion:list"}, List, "secretName"},
+	{"csms:secret:getVersion", []string{"csms:secretVersion:get"}, Read, "secretName"},
+	{"csms:secret:updateVersion", []string{"csms:secretVersion:update"}, Write, "secretName"},
+	{"csms:secret:getStage", []string{"csms:secretStage:get"}, Read, "secretName"},
+	{"csms:secret:updateStage", []string{"csms:secretStage:update", "csms:secretStage:create"}, Write, "secretName"},
+	{"csms:secret:deleteStage", []string{"csms:secretStage:delete"}, Write, "secretName"},
+	{"csms:secret:scheduleDeletion", []string{"csms:secret:deleteScheduled"}, Write, "secretName"},
+	{"csms:secret:restoreSecret", []string{"csms:secret:deleteCancelled"}, Write, "secretName"},
+	{"csms:secret:createTag", []string{"csms:tag:create"}, Tagging, "secretName"},
+	{"csms:secret:listTags", []string{"csms:tag:getBySecret"}, List, "secretName"},
+	{"csms:secret:batchCreateOrDeleteTags", []string{"csms:tag:batch"}, Tagging, "secretName"},
+	{"csms:secret:deleteTag", []string{"csms:tag:delete"}, Tagging, "secretName"},
+	{"csms::listProjectTags", []string{"csms:tag:getAll"}, List, ""},
+	{"csms:secret:getSecretsByTag", []string{"csms:tag:getSecretByTag"}, List, "secretName"},
+	{"csms::getSecretQuota", []string{"csms:secretQuota:get"}, Read, ""},
 }

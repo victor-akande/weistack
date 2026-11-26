@@ -19,6 +19,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/core/vault"
 	"github.com/victor-akande/weistack/internal/server"
+	"github.com/victor-akande/weistack/internal/services/csms"
 	"github.com/victor-akande/weistack/internal/services/eip"
 	"github.com/victor-akande/weistack/internal/services/kps"
 )
@@ -118,10 +119,6 @@ func TestEveryServiceReports(t *testing.T) {
 			if ok {
 				t.Errorf("service %q implements inventory.Reporter; stateless service must not report", svc.Name())
 			}
-		case "csms":
-			if ok {
-				reporters = append(reporters, rep)
-			}
 		default:
 			if !ok {
 				t.Errorf("service %q does not implement inventory.Reporter", svc.Name())
@@ -147,7 +144,7 @@ func TestEveryServiceReports(t *testing.T) {
 		}
 	}
 
-	var hasEIP, hasKPS bool
+	var hasEIP, hasKPS, hasCSMS bool
 	for _, rep := range hosted["vpc"] {
 		if _, ok := rep.(*eip.Service); ok {
 			hasEIP = true
@@ -160,9 +157,15 @@ func TestEveryServiceReports(t *testing.T) {
 		if _, ok := rep.(*kps.Service); ok {
 			hasKPS = true
 		}
+		if _, ok := rep.(*csms.Service); ok {
+			hasCSMS = true
+		}
 	}
 	if !hasKPS {
 		t.Errorf("hosted[%q] = %v; want *kps.Service", "kms", hosted["kms"])
+	}
+	if !hasCSMS {
+		t.Errorf("hosted[%q] = %v; want *csms.Service", "kms", hosted["kms"])
 	}
 
 	dump, err := st.Dump(t.Context())

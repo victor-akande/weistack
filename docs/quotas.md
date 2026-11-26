@@ -53,6 +53,7 @@ no default, the default is the value in Huawei's own quota API example.
 | `obs.buckets` | 100 | OBS notes and constraints |
 | `rds.instance` | 20 | WeiStack before v0.3 (-rds-max-instances) |
 | `kms.CMK` | 100 | KMS constraints |
+| `csms.secret` | 5000 | CSMS user guide: Creating a Secret |
 | `iam.user` | 50 | IAM: the default quota of users |
 | `iam.group` | 20 | IAM account quota API example |
 | `iam.agency` | 50 | IAM account quota API example |
