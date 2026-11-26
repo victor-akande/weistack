@@ -199,9 +199,43 @@ func TestCSMSSecretsVersionsAndStages(t *testing.T) {
 		t.Fatalf("CreateSecret(extra): %v", err)
 	}
 
-	// 3. ListSecrets with Limit & Marker pagination.
-	wantNames := []string{defName, kmsName, extraName}
-	wantSet := map[string]bool{defName: true, kmsName: true, extraName: true}
+	// 3. ListSecrets in the shared project, plus Limit & Marker pagination in
+	// an isolated account project so concurrent tests deleting secrets cannot
+	// remove NextMarker mid-walk.
+	allShared, err := c.ListSecrets(&csms.ListSecretsRequest{})
+	if err != nil || allShared.Secrets == nil {
+		t.Fatalf("ListSecrets(shared): %+v, %v", allShared, err)
+	}
+	sharedFound := make(map[string]bool, len(*allShared.Secrets))
+	for _, sec := range *allShared.Secrets {
+		if sec.Name != nil {
+			sharedFound[*sec.Name] = true
+		}
+	}
+	for _, name := range []string{defName, kmsName, extraName} {
+		if !sharedFound[name] {
+			t.Fatalf("ListSecrets(shared) missing %q", name)
+		}
+	}
+
+	pageAcct := addAccount(t, "sdk-csms-page-"+suffix)
+	pageCSMS := csmsIn(t, pageAcct.AK, pageAcct.SK, pageAcct.ProjectID)
+	wantNames := []string{
+		"sdk-csms-p1-" + suffix,
+		"sdk-csms-p2-" + suffix,
+		"sdk-csms-p3-" + suffix,
+	}
+	for _, name := range wantNames {
+		t.Cleanup(func() {
+			_, _ = pageCSMS.DeleteSecret(&csms.DeleteSecretRequest{SecretName: name})
+		})
+		if _, err := pageCSMS.CreateSecret(&csms.CreateSecretRequest{Body: &csms.CreateSecretRequestBody{
+			Name:         name,
+			SecretString: ptr("page-secret-" + name),
+		}}); err != nil {
+			t.Fatalf("CreateSecret(%s): %v", name, err)
+		}
+	}
 	seenOrder := make([]string, 0, len(wantNames))
 	pageSize := 2
 	maxPages := 100
@@ -212,7 +246,7 @@ func TestCSMSSecretsVersionsAndStages(t *testing.T) {
 		if pages > maxPages {
 			t.Fatal("ListSecrets pagination did not terminate")
 		}
-		res, err := c.ListSecrets(&csms.ListSecretsRequest{
+		res, err := pageCSMS.ListSecrets(&csms.ListSecretsRequest{
 			Limit:  ptr(strconv.Itoa(pageSize)),
 			Marker: marker,
 		})
@@ -223,7 +257,7 @@ func TestCSMSSecretsVersionsAndStages(t *testing.T) {
 			t.Fatalf("ListSecrets(page %d) count=%d len=%d", pages, *res.PageInfo.CurrentCount, len(*res.Secrets))
 		}
 		for _, sec := range *res.Secrets {
-			if sec.Name != nil && wantSet[*sec.Name] {
+			if sec.Name != nil {
 				seenOrder = append(seenOrder, *sec.Name)
 			}
 		}
@@ -232,8 +266,8 @@ func TestCSMSSecretsVersionsAndStages(t *testing.T) {
 		}
 		marker = res.PageInfo.NextMarker
 	}
-	if pages < 2 {
-		t.Errorf("expected multiple pages with limit=%d and >=3 secrets, got %d", pageSize, pages)
+	if pages != 2 {
+		t.Errorf("expected 2 pages with limit=%d and 3 secrets, got %d", pageSize, pages)
 	}
 	if !slices.Equal(seenOrder, wantNames) {
 		t.Fatalf("paginated ListSecrets order = %v, want %v", seenOrder, wantNames)
