@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -135,6 +136,143 @@ func TestKeypairPaginationGolden(t *testing.T) {
 	// Invalid limit parameters get 400 KPS.0002.
 	for _, q := range []string{"limit=0", "limit=-1", "limit=1001", "limit=abc"} {
 		e.expect(t, "keypair_error_0002", http.MethodGet, "/v3/{project}/keypairs?"+q, "")
+	}
+}
+
+func TestKeypairListNameOrderAndDeletedMarker(t *testing.T) {
+	e := newEnv(t)
+
+	createOrder := []string{"kp-delta", "kp-alpha", "kp-echo", "kp-bravo", "kp-charlie"}
+	wantSorted := []string{"kp-alpha", "kp-bravo", "kp-charlie", "kp-delta", "kp-echo"}
+
+	for _, name := range createOrder {
+		body := fmt.Sprintf(`{"keypair":{"name":%q,"public_key":%q}}`, name, testEd25519Pub)
+		status, out := e.call(t, http.MethodPost, "/v3/{project}/keypairs", body)
+		if status != http.StatusOK {
+			t.Fatalf("create %s: status = %d, body = %s", name, status, out)
+		}
+	}
+
+	extractNames := func(items []keypairItem) []string {
+		names := make([]string, len(items))
+		for i, item := range items {
+			names[i] = item.Keypair.Name
+		}
+		return names
+	}
+
+	// Unpaginated GET returns key pairs sorted by Name ascending.
+	status, raw := e.call(t, http.MethodGet, "/v3/{project}/keypairs", "")
+	if status != http.StatusOK {
+		t.Fatalf("unpaginated list: status = %d, body = %s", status, raw)
+	}
+	fullList := decodeInto[listKeypairsResponse](t, raw)
+	if got := extractNames(fullList.Keypairs); !slices.Equal(got, wantSorted) {
+		t.Fatalf("unpaginated names = %v, want %v", got, wantSorted)
+	}
+	if int(fullList.PageInfo.CurrentCount) != len(wantSorted) {
+		t.Fatalf("unpaginated current_count = %d, want %d", fullList.PageInfo.CurrentCount, len(wantSorted))
+	}
+	if fullList.PageInfo.NextMarker != "" || fullList.PageInfo.PreviousMarker != "" {
+		t.Fatalf("unpaginated markers = (next=%q, prev=%q), want empty", fullList.PageInfo.NextMarker, fullList.PageInfo.PreviousMarker)
+	}
+
+	pageSize := 2
+
+	// Page 1: ?limit=2 -> ["kp-alpha", "kp-bravo"], next_marker="kp-bravo", previous_marker="".
+	wantPage1 := wantSorted[:pageSize]
+	status, raw = e.call(t, http.MethodGet, fmt.Sprintf("/v3/{project}/keypairs?limit=%d", pageSize), "")
+	if status != http.StatusOK {
+		t.Fatalf("page 1: status = %d, body = %s", status, raw)
+	}
+	page1 := decodeInto[listKeypairsResponse](t, raw)
+	if got := extractNames(page1.Keypairs); !slices.Equal(got, wantPage1) {
+		t.Fatalf("page 1 names = %v, want %v", got, wantPage1)
+	}
+	if int(page1.PageInfo.CurrentCount) != len(wantPage1) {
+		t.Fatalf("page 1 current_count = %d, want %d", page1.PageInfo.CurrentCount, len(wantPage1))
+	}
+	wantPage1Next := wantPage1[len(wantPage1)-1]
+	if page1.PageInfo.NextMarker != wantPage1Next || page1.PageInfo.PreviousMarker != "" {
+		t.Fatalf("page 1 markers = (next=%q, prev=%q), want (next=%q, prev=\"\")",
+			page1.PageInfo.NextMarker, page1.PageInfo.PreviousMarker, wantPage1Next)
+	}
+
+	// Delete the marker key pair ("kp-bravo") before requesting page 2.
+	deletedMarker := page1.PageInfo.NextMarker
+	status, out := e.call(t, http.MethodDelete, "/v3/{project}/keypairs/"+deletedMarker, "")
+	if status != http.StatusNoContent {
+		t.Fatalf("delete %s: status = %d, want %d (body = %s)", deletedMarker, status, http.StatusNoContent, out)
+	}
+
+	remaining := wantSorted[pageSize:]
+
+	// Page 2 with deleted marker: ?limit=2&marker=kp-bravo -> ["kp-charlie", "kp-delta"].
+	wantPage2 := remaining[:pageSize]
+	status, raw = e.call(t, http.MethodGet, fmt.Sprintf("/v3/{project}/keypairs?limit=%d&marker=%s", pageSize, deletedMarker), "")
+	if status != http.StatusOK {
+		t.Fatalf("page 2: status = %d, body = %s", status, raw)
+	}
+	page2 := decodeInto[listKeypairsResponse](t, raw)
+	if got := extractNames(page2.Keypairs); !slices.Equal(got, wantPage2) {
+		t.Fatalf("page 2 names = %v, want %v", got, wantPage2)
+	}
+	if int(page2.PageInfo.CurrentCount) != len(wantPage2) {
+		t.Fatalf("page 2 current_count = %d, want %d", page2.PageInfo.CurrentCount, len(wantPage2))
+	}
+	wantPage2Prev := wantPage2[0]
+	wantPage2Next := wantPage2[len(wantPage2)-1]
+	if page2.PageInfo.PreviousMarker != wantPage2Prev || page2.PageInfo.NextMarker != wantPage2Next {
+		t.Fatalf("page 2 markers = (next=%q, prev=%q), want (next=%q, prev=%q)",
+			page2.PageInfo.NextMarker, page2.PageInfo.PreviousMarker, wantPage2Next, wantPage2Prev)
+	}
+
+	// Page 3: ?limit=2&marker=kp-delta -> ["kp-echo"], previous_marker="kp-echo", next_marker="".
+	wantPage3 := remaining[pageSize:]
+	status, raw = e.call(t, http.MethodGet, fmt.Sprintf("/v3/{project}/keypairs?limit=%d&marker=%s", pageSize, page2.PageInfo.NextMarker), "")
+	if status != http.StatusOK {
+		t.Fatalf("page 3: status = %d, body = %s", status, raw)
+	}
+	page3 := decodeInto[listKeypairsResponse](t, raw)
+	if got := extractNames(page3.Keypairs); !slices.Equal(got, wantPage3) {
+		t.Fatalf("page 3 names = %v, want %v", got, wantPage3)
+	}
+	if int(page3.PageInfo.CurrentCount) != len(wantPage3) {
+		t.Fatalf("page 3 current_count = %d, want %d", page3.PageInfo.CurrentCount, len(wantPage3))
+	}
+	wantPage3Prev := wantPage3[0]
+	if page3.PageInfo.PreviousMarker != wantPage3Prev || page3.PageInfo.NextMarker != "" {
+		t.Fatalf("page 3 markers = (next=%q, prev=%q), want (next=\"\", prev=%q)",
+			page3.PageInfo.NextMarker, page3.PageInfo.PreviousMarker, wantPage3Prev)
+	}
+
+	// NovaList also returns key pairs in Name order and respects deleted markers.
+	ctx := context.Background()
+	novaAll, err := e.svc.NovaList(ctx, testRegion, testProject, "", 0)
+	if err != nil {
+		t.Fatalf("NovaList unpaginated: %v", err)
+	}
+	wantNovaAll := make([]string, 0, len(wantSorted)-1)
+	wantNovaAll = append(wantNovaAll, wantSorted[0])
+	wantNovaAll = append(wantNovaAll, remaining...)
+	gotNovaAll := make([]string, len(novaAll))
+	for i, kp := range novaAll {
+		gotNovaAll[i] = kp.Name
+	}
+	if !slices.Equal(gotNovaAll, wantNovaAll) {
+		t.Fatalf("NovaList unpaginated names = %v, want %v", gotNovaAll, wantNovaAll)
+	}
+
+	novaAfterDeleted, err := e.svc.NovaList(ctx, testRegion, testProject, deletedMarker, pageSize)
+	if err != nil {
+		t.Fatalf("NovaList after deleted marker: %v", err)
+	}
+	gotNovaPage := make([]string, len(novaAfterDeleted))
+	for i, kp := range novaAfterDeleted {
+		gotNovaPage[i] = kp.Name
+	}
+	if !slices.Equal(gotNovaPage, wantPage2) {
+		t.Fatalf("NovaList(marker=%q, limit=%d) names = %v, want %v", deletedMarker, pageSize, gotNovaPage, wantPage2)
 	}
 }
 
