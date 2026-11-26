@@ -111,7 +111,7 @@ func probeRoutes(t *testing.T, body string, visit func(probe)) {
 	cfg := config.Config{Region: "ap-southeast-1", SeedDir: t.TempDir(), IAM: config.IAMEnforce}
 	st := store.NewMemory()
 	t.Cleanup(func() { _ = st.Close() })
-	services, err := buildServices(t.Context(), cfg, "0123456789abcdef0123456789abcdef", t.TempDir(), st, nil,
+	services, _, err := buildServices(t.Context(), cfg, "0123456789abcdef0123456789abcdef", t.TempDir(), st, nil,
 		lifecycle.New(lifecycle.Options{Logger: log}), ids.New(), log, identity.NewDirectory(acct, adm), vlt)
 	if err != nil {
 		t.Fatal(err)

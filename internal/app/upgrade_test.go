@@ -268,6 +268,69 @@ func checkV03Resources(t *testing.T, inst *instance, p string, ids fixtureIDs) {
 	if status != http.StatusOK || !strings.Contains(out, `"plain_text":"`+ids.PlainText+`"`) {
 		t.Fatalf("decrypting with the release's KMS key: %d %s", status, out)
 	}
+
+	invStatus, invBody := inst.get(t, "/_weistack/inventory")
+	if invStatus != http.StatusOK {
+		t.Fatalf("GET /_weistack/inventory: %d %s", invStatus, invBody)
+	}
+	type invRelation struct {
+		FromResourceID string `json:"from_resource_id"`
+		ToResourceID   string `json:"to_resource_id"`
+	}
+	var inv struct {
+		Resources []struct {
+			ID        string        `json:"id"`
+			Relations []invRelation `json:"relations"`
+		} `json:"resources"`
+	}
+	if err := json.Unmarshal([]byte(invBody), &inv); err != nil {
+		t.Fatalf("decoding inventory: %v\n%s", err, invBody)
+	}
+	seen := make(map[string]bool, len(inv.Resources))
+	relationsByID := make(map[string][]invRelation, len(inv.Resources))
+	for _, r := range inv.Resources {
+		seen[r.ID] = true
+		relationsByID[r.ID] = append(relationsByID[r.ID], r.Relations...)
+	}
+	for _, want := range []struct {
+		label, id string
+	}{
+		{"PublicIP", ids.PublicIP},
+		{"NATGateway", ids.NATGateway},
+		{"SNATRule", ids.SNATRule},
+		{"LoadBalancer", ids.LoadBalancer},
+		{"Listener", ids.Listener},
+		{"Pool", ids.Pool},
+		{"Member", ids.Member},
+		{"Volume", ids.Volume},
+		{"Snapshot", ids.Snapshot},
+		{"KMSKey", ids.KMSKey},
+		{"User", ids.User},
+	} {
+		if !seen[want.id] {
+			t.Errorf("inventory lacks %s %q", want.label, want.id)
+		}
+	}
+	hasRelation := func(fromID, toID string) bool {
+		for _, rel := range relationsByID[fromID] {
+			if rel.FromResourceID == fromID && rel.ToResourceID == toID {
+				return true
+			}
+		}
+		return false
+	}
+	for _, want := range []struct {
+		label, from, to string
+	}{
+		{"PublicIP -> NATGateway", ids.PublicIP, ids.NATGateway},
+		{"Listener -> Pool", ids.Listener, ids.Pool},
+		{"Member -> Pool", ids.Member, ids.Pool},
+	} {
+		if !hasRelation(want.from, want.to) {
+			t.Errorf("inventory lacks relation %s (%s -> %s); got %+v",
+				want.label, want.from, want.to, relationsByID[want.from])
+		}
+	}
 }
 
 // TestNewerDataIsRefused: data from a future release is left alone, with

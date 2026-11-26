@@ -29,6 +29,7 @@ import (
 	"github.com/victor-akande/weistack/internal/core/hostpattern"
 	"github.com/victor-akande/weistack/internal/core/identity"
 	"github.com/victor-akande/weistack/internal/core/ids"
+	"github.com/victor-akande/weistack/internal/core/inventory"
 	"github.com/victor-akande/weistack/internal/core/lifecycle"
 	"github.com/victor-akande/weistack/internal/core/store"
 	"github.com/victor-akande/weistack/internal/core/vault"
@@ -221,7 +222,7 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 	if sized, ok := st.(interface{ Size() int64 }); ok {
 		data.Track(sized.Size)
 	}
-	services, err := buildServices(ctx, cfg, projectID, objectDir, budget.Store(st, data), data, engine, gen, log, directory, vlt)
+	services, hosted, err := buildServices(ctx, cfg, projectID, objectDir, budget.Store(st, data), data, engine, gen, log, directory, vlt)
 	if err != nil {
 		return err
 	}
@@ -246,21 +247,22 @@ func serve(ctx context.Context, cfg config.Config, env Env) (err error) {
 		backups = &dataBackups{cfg: cfg, db: db, log: log, now: time.Now}
 	}
 	srv, err := server.New(server.Options{
-		Config:      cfg,
-		ProjectID:   projectID,
-		Logger:      log,
-		Store:       st,
-		Engine:      engine,
-		IDs:         gen,
-		Services:    services,
-		Directory:   directory,
-		Tokens:      tokenChecker(services),
-		Permissions: permissions(services),
-		Accounts:    accounts(services),
-		Temporary:   temporary(services),
-		Faults:      injected,
-		Backups:     backups,
-		Sealer:      vlt,
+		Config:          cfg,
+		ProjectID:       projectID,
+		Logger:          log,
+		Store:           st,
+		Engine:          engine,
+		IDs:             gen,
+		Services:        services,
+		HostedReporters: hosted,
+		Directory:       directory,
+		Tokens:          tokenChecker(services),
+		Permissions:     permissions(services),
+		Accounts:        accounts(services),
+		Temporary:       temporary(services),
+		Faults:          injected,
+		Backups:         backups,
+		Sealer:          vlt,
 		Proxy: server.ProxyOptions{
 			CA: ca, Domains: cfg.ProxyDomains, Bypass: bypass, Passthrough: cfg.ProxyPassthrough,
 		},
@@ -425,7 +427,7 @@ func buildServices(
 	ctx context.Context, cfg config.Config, projectID, objectDir string,
 	st store.Store, data *budget.Budget, engine *lifecycle.Engine, gen *ids.Generator, log *slog.Logger, directory *identity.Directory,
 	vlt *vault.Vault,
-) ([]server.Service, error) {
+) ([]server.Service, map[string][]inventory.Reporter, error) {
 	// KMS keys encrypt for OBS, ECS disks and RDS: it comes first.
 	kmsSvc, err := kms.New(kms.Deps{
 		Quotas: cfg.Quotas,
@@ -433,20 +435,20 @@ func buildServices(
 		DefaultRegion: cfg.Region, DefaultProjectID: projectID,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	vpcSvc, err := vpc.New(vpc.Deps{Quotas: cfg.Quotas, Store: st, Engine: engine, IDs: gen, Logger: log})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// With persistence on, finish transitions interrupted by the last stop.
 	if err := vpcSvc.Resume(ctx); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	eipSvc, err := eip.New(eip.Deps{Quotas: cfg.Quotas, Store: st, Engine: engine, IDs: gen, Logger: log, Ports: vpcSvc, MaxPerProject: cfg.EIPMaxPerProject})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	vpcSvc.Extend(eipSvc)
 
@@ -456,10 +458,10 @@ func buildServices(
 		DefaultProjectID: projectID, SeedDir: cfg.SeedDir,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := imsSvc.Resume(ctx); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	evsSvc, err := evs.New(evs.Deps{
@@ -467,10 +469,10 @@ func buildServices(
 		Store:  st, Engine: engine, IDs: gen, Logger: log, Images: imsSvc, Keys: kmsSvc,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := evsSvc.Resume(ctx); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	ecsSvc, err := ecs.New(ecs.Deps{
@@ -480,10 +482,10 @@ func buildServices(
 		Quota: ecs.Quota{Servers: cfg.ECSMaxServers, VCPUs: cfg.ECSMaxVCPUs},
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := ecsSvc.Resume(ctx); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	evsSvc.SetServers(ecsSvc)
 	// IMS makes images of ECS servers; ECS reads IMS images. The cycle
@@ -497,32 +499,35 @@ func buildServices(
 		Keys: kmsSvc, Servers: ecsSvc, Directory: directory,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := kpsSvc.Resume(ctx); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	ecsSvc.SetKeypairs(kpsSvc)
 	kmsSvc.Extend(kpsSvc.KMSExtension())
 
 	natSvc, err := nat.New(nat.Deps{Quotas: cfg.Quotas, Store: st, Engine: engine, IDs: gen, Logger: log, VPC: vpcSvc, EIPs: eipSvc})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := natSvc.Resume(ctx); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	vpcSvc.Extend(natSvc.VPCExtension())
 
 	elbSvc, err := elb.New(elb.Deps{Quotas: cfg.Quotas, Store: st, IDs: gen, Logger: log, Vault: vlt, VPC: vpcSvc, EIPs: eipSvc, Servers: ecsSvc})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	vpcSvc.Extend(elbSvc.VPCExtension())
 
-	obsSvc, err := obs.New(obs.Deps{Quotas: cfg.Quotas, Store: st, IDs: gen, Logger: log, DataDir: objectDir, Keys: kmsSvc, Budget: data})
+	obsSvc, err := obs.New(obs.Deps{
+		Quotas: cfg.Quotas, Store: st, IDs: gen, Logger: log, DataDir: objectDir, Keys: kmsSvc, Budget: data,
+		AccountOf: func(ak string) (string, bool) { p, ok := directory.Lookup(ak); return p.AccountID, ok },
+	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	rdsSvc, err := rds.New(rds.Deps{
@@ -530,10 +535,10 @@ func buildServices(
 		Store:  st, Engine: engine, IDs: gen, Logger: log, Network: vpcSvc, Keys: kmsSvc, MaxInstances: cfg.RDSMaxInstances,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := rdsSvc.Resume(ctx); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	iamSvc, err := iam.New(iam.Deps{
 		Quotas: cfg.Quotas,
@@ -541,20 +546,24 @@ func buildServices(
 		Store: st, Logger: log, Directory: directory, DefaultRegion: cfg.Region, DefaultProjectID: projectID,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := iamSvc.Resume(ctx); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	stsSvc, err := sts.New(log, directory, vlt, iamSvc)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	epsSvc, err := eps.New(log, time.Now())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return []server.Service{vpcSvc, natSvc, elbSvc, imsSvc, ecsSvc, evsSvc, obsSvc, rdsSvc, iamSvc, stsSvc, epsSvc, kmsSvc}, nil
+	hosted := map[string][]inventory.Reporter{
+		"vpc": {eipSvc},
+		"kms": {kpsSvc},
+	}
+	return []server.Service{vpcSvc, natSvc, elbSvc, imsSvc, ecsSvc, evsSvc, obsSvc, rdsSvc, iamSvc, stsSvc, epsSvc, kmsSvc}, hosted, nil
 }
 
 // objectDataDir returns the directory for OBS object bodies and a
