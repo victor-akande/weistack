@@ -2,6 +2,7 @@ package kps
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
@@ -9,6 +10,8 @@ import (
 	"encoding/pem"
 	"errors"
 	"net/http"
+	"slices"
+	"sort"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -224,19 +227,18 @@ func (s *Service) listKeypairs(ctx context.Context, t Tenant, marker string, lim
 		return nil, "", "", err
 	}
 
+	slices.SortFunc(all, func(a, b Keypair) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
+
 	start := 0
 	if marker != "" {
-		found := -1
-		for i, kp := range all {
-			if kp.Name == marker {
-				found = i + 1
-				break
-			}
-		}
-		if found < 0 || found >= len(all) {
+		start = sort.Search(len(all), func(i int) bool {
+			return all[i].Name > marker
+		})
+		if start >= len(all) {
 			return []Keypair{}, "", "", nil
 		}
-		start = found
 	}
 
 	end := len(all)
