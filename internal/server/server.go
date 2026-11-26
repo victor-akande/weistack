@@ -98,6 +98,13 @@ type Options struct {
 	Backups Backups
 	// Now defaults to time.Now; enforcement checks signing times with it.
 	Now func() time.Time
+	// HostedReporters report the resources of services that are served
+	// on another service's host rather than mounted themselves (EIP on
+	// VPC's, KPS and CSMS on KMS's), keyed by that host's name. They are
+	// read only while the host is enabled. A mounted service that reports
+	// its resources must not be listed here too: the inventory refuses a
+	// resource reported twice.
+	HostedReporters map[string][]inventory.Reporter
 }
 
 // Backups archive the persisted data.
@@ -202,13 +209,15 @@ func New(opts Options) (*Server, error) {
 	s.temporary = opts.Temporary
 	s.backups = opts.Backups
 	s.faults = opts.Faults
-	s.inventory = s.newInventory()
 	s.now = opts.Now
 	if s.now == nil {
 		s.now = time.Now
 	}
 	var err error
 	if s.hosts, err = s.newHostGuard(); err != nil {
+		return nil, fmt.Errorf("server: %w", err)
+	}
+	if s.inventory, err = s.newInventory(opts.HostedReporters, known); err != nil {
 		return nil, fmt.Errorf("server: %w", err)
 	}
 	if (s.cfg.IAM == config.IAMEnforce || s.cfg.LAN) && s.dir == nil {

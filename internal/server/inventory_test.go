@@ -193,3 +193,96 @@ func servicesOf(s *Server) []Service {
 	}
 	return out
 }
+
+// eipReporter stands for a service hosted on VPC's host: it reports an
+// EIP attached to the harness's server.
+var eipReporter = reportingService{&fakeService{name: "eip"}, []inventory.Resource{
+	{Type: inventory.EIPPublicIPs, ID: "eip-1", RegionID: "ap-southeast-1", ProjectID: testProject,
+		Relations: []inventory.Ref{{Relation: inventory.IsAttachedTo, Type: inventory.ECSServers, ID: "srv-1"}}},
+}}
+
+// withHosted rebuilds h's server with hosted reporters.
+func withHosted(t *testing.T, h *harness, hosted map[string][]inventory.Reporter, mutate func(*config.Config)) error {
+	t.Helper()
+	cfg := h.srv.cfg
+	if mutate != nil {
+		mutate(&cfg)
+	}
+	srv, err := New(Options{
+		Config: cfg, ProjectID: testProject, Logger: h.srv.log, Store: h.store, Engine: h.engine,
+		IDs: h.srv.ids, Services: servicesOf(h.srv), HostedReporters: hosted,
+	})
+	if err == nil {
+		h.srv = srv
+	}
+	return err
+}
+
+func TestInventoryHostedReporters(t *testing.T) {
+	t.Parallel()
+	h := inventoryHarness(t, nil)
+	if err := withHosted(t, h, map[string][]inventory.Reporter{"vpc": {eipReporter}}, nil); err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	res := h.do(t, http.MethodGet, "/_weistack/inventory?type=ecs.cloudservers", nil, nil)
+	body := readBody(t, res)
+	// The server, mounted, relates to the EIP, hosted.
+	if !strings.Contains(body, `"to_resource_type":"vpc.publicips","from_resource_id":"srv-1","to_resource_id":"eip-1"`) {
+		t.Fatalf("the server lacks its hosted EIP: %s", body)
+	}
+	res = h.do(t, http.MethodGet, "/_weistack/inventory", nil, nil)
+	if body := readBody(t, res); !strings.Contains(body, `"count":4`) {
+		t.Fatalf("inventory = %s, want the 3 mounted resources and the hosted EIP", body)
+	}
+}
+
+func TestInventoryHostedOnADisabledService(t *testing.T) {
+	t.Parallel()
+	h := inventoryHarness(t, nil)
+	err := withHosted(t, h, map[string][]inventory.Reporter{"vpc": {eipReporter}},
+		func(c *config.Config) { c.Services = []string{"ecs"} })
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	res := h.do(t, http.MethodGet, "/_weistack/inventory", nil, nil)
+	if body := readBody(t, res); strings.Contains(body, "eip-1") || !strings.Contains(body, `"count":1`) {
+		t.Fatalf("with VPC disabled, inventory = %s; want only the server", body)
+	}
+}
+
+func TestInventoryHostedOnAServiceWithoutReports(t *testing.T) {
+	t.Parallel()
+	// The host itself need not report anything (ims reports nothing here).
+	h := inventoryHarness(t, nil)
+	if err := withHosted(t, h, map[string][]inventory.Reporter{"ims": {eipReporter}}, nil); err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	res := h.do(t, http.MethodGet, "/_weistack/inventory?type=vpc.publicips", nil, nil)
+	if body := readBody(t, res); !strings.Contains(body, `"id":"eip-1"`) {
+		t.Fatalf("inventory = %s, want the EIP", body)
+	}
+}
+
+func TestInventoryHostedErrors(t *testing.T) {
+	t.Parallel()
+	h := inventoryHarness(t, nil)
+	if err := withHosted(t, h, map[string][]inventory.Reporter{"nosuch": {eipReporter}}, nil); err == nil || !strings.Contains(err.Error(), "nosuch") {
+		t.Fatalf("a reporter hosted on an unknown service: err = %v", err)
+	}
+
+	// A mounted service listed as hosted too reports everything twice,
+	// which the inventory refuses.
+	h = inventoryHarness(t, nil)
+	vpc := servicesOf(h.srv)[2] // ecs, ims, vpc
+	rep, ok := vpc.(inventory.Reporter)
+	if !ok || vpc.Name() != "vpc" {
+		t.Fatalf("services = %v", servicesOf(h.srv))
+	}
+	if err := withHosted(t, h, map[string][]inventory.Reporter{"vpc": {rep}}, nil); err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	res := h.do(t, http.MethodGet, "/_weistack/inventory", nil, nil)
+	if res.StatusCode != http.StatusInternalServerError || !strings.Contains(h.logs.String(), "reported twice") {
+		t.Fatalf("a service reported twice: %d; logs %s", res.StatusCode, h.logs.String())
+	}
+}
