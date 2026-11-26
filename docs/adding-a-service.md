@@ -41,7 +41,9 @@ Optional interfaces:
   relationships for `/_weistack/inventory`. Use the type names in
   `core/inventory` and `inventory.Each` to read every region and project;
   `internal/services/vpc/inventory.go` is an example. A service that holds
-  resources for accounts implements it.
+  resources for accounts implements it. A service served on another's
+  host (EIP on VPC's, KPS on KMS's) isn't mounted, so `buildServices`
+  passes it to the server in `HostedReporters`, under its host's name.
 
 Then construct the service in `buildServices` in `internal/app/app.go`.
 

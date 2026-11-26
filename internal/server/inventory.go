@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -9,19 +10,27 @@ import (
 	"github.com/victor-akande/weistack/internal/core/inventory"
 )
 
-// newInventory joins the enabled services that report resources.
-func (s *Server) newInventory() *inventory.Inventory {
+// newInventory joins the enabled services that report resources, and
+// the reporters hosted on them. A hosted reporter must name a service
+// WeiStack has; it is left out while that service is disabled.
+func (s *Server) newInventory(hosted map[string][]inventory.Reporter, known map[string]bool) (*inventory.Inventory, error) {
 	var reporters []inventory.Reporter
+	for host := range hosted {
+		if !known[host] {
+			return nil, fmt.Errorf("inventory reporters hosted on unknown service %q", host)
+		}
+	}
 	for _, name := range s.names {
 		if rep, ok := s.services[name].svc.(inventory.Reporter); ok {
 			reporters = append(reporters, rep)
 		}
+		reporters = append(reporters, hosted[name]...)
 	}
 	o := inventory.Options{Reporters: reporters}
 	if s.accounts != nil {
 		o.Owner = s.accounts.ProjectOwner
 	}
-	return inventory.New(o)
+	return inventory.New(o), nil
 }
 
 // inventoryResponse is GET /_weistack/inventory. A resource and its
