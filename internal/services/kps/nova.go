@@ -30,7 +30,7 @@ func (s *Service) NovaCreate(ctx context.Context, region, projectID string, req 
 		act.KeyProtection = prot
 	}
 
-	kp, privPEM, err := s.createKeypair(ctx, Tenant{Region: region, ProjectID: projectID}, act)
+	kp, privPEM, err := s.createKeypair(ctx, nil, Tenant{Region: region, ProjectID: projectID}, act)
 	if err != nil {
 		return ecs.NovaKeypairOutput{}, err
 	}
