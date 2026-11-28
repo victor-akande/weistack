@@ -26,6 +26,14 @@ From v0.3.0 it also creates:
   server)
 - an EVS data disk attached to the server, and a snapshot of it
 
+From v0.4.0 it also creates:
+
+- two KPS key pairs whose private keys WeiStack keeps: one sealed by the
+  vault key, one by the KMS key. The test exports each private key and
+  checks it still matches the fingerprint in `ids.json`, which never holds
+  the private keys
+- a CSMS secret, which the test reads back
+
 `ids.json` records their IDs for the test. The CA goes to a scratch
 directory and is not committed: v0.1.0 kept it in the data directory, and
 its private key does not belong in the repository. The RDS password is
@@ -52,6 +60,6 @@ repository, and run the test on the result:
 ```bash
 make build
 WEISTACK_FIXTURE_BINARY=bin/weistack WEISTACK_FIXTURE_OUT=/tmp/weistack-fixture \
-  internal/app/testdata/upgrade/generate.sh 0.3.0
+  internal/app/testdata/upgrade/generate.sh 0.4.0
 WEISTACK_UPGRADE_REHEARSAL=/tmp/weistack-fixture/data go test -run TestUpgradeFromReleasedData ./internal/app/
 ```

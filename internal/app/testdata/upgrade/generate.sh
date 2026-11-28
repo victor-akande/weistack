@@ -183,6 +183,29 @@ if at_least 0.3.0; then
  \"volume\": \"$volume\", \"snapshot\": \"$snapshot\""
 fi
 
+if at_least 0.4.0; then
+	# Added in v0.4: KPS key pairs whose private keys are kept sealed, one
+	# by the vault key and one by the KMS key above, and a CSMS secret,
+	# whose value a data key from KMS encrypts. ids.json records the key
+	# pairs' fingerprints, never their private keys.
+	keypair_body() { # keypair_body NAME ENCRYPTION
+		echo "{\"keypair\": {\"name\": \"$1\", \"key_protection\": {\"encryption\": $2}}}"
+	}
+	keypair_fingerprint=$(call POST "/kms/v3/$project/keypairs" \
+		"$(keypair_body fixture-keypair '{"type": "default"}')" | field "['keypair']['fingerprint']")
+	kms_keypair_fingerprint=$(call POST "/kms/v3/$project/keypairs" \
+		"$(keypair_body fixture-keypair-kms "{\"type\": \"kms\", \"kms_key_id\": \"$kms_key\"}")" | field "['keypair']['fingerprint']")
+
+	secret_value="kept by WeiStack v${version}"
+	secret=$(call POST "/kms/v1/$project/secrets" "{\"name\": \"fixture-secret\", \"secret_string\": \"$secret_value\"}" |
+		field "['secret']['id']")
+
+	extra="$extra,
+ \"keypair\": \"fixture-keypair\", \"keypair_fingerprint\": \"$keypair_fingerprint\",
+ \"kms_keypair\": \"fixture-keypair-kms\", \"kms_keypair_fingerprint\": \"$kms_keypair_fingerprint\",
+ \"secret\": \"$secret\", \"secret_name\": \"fixture-secret\", \"secret_value\": \"$secret_value\""
+fi
+
 kill -INT "$pid"
 wait "$pid" || true
 pid=""

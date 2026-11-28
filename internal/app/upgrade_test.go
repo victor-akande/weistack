@@ -14,6 +14,7 @@ import (
 	"time"
 
 	bolt "go.etcd.io/bbolt"
+	"golang.org/x/crypto/ssh"
 
 	"github.com/victor-akande/weistack/internal/core/sigcheck"
 	"github.com/victor-akande/weistack/internal/core/store"
@@ -48,6 +49,16 @@ type fixtureIDs struct {
 	Member       string `json:"member"`
 	Volume       string `json:"volume"`
 	Snapshot     string `json:"snapshot"`
+
+	// From v0.4.0: KPS key pairs, sealed by the vault key and by the KMS
+	// key, and a CSMS secret.
+	Keypair               string `json:"keypair"`
+	KeypairFingerprint    string `json:"keypair_fingerprint"`
+	KMSKeypair            string `json:"kms_keypair"`
+	KMSKeypairFingerprint string `json:"kms_keypair_fingerprint"`
+	Secret                string `json:"secret"`
+	SecretName            string `json:"secret_name"`
+	SecretValue           string `json:"secret_value"`
 }
 
 // upgradeRehearsal names a data directory generate.sh wrote with a local
@@ -182,6 +193,9 @@ func TestUpgradeFromReleasedData(t *testing.T) {
 
 			if ids.User != "" {
 				checkV03Resources(t, inst, p, ids)
+			}
+			if ids.Keypair != "" {
+				checkV04Resources(t, inst, p, ids)
 			}
 
 			// Writing still works, and a new ID does not collide.
@@ -329,6 +343,51 @@ func checkV03Resources(t *testing.T, inst *instance, p string, ids fixtureIDs) {
 		if !hasRelation(want.from, want.to) {
 			t.Errorf("inventory lacks relation %s (%s -> %s); got %+v",
 				want.label, want.from, want.to, relationsByID[want.from])
+		}
+	}
+}
+
+// checkV04Resources opens what v0.4.0 sealed: each key pair's private key
+// still matches its fingerprint, and the secret's value reads back.
+func checkV04Resources(t *testing.T, inst *instance, p string, ids fixtureIDs) {
+	t.Helper()
+	for name, fingerprint := range map[string]string{ids.Keypair: ids.KeypairFingerprint, ids.KMSKeypair: ids.KMSKeypairFingerprint} {
+		body, err := json.Marshal(map[string]any{"keypair": map[string]string{"name": name}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		status, out := inst.send(t, http.MethodPost, "/kms/v3/"+p+"/keypairs/private-key/export", body)
+		var exported struct {
+			Keypair struct {
+				PrivateKey string `json:"private_key"`
+			} `json:"keypair"`
+		}
+		if status != http.StatusOK || json.Unmarshal([]byte(out), &exported) != nil {
+			t.Fatalf("exporting the private key of %s: %d", name, status)
+		}
+		signer, err := ssh.ParsePrivateKey([]byte(exported.Keypair.PrivateKey))
+		if err != nil {
+			t.Fatalf("the private key of %s: %v", name, err)
+		}
+		if got := ssh.FingerprintLegacyMD5(signer.PublicKey()); got != fingerprint {
+			t.Errorf("the private key of %s has fingerprint %s, want %s", name, got, fingerprint)
+		}
+	}
+
+	status, out := inst.get(t, "/kms/v1/"+p+"/secrets/"+ids.SecretName+"/versions/latest")
+	var version struct {
+		Version struct {
+			SecretString string `json:"secret_string"`
+		} `json:"version"`
+	}
+	if status != http.StatusOK || json.Unmarshal([]byte(out), &version) != nil || version.Version.SecretString != ids.SecretValue {
+		t.Fatalf("the secret's latest version: %d, want %q", status, ids.SecretValue)
+	}
+
+	for typ, id := range map[string]string{"kps.keypairs": ids.Keypair, "csms.secrets": ids.Secret} {
+		status, body := inst.get(t, "/_weistack/inventory?type="+typ+"&id="+id)
+		if status != http.StatusOK || !strings.Contains(body, `"count":1`) {
+			t.Errorf("inventory of %s %s: %d %s", typ, id, status, body)
 		}
 	}
 }
