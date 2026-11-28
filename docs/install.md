@@ -9,7 +9,7 @@ archives for Linux, macOS and Windows (a `.zip`), on amd64 and arm64,
 with a `checksums.txt` to verify them against:
 
 ```bash
-VERSION=0.3.0   # the release you want
+VERSION=0.4.0   # the release you want
 curl -LO https://github.com/victor-akande/weistack/releases/download/v$VERSION/weistack_${VERSION}_linux_amd64.tar.gz
 curl -LO https://github.com/victor-akande/weistack/releases/download/v$VERSION/checksums.txt
 sha256sum --ignore-missing -c checksums.txt

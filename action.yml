@@ -8,8 +8,8 @@ branding:
 inputs:
   version:
     description: >-
-      The release to run, such as v0.3.0. Defaults to the action's own tag
-      (uses: victor-akande/weistack@v0.3.0 runs v0.3.0), or the latest
+      The release to run, such as v0.4.0. Defaults to the action's own tag
+      (uses: victor-akande/weistack@v0.4.0 runs v0.4.0), or the latest
       release when the action is used from a branch.
     default: ""
   binary:
