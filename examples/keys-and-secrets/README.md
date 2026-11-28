@@ -88,11 +88,12 @@ sudo install -m 0755 weistack /usr/local/bin/weistack
 sudo systemctl start weistack
 ```
 
-The archive's name comes before the flags. A backup holds the vault key,
-so keep it where only the `weistack` user can read it, as here.
+A backup holds the vault key, so keep it where only the `weistack` user
+can read it, as here.
 
-The administrator's keys are in the service's TLS directory. Name it,
-or `weistack credentials` reads (and creates) keys in your own:
+The administrator's keys are in the service's TLS directory. Name it:
+without it, `weistack credentials` makes new keys in your own, which the
+service does not know, and warns that it did.
 
 ```bash
 sudo -u weistack weistack credentials -tls-dir /var/lib/weistack/tls
@@ -361,8 +362,7 @@ journalctl -u weistack -o cat | grep '"trace_id":"<the trace ID>"' | jq -c '{met
 ```
 
 `weistack admin` signs calls to the admin API as the administrator, and
-`-output json` makes its output and its failures machine-readable. The
-method and path come before the flags:
+`-output json` makes its output and its failures machine-readable:
 
 ```bash
 A="-tls-dir /var/lib/weistack/tls -output json"
