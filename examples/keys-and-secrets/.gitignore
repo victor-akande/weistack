@@ -1,0 +1,5 @@
+# Keys, passwords and Terraform state never go in the repository.
+secrets/
+.terraform/
+*.tfstate
+*.tfstate.backup
