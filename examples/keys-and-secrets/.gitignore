@@ -1,0 +1,7 @@
+# Keys, passwords and Terraform state never go in the repository.
+secrets/
+.terraform/
+*.tfstate
+*.tfstate.backup
+# Tools built from the example (go build -o bin/...)
+bin/

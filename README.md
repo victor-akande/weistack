@@ -236,6 +236,12 @@ and the admin API.
   KooCLI, the Python and Go SDKs, the AWS CLI and the GitHub Action. The
   stack is then operated, broken, recovered, tested in CI and torn down.
   CI runs the whole guide on every change.
+- **[SSH keys and secrets, operated and audited](examples/keys-and-secrets/README.md):**
+  a bastion whose key pair KPS keeps, and an API token CSMS keeps. The app
+  reads the token and the deployer rotates it. The operator checks
+  everything but cannot read the token, and the administrator audits the
+  account from the inventory, following one request through the log by
+  its trace ID. Every tool is used, and CI runs the whole guide.
 - **[The Terraform scenario](test/terraform):** the stack CI applies,
   re-plans and destroys on every change, with the provider settings
   WeiStack needs.
