@@ -146,6 +146,17 @@ func loadAdmin(cfg config.Config, log *slog.Logger) (identity.Credentials, strin
 	return creds, "memory (new on every start)", err
 }
 
+// adminFileExists reports whether cfg's TLS directory already holds the
+// administrator's keys.
+func adminFileExists(cfg config.Config) bool {
+	dir := tlsDir(cfg)
+	if dir == "" {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(dir, adminCredentialsFile))
+	return err == nil
+}
+
 func adminFromDir(dir string) (identity.Credentials, error) {
 	path := filepath.Join(dir, adminCredentialsFile)
 	creds, err := loadOrCreate(path, identity.NewCredentials, identity.Credentials.Valid)
@@ -240,7 +251,11 @@ type credentialsEnvOutput struct {
 }
 
 type credentialsOutput struct {
-	Source    string               `json:"source"`
+	Source string `json:"source"`
+	// Created is true when there were no keys to print, so these were
+	// made now: no running WeiStack uses them unless it started from
+	// the same -tls-dir after this.
+	Created   bool                 `json:"created"`
 	AccessKey string               `json:"access_key"`
 	SecretKey string               `json:"secret_key"`
 	Env       credentialsEnvOutput `json:"env"`
@@ -258,6 +273,7 @@ func printCredentials(env Env) error {
 	if err != nil {
 		return err
 	}
+	created := cfg.AdminAccessKey == "" && !adminFileExists(cfg)
 	creds, from, err := loadAdmin(cfg, slog.New(slog.NewTextHandler(env.Stderr, nil)))
 	if err != nil {
 		return err
@@ -265,6 +281,7 @@ func printCredentials(env Env) error {
 	if cfg.Output == config.OutputJSON {
 		return writeJSON(env.Stdout, credentialsOutput{
 			Source:    from,
+			Created:   created,
 			AccessKey: creds.AccessKey,
 			SecretKey: creds.SecretKey,
 			Env: credentialsEnvOutput{
@@ -276,6 +293,11 @@ func printCredentials(env Env) error {
 		})
 	}
 	fmt.Fprintf(env.Stderr, "WeiStack administrator, from %s\n", from)
+	if created {
+		fmt.Fprintln(env.Stderr, "warning: there were no administrator keys, so these were made now; "+
+			"a WeiStack started before with another -tls-dir does not know them. "+
+			"To print a running WeiStack's keys, give -tls-dir the directory it was started with.")
+	}
 	_, err = fmt.Fprintf(env.Stdout,
 		"export HUAWEICLOUD_SDK_AK=%[1]s HUAWEICLOUD_SDK_SK=%[2]s\nexport HW_ACCESS_KEY=%[1]s HW_SECRET_KEY=%[2]s\n",
 		creds.AccessKey, creds.SecretKey)

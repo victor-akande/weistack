@@ -148,6 +148,7 @@ func TestJSONOutputCommands(t *testing.T) {
 	credsFile := readAdminFile(t, tls)
 	credsOut := decodeOneJSON[struct {
 		Source    string `json:"source"`
+		Created   bool   `json:"created"`
 		AccessKey string `json:"access_key"`
 		SecretKey string `json:"secret_key"`
 		Env       struct {
@@ -167,7 +168,7 @@ func TestJSONOutputCommands(t *testing.T) {
 		t.Fatalf("credentials JSON = %+v, want keys %+v", credsOut, credsFile)
 	}
 	assertFieldOrder(t, res.stdout,
-		"source", "access_key", "secret_key", "env",
+		"source", "created", "access_key", "secret_key", "env",
 		"HUAWEICLOUD_SDK_AK", "HUAWEICLOUD_SDK_SK", "HW_ACCESS_KEY", "HW_SECRET_KEY",
 	)
 

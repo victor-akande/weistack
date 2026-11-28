@@ -101,7 +101,7 @@ func TestBackupCommand(t *testing.T) {
 
 	// While WeiStack runs, through its admin API.
 	online := filepath.Join(t.TempDir(), "online.tar.gz")
-	if msg, err := runCommand(t, cmdVars, "backup", online, "-port", port); err != nil || !strings.Contains(msg, "in use") {
+	if msg, err := runCommand(t, cmdVars, "backup", "-port", port, online); err != nil || !strings.Contains(msg, "in use") {
 		t.Fatalf("backup while running: %v (%s)", err, msg)
 	}
 	if err := inst.stop(t); err != nil {
@@ -115,7 +115,8 @@ func TestBackupCommand(t *testing.T) {
 
 	for _, archive := range []string{online, offline} {
 		dst := filepath.Join(t.TempDir(), "data")
-		if _, err := runCommand(t, map[string]string{"WEISTACK_DATA_DIR": dst}, "restore", archive); err != nil {
+		// The flags may come before the archive's name, or after it.
+		if _, err := runCommand(t, nil, "restore", "-data-dir", dst, archive); err != nil {
 			t.Fatalf("restore %s: %v", archive, err)
 		}
 		for _, f := range []string{databaseFile, accountFile, vaultKeyFile} { // the project ID is configured, so not saved
@@ -131,6 +132,12 @@ func TestBackupCommand(t *testing.T) {
 	}
 	if _, err := runCommand(t, map[string]string{"WEISTACK_DATA_DIR": t.TempDir() + "/none"}, "backup", filepath.Join(t.TempDir(), "x.tar.gz")); err == nil {
 		t.Fatal("backed up a directory without data")
+	}
+	if _, err := runCommand(t, cmdVars, "backup", "a.tar.gz", "b.tar.gz"); err == nil || !strings.Contains(err.Error(), "usage") {
+		t.Fatalf("backup with two archives: %v, want the usage", err)
+	}
+	if _, err := runCommand(t, cmdVars, "restore", "-data-dir", t.TempDir()); err == nil || !strings.Contains(err.Error(), "usage") {
+		t.Fatalf("restore without an archive: %v, want the usage", err)
 	}
 }
 

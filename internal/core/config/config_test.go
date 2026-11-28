@@ -410,3 +410,32 @@ func TestLANClients(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadArgsAnyOrder(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		args []string
+		rest []string
+		port int
+	}{
+		{[]string{"GET", "services", "-port", "9000"}, []string{"GET", "services"}, 9000},
+		{[]string{"-port", "9000", "GET", "services"}, []string{"GET", "services"}, 9000},
+		{[]string{"POST", "-metrics", "accounts", "-port=9000", "{}"}, []string{"POST", "accounts", "{}"}, 9000},
+		{[]string{"-", "-port", "9000"}, []string{"-"}, 9000},
+		{[]string{"-port", "9000", "--", "-not-a-flag"}, []string{"-not-a-flag"}, 9000},
+		{[]string{"-metrics"}, nil, DefaultPort},
+	} {
+		cfg, rest, err := LoadArgs(c.args, env(nil), io.Discard)
+		if err != nil || !reflect.DeepEqual(rest, c.rest) || cfg.Port != c.port {
+			t.Errorf("LoadArgs(%q) = port %d, %q, %v; want port %d, %q", c.args, cfg.Port, rest, err, c.port, c.rest)
+		}
+	}
+	// A flag still needs its value, wherever it stands.
+	if _, _, err := LoadArgs([]string{"GET", "-port"}, env(nil), io.Discard); err == nil {
+		t.Error("LoadArgs accepted -port without a value")
+	}
+	// Load takes no arguments at all.
+	if _, err := Load([]string{"-port", "9000", "extra"}, env(nil), io.Discard); err == nil || !strings.Contains(err.Error(), `"extra"`) {
+		t.Errorf("Load with an argument: %v", err)
+	}
+}

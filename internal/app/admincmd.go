@@ -23,8 +23,8 @@ const adminUsage = "usage: weistack admin METHOD PATH [BODY] [flags]\n" +
 
 // adminCommand calls the admin API of a running WeiStack, signed with the
 // administrator's keys, as -iam=enforce requires: weistack admin METHOD
-// PATH [BODY], then the flags the server was started with. A PATH without
-// a leading slash is under /_weistack. The response body goes to stdout.
+// PATH [BODY] and the flags the server was started with, in any order.
+// A PATH without a leading slash is under /_weistack. The response body goes to stdout.
 func adminCommand(ctx context.Context, env Env) error {
 	args := env.Args[1:]
 	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help") {
@@ -33,23 +33,23 @@ func adminCommand(ctx context.Context, env Env) error {
 		}
 		return nil
 	}
-	if len(args) < 2 || strings.HasPrefix(args[0], "-") || strings.HasPrefix(args[1], "-") {
-		return usageError(errors.New(adminUsage))
-	}
-	method, path, args := strings.ToUpper(args[0]), args[1], args[2:]
-	var body string
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		body, args = args[0], args[1:]
-	}
-	if !strings.HasPrefix(path, "/") {
-		path = adminPrefixPath + "/" + path
-	}
-	cfg, help, err := loadConfig(args, env)
+	cfg, rest, help, err := loadConfigArgs(args, env)
 	if help {
 		return nil
 	}
 	if err != nil {
 		return err
+	}
+	if len(rest) < 2 || len(rest) > 3 {
+		return usageError(errors.New(adminUsage))
+	}
+	method, path := strings.ToUpper(rest[0]), rest[1]
+	var body string
+	if len(rest) == 3 {
+		body = rest[2]
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = adminPrefixPath + "/" + path
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()

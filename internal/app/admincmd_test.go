@@ -42,10 +42,17 @@ func TestAdminCommandSignsUnderEnforce(t *testing.T) {
 	if out, err = run("post", "/_weistack/accounts", `{"name":"partner"}`, "-port", port); err != nil || !strings.Contains(out, `"access_key"`) {
 		t.Fatalf("admin POST accounts = %q, %v", out, err)
 	}
+	// The flags may come first, or between the path and the body.
+	if out, err = run("-port", port, "GET", "services"); err != nil || !strings.Contains(out, services.ProjectID) {
+		t.Fatalf("admin -port PORT GET services = %q, %v", out, err)
+	}
+	if out, err = run("POST", "accounts", "-port", port, `{"name":"partner2"}`); err != nil || !strings.Contains(out, `"access_key"`) {
+		t.Fatalf("admin POST accounts -port PORT BODY = %q, %v", out, err)
+	}
 	if _, err = run("GET", "nothing", "-port", port); err == nil || !strings.Contains(err.Error(), "404") {
 		t.Fatalf("admin GET nothing: %v, want a 404 error", err)
 	}
-	for _, args := range [][]string{{}, {"GET"}, {"-port", port}} {
+	for _, args := range [][]string{{}, {"GET"}, {"-port", port}, {"-port", port, "GET"}, {"GET", "services", "{}", "extra"}} {
 		if _, err := run(args...); err == nil || !strings.Contains(err.Error(), "usage") {
 			t.Errorf("admin %q: %v, want the usage", args, err)
 		}
