@@ -171,6 +171,17 @@ var (
 // the environment exposed by getenv. Usage and flag errors are written to
 // stderr. It returns flag.ErrHelp when -h/--help was requested.
 func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, error) {
+	cfg, rest, err := LoadArgs(args, getenv, stderr)
+	if err == nil && len(rest) > 0 {
+		return Config{}, fmt.Errorf("unexpected argument %q", rest[0])
+	}
+	return cfg, err
+}
+
+// LoadArgs is Load for a command that also takes arguments, such as
+// "weistack backup FILE": it returns them in order, wherever they stand
+// among the flags. Everything after "--" is an argument.
+func LoadArgs(args []string, getenv func(string) string, stderr io.Writer) (Config, []string, error) {
 	env := envReader{getenv: getenv}
 
 	var (
@@ -225,19 +236,16 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 	fs.Int64Var(&cfg.MaxDataBytes, "max-data-bytes", env.int64("MAX_DATA_BYTES", DefaultMaxDataBytes), "most bytes of records and object data WeiStack keeps (0: no limit)")
 	fs.DurationVar(&cfg.ShutdownTimeout, "shutdown-timeout", env.duration("SHUTDOWN_TIMEOUT", DefaultShutdownTimeout), "time allowed for in-flight requests to finish on shutdown")
 
-	err := fs.Parse(args)
+	rest, err := parseInterspersed(fs, args)
 	if err != nil {
-		return Config{}, err
-	}
-	if fs.NArg() > 0 {
-		return Config{}, fmt.Errorf("unexpected argument %q", fs.Arg(0))
+		return Config{}, nil, err
 	}
 	if env.err != nil {
-		return Config{}, env.err
+		return Config{}, nil, env.err
 	}
 
 	if err = cfg.LogLevel.UnmarshalText([]byte(logLevel)); err != nil {
-		return Config{}, fmt.Errorf("invalid log level %q: want debug, info, warn or error", logLevel)
+		return Config{}, nil, fmt.Errorf("invalid log level %q: want debug, info, warn or error", logLevel)
 	}
 	cfg.LogFormat = strings.ToLower(cfg.LogFormat)
 	cfg.Output = strings.ToLower(strings.TrimSpace(cfg.Output))
@@ -245,21 +253,21 @@ func Load(args []string, getenv func(string) string, stderr io.Writer) (Config, 
 	cfg.ProxyDomains = splitList(proxyDomains)
 	cfg.ProxyBypass = splitList(proxyBypass)
 	if cfg.Quotas, err = loadQuotas(cfg, quotas); err != nil {
-		return Config{}, err
+		return Config{}, nil, err
 	}
 	cfg.AllowedHosts = splitList(allowedHosts)
 	cfg.InContainer = env.bool("IN_CONTAINER")
 	if cfg.LANClients, err = parseLANClients(lanClients); err != nil {
-		return Config{}, err
+		return Config{}, nil, err
 	}
 	if cfg.ServicePorts, err = parseServicePorts(servicePorts); err != nil {
-		return Config{}, err
+		return Config{}, nil, err
 	}
 
 	if err := cfg.Validate(); err != nil {
-		return Config{}, err
+		return Config{}, nil, err
 	}
-	return cfg, nil
+	return cfg, rest, nil
 }
 
 // Validate reports every problem with the configuration at once.
@@ -621,4 +629,24 @@ func (c Config) LANClientAllowed(addr netip.Addr) bool {
 		}
 	}
 	return false
+}
+
+// parseInterspersed parses fs from args, letting arguments stand between
+// flags: the flag package stops at the first argument, so each one is set
+// aside and parsing goes on after it.
+func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
+	var rest []string
+	for {
+		if err := fs.Parse(args); err != nil {
+			return nil, err
+		}
+		left := fs.Args()
+		if len(left) == 0 {
+			return rest, nil
+		}
+		if n := len(args) - len(left); n > 0 && args[n-1] == "--" {
+			return append(rest, left...), nil
+		}
+		rest, args = append(rest, left[0]), left[1:]
+	}
 }

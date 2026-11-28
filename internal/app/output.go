@@ -59,21 +59,31 @@ func detectOutputMode(args []string, getenv func(string) string) string {
 }
 
 func loadConfig(args []string, env Env) (config.Config, bool, error) {
+	cfg, rest, help, err := loadConfigArgs(args, env)
+	if err == nil && !help && len(rest) > 0 {
+		return config.Config{}, false, usageError(fmt.Errorf("unexpected argument %q", rest[0]))
+	}
+	return cfg, help, err
+}
+
+// loadConfigArgs is loadConfig for a command that takes arguments as well
+// as flags, in any order: it returns the arguments.
+func loadConfigArgs(args []string, env Env) (config.Config, []string, bool, error) {
 	var buf bytes.Buffer
-	cfg, err := config.Load(args, env.Getenv, &buf)
+	cfg, rest, err := config.LoadArgs(args, env.Getenv, &buf)
 	if errors.Is(err, flag.ErrHelp) {
 		if env.Stderr != nil {
 			_, _ = env.Stderr.Write(buf.Bytes())
 		}
-		return config.Config{}, true, nil
+		return config.Config{}, nil, true, nil
 	}
 	if err != nil {
 		if detectOutputMode(env.Args, env.Getenv) != config.OutputJSON && env.Stderr != nil {
 			_, _ = env.Stderr.Write(buf.Bytes())
 		}
-		return config.Config{}, false, usageError(err)
+		return config.Config{}, nil, false, usageError(err)
 	}
-	return cfg, false, nil
+	return cfg, rest, false, nil
 }
 
 type jsonErrorEnvelope struct {

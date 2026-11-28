@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/victor-akande/weistack/internal/backup"
@@ -31,26 +30,24 @@ type restoreOutput struct {
 	VaultKey bool   `json:"vault_key"`
 }
 
-// fileAndFlags splits "COMMAND [FILE] [flags]".
-func fileAndFlags(args []string) (string, []string) {
-	if len(args) > 0 && (args[0] == "-" || !strings.HasPrefix(args[0], "-")) {
-		return args[0], args[1:]
-	}
-	return "", args
-}
-
 // backupCommand archives the data directory: weistack backup [FILE]
 // [flags], FILE "-" for stdout. A data directory no WeiStack has open is
 // read directly; one in use is archived by the WeiStack running on it,
 // through its admin API.
 func backupCommand(ctx context.Context, env Env) error {
-	file, args := fileAndFlags(env.Args[1:])
-	cfg, help, err := loadConfig(args, env)
+	cfg, rest, help, err := loadConfigArgs(env.Args[1:], env)
 	if help {
 		return nil
 	}
 	if err != nil {
 		return err
+	}
+	if len(rest) > 1 {
+		return usageError(fmt.Errorf("usage: weistack backup [FILE] [flags]; unexpected argument %q", rest[1]))
+	}
+	var file string
+	if len(rest) == 1 {
+		file = rest[0]
 	}
 	if file == "-" && cfg.Output == config.OutputJSON {
 		return usageError(errors.New("backup: cannot write archive to stdout (-) with -output json"))
@@ -119,17 +116,17 @@ func backupFromServer(ctx context.Context, cfg config.Config, env Env, w io.Writ
 // restoreCommand unpacks an archive into the data directory, which must
 // be missing or empty: weistack restore FILE [flags].
 func restoreCommand(env Env) error {
-	file, args := fileAndFlags(env.Args[1:])
-	cfg, help, err := loadConfig(args, env)
+	cfg, rest, help, err := loadConfigArgs(env.Args[1:], env)
 	if help {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	if file == "" {
+	if len(rest) != 1 {
 		return usageError(errors.New("usage: weistack restore FILE [flags]; the data goes to -data-dir, which must be missing or empty"))
 	}
+	file := rest[0]
 	var r io.Reader = os.Stdin
 	if file != "-" {
 		f, err := os.Open(file) //nolint:gosec // the operator's archive

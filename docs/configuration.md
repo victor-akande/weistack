@@ -88,7 +88,10 @@ WEISTACK_PERSIST=1 WEISTACK_IAM=enforce weistack   # the same, from the environm
 | `weistack restore FILE` | Unpack an archive into an empty data directory |
 
 Commands that talk to a running emulator or its data take the same flags
-it was started with, such as `-data-dir` or `-port`.
+it was started with, such as `-data-dir` or `-port`. The flags may come
+before or after a command's arguments: `weistack backup -data-dir DIR FILE`
+and `weistack backup FILE -data-dir DIR` are the same. After `--`,
+everything is an argument.
 
 ## Output and exit codes
 
@@ -127,7 +130,7 @@ for a data directory problem, and `1` for anything else.
 | `version` | `{"version": "0.4.0", "commit": "...", "built": "..."}` |
 | `healthcheck` | The body `/_weistack/health` returned, unchanged |
 | `ca` | `{"path": "<dir>/ca.pem", "certificate_pem": "-----BEGIN..."}` |
-| `credentials` | `{"source": "<from>", "access_key": "...", "secret_key": "...", "env": {"HUAWEICLOUD_SDK_AK": "...", "HUAWEICLOUD_SDK_SK": "...", "HW_ACCESS_KEY": "...", "HW_SECRET_KEY": "..."}}` (`env` has those four keys) |
+| `credentials` | `{"source": "<from>", "created": false, "access_key": "...", "secret_key": "...", "env": {"HUAWEICLOUD_SDK_AK": "...", "HUAWEICLOUD_SDK_SK": "...", "HW_ACCESS_KEY": "...", "HW_SECRET_KEY": "..."}}` (`env` has those four keys) |
 | `admin` | The response body, unchanged, on 2xx. Every admin endpoint answers JSON except `metrics`, `ca` and `backup`, whose bytes pass through unchanged in both modes |
 | `backup` | `{"file": "<path>", "data_dir": "<dir>", "from": "server"}` when a running WeiStack made it, or `"from": "directory"` when read from the directory |
 | `restore` | `{"data_dir": "<dir>", "made_by": "<version>", "made_at": "<RFC 3339 UTC>", "vault_key": true}` (`vault_key` is `false` when the archive holds no vault key) |
@@ -225,7 +228,10 @@ what one account may do in another (see
 The administrator's keys are generated on first start and kept beside the
 CA (`admin-credentials.json` in `-tls-dir`, readable only by you), so they
 stay the same across restarts. The banner shows them, and
-`weistack credentials` prints them.
+`weistack credentials` prints them. Give it the `-tls-dir` the emulator
+was started with: if that directory holds no keys yet, it makes new ones,
+which an emulator already running with another directory does not know.
+It warns when it does, and its JSON output says `"created": true`.
 
 `/_weistack/services` reports the account's ID and name. Keys WeiStack
 knows, the administrator's and IAM users' (see

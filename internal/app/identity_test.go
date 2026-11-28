@@ -170,9 +170,27 @@ func TestCredentialsCommand(t *testing.T) {
 	if out != want || !strings.Contains(note, filepath.Join(tls, adminCredentialsFile)) {
 		t.Fatalf("credentials = %q (note %q)", out, note)
 	}
+	// There were no keys, so these are new, and it says so.
+	if !strings.Contains(note, "warning: there were no administrator keys") {
+		t.Fatalf("new keys without a warning: %q", note)
+	}
 	// It prints what a running emulator uses: the same keys every time.
-	if again, _, _ := run(map[string]string{"WEISTACK_TLS_DIR": tls}); again != out {
+	again, note, _ := run(map[string]string{"WEISTACK_TLS_DIR": tls})
+	if again != out {
 		t.Fatal("credentials changed between runs")
+	}
+	if strings.Contains(note, "warning") {
+		t.Fatalf("existing keys with a warning: %q", note)
+	}
+	for _, c := range []struct {
+		dir     string
+		created bool
+	}{{t.TempDir(), true}, {tls, false}} {
+		out, _, err := run(map[string]string{"WEISTACK_TLS_DIR": c.dir}, "-output", "json")
+		var got credentialsOutput
+		if err != nil || json.Unmarshal([]byte(out), &got) != nil || got.Created != c.created || got.AccessKey == "" {
+			t.Fatalf("credentials -output json in %s = %q, %v; want created %v", c.dir, out, err, c.created)
+		}
 	}
 
 	out, note, err = run(map[string]string{"WEISTACK_ADMIN_ACCESS_KEY": testAdmin.AccessKey, "WEISTACK_ADMIN_SECRET_KEY": testAdmin.SecretKey})
