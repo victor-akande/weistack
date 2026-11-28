@@ -63,6 +63,40 @@ func TestSystemRolesECSMatrix(t *testing.T) {
 	})
 }
 
+// The KPS table (DEW's permissions, Table 5): read-only may read key
+// pairs and tasks, and nothing else.
+func TestSystemRolesKPSMatrix(t *testing.T) {
+	t.Parallel()
+	checkMatrix(t, []string{"DEW KeypairFullAccess", "DEW KeypairReadOnlyAccess"}, map[string][]bool{
+		"kps:SSHKeyPair:create":           {true, false},
+		"kps:SSHKeyPair:list":             {true, true},
+		"kps:SSHKeyPair:get":              {true, true},
+		"kps:SSHKeyPair:update":           {true, false},
+		"kps:SSHKeyPair:delete":           {true, false},
+		"kps:SSHKeyPair:importPrivateKey": {true, false},
+		"kps:SSHKeyPair:exportPrivateKey": {true, false},
+		"kps:SSHKeyPair:clearPrivateKey":  {true, false},
+		"kps:SSHKeyPair:bind":             {true, false},
+		"kps:SSHKeyPair:unbind":           {true, false},
+		"kps::getTask":                    {true, true},
+		"kps::getRunningTask":             {true, true},
+		"kps::getFailedTask":              {true, true},
+		"kps::deleteFailedTask":           {true, false},
+	})
+	// Every KPS action is in the table, and neither policy grants another
+	// service's.
+	for _, a := range actions.All() {
+		kps := ofService(a, "kps")
+		if got := systemAllows(t, "DEW KeypairFullAccess", a.Name); got != kps {
+			t.Errorf("DEW KeypairFullAccess allows %s = %v", a.Name, got)
+		}
+		read := a.Level == actions.List || a.Level == actions.Read
+		if got := systemAllows(t, "DEW KeypairReadOnlyAccess", a.Name); got != (kps && read) {
+			t.Errorf("DEW KeypairReadOnlyAccess allows %s (%s) = %v", a.Name, a.Level, got)
+		}
+	}
+}
+
 // The VPC table (productdesc-vpc overview_permission): VPC Administrator
 // has everything but security groups and their rules.
 func TestSystemRolesVPCMatrix(t *testing.T) {
