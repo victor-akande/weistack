@@ -139,4 +139,16 @@ Each KPS v3 operation checks Huawei's IAM 5.0 action and its classic
   `ecs:serverKeypairs:list`, `ecs:serverKeypairs:get`,
   `ecs:serverKeypairs:delete`.
 
-`Tenant Administrator` and `Tenant Guest` include KPS.
+`Tenant Administrator` and `Tenant Guest` include KPS. Two system
+policies are provided, as DEW documents them (Table 5 of its
+permissions):
+
+- `DEW KeypairFullAccess` (`kps_full`): `kps:*:*`;
+- `DEW KeypairReadOnlyAccess` (`kps_readonly`): reading key pairs and tasks
+  (`kps:domainKeypairs:get`, `list`, `gettask`, `getrunningtask` and
+  `getfailtask`). It cannot export a private key.
+
+Huawei publishes no internal names for them, so WeiStack names them
+`kps_full` and `kps_readonly`, as it does `csms_full` and `csms_readonly`.
+The Nova routes check `ecs:serverKeypairs:*`, which neither policy grants:
+ECS's system policies do.
