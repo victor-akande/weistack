@@ -1,0 +1,10 @@
+{"project": "e1766bb0ce143b14cdc13609b713c97b", "vpc": "72eec5cf-0ea9-40b2-b271-463a1be1c3f3", "subnet": "cf182606-71c2-4136-897e-7da807d85ac1", "security_group": "16e44093-729e-4321-a7de-dd524b446d12", "server": "4694d280-2c31-4e98-b093-90dfcb317205",
+ "image_job": "cf918f88dc517a9aed8d20c822f3bf61", "bucket": "fixture-bucket", "object": "notes/hello.txt", "bucket_owner": "AKFIXTURE", "rds": "74f8f80f38509bad3b9769b4278b29c0in01",
+ "user": "7765057eeddb3a87167c81bb5bc6e5a2", "access_key": "83HZZRSIRX2GVUZHEBY4", "secret_key": "q7tXCtr92uAvFjGQAizBbby2AHixoCrsMA8mUdXO",
+ "kms_key": "c15a058a-60e6-4520-b072-7d10dfc04a8a", "cipher_text": "AafPzJ2porXRXYprvv2E7CXBWgWKYOZFILByfRDfwEqKAAAVZVO38PbBeRvwbUqI/KL0HgAK9ntyPKSC0PqIfMajF0cTGiluWKNtF3PGOiUH04ml61/wdU7+avxIQajgOz2getw11rEII9NcfoJxF2vEEZGJTYlngpLljd3Rkqxx3JvSd42OXi424+aJRE6ZU4NOLA==", "plain_text": "sealed by WeiStack v0.4.0",
+ "public_ip": "827ab1a6-ab03-4f6f-9dfc-6b7d45b4e98e", "nat_gateway": "e3dab35f-ec87-4518-95eb-afa9b1731673", "snat_rule": "3d4b61bd-ddde-4461-a231-9ef99318b9f1",
+ "load_balancer": "5afff3c1-2a25-4480-8b8e-091881376893", "listener": "f4e06e30-b8b2-45ae-9a6a-93d37cc5375a", "pool": "b2fa523a-674f-4bd1-8809-68c4bc530d15", "member": "46e34ce9-de8c-4a96-8b9f-6f7c1236fa2e",
+ "volume": "45bd26a3-6723-44a2-b4e5-334a72b7368b", "snapshot": "936b62e9-294d-446c-975c-50dbfb1f494c",
+ "keypair": "fixture-keypair", "keypair_fingerprint": "fc:9a:5c:b4:fb:dd:79:fe:ec:6b:26:32:8a:68:47:49",
+ "kms_keypair": "fixture-keypair-kms", "kms_keypair_fingerprint": "ce:d6:87:23:b7:39:fc:27:8f:ac:c1:a4:47:2d:0d:34",
+ "secret": "56a59a9e-6322-4271-8245-a8b4c395a249", "secret_name": "fixture-secret", "secret_value": "kept by WeiStack v0.4.0"}
