@@ -40,7 +40,7 @@ jobs:
 
       # WeiStack for the rest of the job: credentials and permissions
       # checked, other machines served over HTTPS on 8781, as in the guide.
-      - uses: victor-akande/weistack@v0.3.0
+      - uses: victor-akande/weistack@v0.4.1
         id: weistack
         with:
           iam: enforce
