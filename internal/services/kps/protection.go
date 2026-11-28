@@ -13,11 +13,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/victor-akande/weistack/internal/core/apierr"
+	"github.com/victor-akande/weistack/internal/core/authz"
 	"github.com/victor-akande/weistack/internal/core/httpx"
 	"github.com/victor-akande/weistack/internal/core/store"
 )
@@ -43,7 +45,28 @@ func verifyKeyPairMatch(pubKeyStr, privPEM string) error {
 	return nil
 }
 
-func (s *Service) sealPrivateKey(ctx context.Context, t Tenant, kp *Keypair, privatePEM string, enc *encryptionWire) error {
+func kmsKeyResource(urn string) authz.Resource {
+	region, rest, _ := strings.Cut(urn, ":")
+	account, id, _ := strings.Cut(rest, ":key/")
+	return authz.Resource{URN: "kms:" + region + ":" + account + ":KeyId:" + id}
+}
+
+func (s *Service) resolveKMSKeyID(ctx context.Context, t Tenant, enc *encryptionWire) (string, error) {
+	switch {
+	case enc.KMSKeyID != "":
+		return enc.KMSKeyID, nil
+	case enc.KMSKeyName == "kps/default":
+		return "", nil
+	default:
+		resolved, err := s.keys.ResolveAlias(ctx, t.Region, enc.KMSKeyName)
+		if err != nil {
+			return "", errEncryptFailed
+		}
+		return resolved, nil
+	}
+}
+
+func (s *Service) sealPrivateKey(ctx context.Context, r *http.Request, t Tenant, kp *Keypair, privatePEM string, enc *encryptionWire) error {
 	if enc == nil {
 		return errParam
 	}
@@ -68,24 +91,24 @@ func (s *Service) sealPrivateKey(ctx context.Context, t Tenant, kp *Keypair, pri
 		if s.keys == nil {
 			return errEncryptFailed
 		}
-		var keyID string
-		switch {
-		case enc.KMSKeyID != "":
-			keyID = enc.KMSKeyID
-		case enc.KMSKeyName == "kps/default":
-			keyID = ""
-		default:
-			resolved, err := s.keys.ResolveAlias(ctx, t.Region, enc.KMSKeyName)
-			if err != nil {
-				return errEncryptFailed
-			}
-			keyID = resolved
+		keyID, err := s.resolveKMSKeyID(ctx, t, enc)
+		if err != nil {
+			return err
 		}
 		dk, err := s.keys.NewDataKey(ctx, t.Region, keyID, "kps")
 		if err != nil {
 			return errEncryptFailed
 		}
 		defer clear(dk.Plain)
+
+		if r != nil {
+			if err := authz.CheckDependency(r, "kms", "kms:cmk:createDataKey", kmsKeyResource(dk.KeyURN)); err != nil {
+				return err
+			}
+			if err := authz.CheckDependency(r, "kms", "kms:cmk:list"); err != nil {
+				return err
+			}
+		}
 
 		if len(dk.Sealed) == 0 || len(dk.Sealed) > maxSealedDataKeyLen {
 			return errEncryptFailed
@@ -108,7 +131,7 @@ func (s *Service) sealPrivateKey(ctx context.Context, t Tenant, kp *Keypair, pri
 	}
 }
 
-func (s *Service) openPrivateKey(ctx context.Context, t Tenant, kp Keypair) (string, error) {
+func (s *Service) openPrivateKey(ctx context.Context, r *http.Request, t Tenant, kp Keypair) (string, error) {
 	if len(kp.SealedKey) == 0 {
 		return "", errNoPrivateKey
 	}
@@ -122,6 +145,12 @@ func (s *Service) openPrivateKey(ctx context.Context, t Tenant, kp Keypair) (str
 	case "kms":
 		if s.keys == nil {
 			return "", errEncryptFailed
+		}
+		if r != nil {
+			res := authz.Resource{URN: "kms:" + t.Region + ":" + s.accountID(ctx) + ":KeyId:" + kp.KMSKeyID}
+			if err := authz.CheckDependency(r, "kms", "kms:cmk:decryptDataKey", res); err != nil {
+				return "", err
+			}
 		}
 		if len(kp.SealedKey) < 4 {
 			return "", errEncryptFailed
@@ -203,7 +232,7 @@ func (s *Service) handleImportPrivateKey(w http.ResponseWriter, r *http.Request,
 	}
 
 	next := kp
-	if err := s.sealPrivateKey(ctx, t, &next, req.Keypair.KeyProtection.PrivateKey, req.Keypair.KeyProtection.Encryption); err != nil {
+	if err := s.sealPrivateKey(ctx, r, t, &next, req.Keypair.KeyProtection.PrivateKey, req.Keypair.KeyProtection.Encryption); err != nil {
 		return err
 	}
 
@@ -244,7 +273,7 @@ func (s *Service) handleExportPrivateKey(w http.ResponseWriter, r *http.Request,
 	if err != nil {
 		return err
 	}
-	privPEM, err := s.openPrivateKey(ctx, t, kp)
+	privPEM, err := s.openPrivateKey(ctx, r, t, kp)
 	if err != nil {
 		return err
 	}
@@ -302,6 +331,37 @@ func formatFailedReason(err error) string {
 	return string(raw)
 }
 
+func (s *Service) checkBatchImportKMS(ctx context.Context, r *http.Request, t Tenant, items []createKeypairRequest) error {
+	if !authz.Enforced(r) || s.keys == nil {
+		return nil
+	}
+	for _, item := range items {
+		if item.Keypair == nil || item.Keypair.KeyProtection == nil || item.Keypair.KeyProtection.Encryption == nil {
+			continue
+		}
+		enc := item.Keypair.KeyProtection.Encryption
+		if enc.Type != "kms" || (enc.KMSKeyID == "" && enc.KMSKeyName == "") {
+			continue
+		}
+		keyID, err := s.resolveKMSKeyID(ctx, t, enc)
+		if err != nil {
+			continue
+		}
+		dk, err := s.keys.NewDataKey(ctx, t.Region, keyID, "kps")
+		if err != nil {
+			continue
+		}
+		clear(dk.Plain)
+		if err := authz.CheckDependency(r, "kms", "kms:cmk:createDataKey", kmsKeyResource(dk.KeyURN)); err != nil {
+			return err
+		}
+		if err := authz.CheckDependency(r, "kms", "kms:cmk:list"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *Service) handleBatchImportKeypair(w http.ResponseWriter, r *http.Request, t Tenant) error {
 	var items []createKeypairRequest
 	if err := httpx.DecodeJSON(r, &items); err != nil {
@@ -311,12 +371,16 @@ func (s *Service) handleBatchImportKeypair(w http.ResponseWriter, r *http.Reques
 		return errParam
 	}
 
+	ctx := r.Context()
+	if err := s.checkBatchImportKMS(ctx, r, t, items); err != nil {
+		return err
+	}
+
 	resp := batchImportResponse{
 		FailedKeypairs:    []failedKeypairWire{},
 		SucceededKeypairs: []createKeypairResponse{},
 	}
 
-	ctx := r.Context()
 	for _, item := range items {
 		if item.Keypair == nil {
 			resp.FailedKeypairs = append(resp.FailedKeypairs, failedKeypairWire{
@@ -325,8 +389,11 @@ func (s *Service) handleBatchImportKeypair(w http.ResponseWriter, r *http.Reques
 			})
 			continue
 		}
-		kp, privKey, err := s.createKeypair(ctx, t, *item.Keypair)
+		kp, privKey, err := s.createKeypair(ctx, r, t, *item.Keypair)
 		if err != nil {
+			if apierr.From(err).Status == http.StatusForbidden {
+				return err
+			}
 			resp.FailedKeypairs = append(resp.FailedKeypairs, failedKeypairWire{
 				KeypairName:  item.Keypair.Name,
 				FailedReason: formatFailedReason(err),
@@ -372,7 +439,7 @@ func (s *Service) handleBatchExportPrivateKey(w http.ResponseWriter, r *http.Req
 		if err != nil {
 			return err
 		}
-		privPEM, err := s.openPrivateKey(ctx, t, kp)
+		privPEM, err := s.openPrivateKey(ctx, r, t, kp)
 		if err != nil {
 			return err
 		}

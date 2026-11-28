@@ -139,6 +139,21 @@ Each KPS v3 operation checks Huawei's IAM 5.0 action and its classic
   `ecs:serverKeypairs:list`, `ecs:serverKeypairs:get`,
   `ecs:serverKeypairs:delete`.
 
+Operations that seal or open private keys with `encryption.type = "kms"`
+also check KMS dependencies (evaluating key-level actions against
+`kms:<region>:<account-id>:KeyId:<key-id>`):
+
+- `CreateKeypair`, `ImportPrivateKey` and `BatchImportKeypair` require
+  `kms:cmk:createDataKey` on the KMS key and `kms:cmk:list`;
+- `ExportPrivateKey` and `BatchExportPrivateKey` require
+  `kms:cmk:decryptDataKey` on each KMS-protected key pair's KMS key.
+
+`default` protection (`encryption.type = "default"`) seals private keys
+with WeiStack's vault rather than a KMS key, so it needs no KMS permission:
+`DEW KeypairFullAccess` alone can create, import and export
+`default`-protected key pairs, while `kms`-protected key pairs also require
+the KMS permissions above.
+
 `Tenant Administrator` and `Tenant Guest` include KPS. Two system
 policies are provided, as DEW documents them (Table 5 of its
 permissions):

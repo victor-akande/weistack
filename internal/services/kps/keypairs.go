@@ -67,7 +67,7 @@ func generateRSAKeypair() (publicKey, privateKeyPEM, fingerprint, algorithm stri
 	return pubStr, privPEM, ssh.FingerprintLegacyMD5(pub), pub.Type(), nil
 }
 
-func (s *Service) createKeypair(ctx context.Context, t Tenant, req createKeypairAction) (Keypair, string, error) {
+func (s *Service) createKeypair(ctx context.Context, r *http.Request, t Tenant, req createKeypairAction) (Keypair, string, error) {
 	if !validKeypairName(req.Name) {
 		return Keypair{}, "", errParam
 	}
@@ -158,7 +158,7 @@ func (s *Service) createKeypair(ctx context.Context, t Tenant, req createKeypair
 			}
 			privToSeal = req.KeyProtection.PrivateKey
 		}
-		if err := s.sealPrivateKey(ctx, t, &kp, privToSeal, req.KeyProtection.Encryption); err != nil {
+		if err := s.sealPrivateKey(ctx, r, t, &kp, privToSeal, req.KeyProtection.Encryption); err != nil {
 			return Keypair{}, "", err
 		}
 	}
@@ -283,7 +283,7 @@ func (s *Service) handleCreateKeypair(w http.ResponseWriter, r *http.Request, t 
 	if err := httpx.DecodeJSON(r, &req); err != nil || req.Keypair == nil {
 		return errParam
 	}
-	kp, privKey, err := s.createKeypair(r.Context(), t, *req.Keypair)
+	kp, privKey, err := s.createKeypair(r.Context(), r, t, *req.Keypair)
 	if err != nil {
 		return err
 	}
