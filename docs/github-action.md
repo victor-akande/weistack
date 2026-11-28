@@ -9,11 +9,11 @@ further set-up.
 ```yaml
 steps:
   - uses: actions/checkout@v4
-  - uses: victor-akande/weistack@v0.3.0
+  - uses: victor-akande/weistack@v0.4.0
   - run: terraform apply -auto-approve
 ```
 
-The action runs the release of its own tag: `@v0.3.0` runs WeiStack v0.3.0.
+The action runs the release of its own tag: `@v0.4.0` runs WeiStack v0.4.0.
 From a branch it runs the latest release, unless `version` says otherwise.
 
 ## What the next steps get
@@ -43,7 +43,7 @@ The same values are the action's outputs: `endpoint`, `region`,
 
 | Input | Default | Meaning |
 | --- | --- | --- |
-| `version` | the action's tag, or the latest release | The release to run, such as `v0.3.0` |
+| `version` | the action's tag, or the latest release | The release to run, such as `v0.4.0` |
 | `binary` | | A WeiStack binary already on the runner, instead of a download |
 | `iam` | `accept` | `enforce` checks signatures and permissions (see [Checking credentials](enforce.md)) |
 | `services` | all | Comma-separated services to enable |
@@ -61,7 +61,7 @@ Test with credentials enforced, so a client that signs wrongly fails as it
 would in the cloud:
 
 ```yaml
-- uses: victor-akande/weistack@v0.3.0
+- uses: victor-akande/weistack@v0.4.0
   with:
     iam: enforce
     lifecycle-delay: 0s
@@ -71,7 +71,7 @@ Inject a fault before a step, to see how the code under test copes with
 throttling (see [Injecting faults](faults.md)):
 
 ```yaml
-- uses: victor-akande/weistack@v0.3.0
+- uses: victor-akande/weistack@v0.4.0
   id: weistack
 - run: |
     curl -fsS -X POST "${{ steps.weistack.outputs.endpoint }}/_weistack/faults" \

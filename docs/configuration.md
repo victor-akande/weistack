@@ -124,7 +124,7 @@ for a data directory problem, and `1` for anything else.
 
 | Command | stdout in `json` mode |
 | --- | --- |
-| `version` | `{"version": "0.3.0", "commit": "...", "built": "..."}` |
+| `version` | `{"version": "0.4.0", "commit": "...", "built": "..."}` |
 | `healthcheck` | The body `/_weistack/health` returned, unchanged |
 | `ca` | `{"path": "<dir>/ca.pem", "certificate_pem": "-----BEGIN..."}` |
 | `credentials` | `{"source": "<from>", "access_key": "...", "secret_key": "...", "env": {"HUAWEICLOUD_SDK_AK": "...", "HUAWEICLOUD_SDK_SK": "...", "HW_ACCESS_KEY": "...", "HW_SECRET_KEY": "..."}}` (`env` has those four keys) |
