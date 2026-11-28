@@ -3,3 +3,5 @@ secrets/
 .terraform/
 *.tfstate
 *.tfstate.backup
+# Tools built from the example (go build -o bin/...)
+bin/
