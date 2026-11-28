@@ -14,12 +14,14 @@ import (
 
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	ecs "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2/model"
+	iam "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3/model"
 	v5 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v5/model"
 	ims "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ims/v2/model"
 	kms "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/kms/v2/model"
 	kpsv3 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/kps/v3"
 	kps "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/kps/v3/model"
 	kpsregion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/kps/v3/region"
+	sts "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/sts/v1/model"
 	v2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2/model"
 )
 
@@ -983,4 +985,436 @@ func TestKPSPermissions(t *testing.T) {
 		Keypair: &kps.CreateKeypairAction{Name: "sdk-kps-denied-" + suffix},
 	}})
 	denialOf(t, err, "KPS.9003")
+}
+
+// TestKPSKMSDependencies runs only with WEISTACK_SDK_IAM=enforce: KPS checks
+// KMS permission dependencies for KMS-protected private keys while allowing
+// default vault-protected private keys with DEW KeypairFullAccess alone.
+func TestKPSKMSDependencies(t *testing.T) {
+	if !enforcing {
+		t.Skip("set WEISTACK_SDK_IAM=enforce")
+	}
+	t.Parallel()
+	suffix := strings.ToLower(rand.Text()[:6])
+	admin, admin5 := iamClientsAs(t, adminAK, adminSK)
+	adminKMS := kmsAs(t, adminAK, adminSK)
+	adminKPS := kpsAs(t, adminAK, adminSK)
+	adminSTS := stsAs(t, adminAK, adminSK)
+
+	roleID := func(displayName string) string {
+		t.Helper()
+		perms, err := admin.KeystoneListPermissions(&iam.KeystoneListPermissionsRequest{DisplayName: ptr(displayName)})
+		if err != nil || perms.Roles == nil || len(*perms.Roles) != 1 {
+			t.Fatalf("KeystoneListPermissions(%s) = %+v, %v", displayName, perms, err)
+		}
+		return (*perms.Roles)[0].Id
+	}
+
+	decodeDenial := func(encoded string) string {
+		t.Helper()
+		dec, err := adminSTS.DecodeAuthorizationMessage(&sts.DecodeAuthorizationMessageRequest{
+			Body: &sts.DecodeAuthorizationMessageReq{EncodedMessage: encoded},
+		})
+		if err != nil || dec.DecodedMessage == nil {
+			t.Fatalf("DecodeAuthorizationMessage = %+v, %v", dec, err)
+		}
+		return *dec.DecodedMessage
+	}
+
+	readZipEntries := func(raw *string) map[string]string {
+		t.Helper()
+		if raw == nil || len(*raw) == 0 {
+			t.Fatalf("BatchExportPrivateKey returned empty body")
+		}
+		zipBytes := []byte(*raw)
+		zr, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
+		if err != nil {
+			t.Fatalf("BatchExportPrivateKey body is not a valid zip: %v", err)
+		}
+		out := make(map[string]string, len(zr.File))
+		for _, f := range zr.File {
+			rc, err := f.Open()
+			if err != nil {
+				t.Fatalf("opening zip entry %s: %v", f.Name, err)
+			}
+			data, err := io.ReadAll(rc)
+			_ = rc.Close()
+			if err != nil {
+				t.Fatalf("reading zip entry %s: %v", f.Name, err)
+			}
+			out[f.Name] = string(data)
+		}
+		return out
+	}
+
+	// 1. Admin KMS key and domain-scoped KMS-protected key pair.
+	km, err := adminKMS.CreateKey(&kms.CreateKeyRequest{Body: &kms.CreateKeyRequestBody{
+		KeyAlias: "sdk-kps-dep-key-" + suffix,
+	}})
+	if err != nil || km.KeyInfo == nil || km.KeyInfo.KeyId == nil {
+		t.Fatalf("CreateKey: %v", err)
+	}
+	kmsKeyID := *km.KeyInfo.KeyId
+	t.Cleanup(func() {
+		_, _ = adminKMS.DeleteKey(&kms.DeleteKeyRequest{Body: &kms.ScheduleKeyDeletionRequestBody{
+			KeyId: kmsKeyID, PendingDays: "7",
+		}})
+	})
+
+	encEnum := kps.GetEncryptionTypeEnum()
+	scopeDomain := kps.GetCreateKeypairActionScopeEnum().DOMAIN
+	adminKMSName := "sdk-kps-admin-kms-" + suffix
+	t.Cleanup(func() {
+		_, _ = adminKPS.DeleteKeypair(&kps.DeleteKeypairRequest{KeypairName: adminKMSName})
+	})
+	adminCreated, err := adminKPS.CreateKeypair(&kps.CreateKeypairRequest{Body: &kps.CreateKeypairRequestBody{
+		Keypair: &kps.CreateKeypairAction{
+			Name:  adminKMSName,
+			Scope: &scopeDomain,
+			KeyProtection: &kps.KeyProtection{
+				Encryption: &kps.Encryption{
+					Type:     encEnum.KMS,
+					KmsKeyId: ptr(kmsKeyID),
+				},
+			},
+		},
+	}})
+	if err != nil || adminCreated.Keypair == nil || adminCreated.Keypair.PrivateKey == nil || *adminCreated.Keypair.PrivateKey == "" {
+		t.Fatalf("admin CreateKeypair(domain, kms): %v", err)
+	}
+	adminKMSPriv := *adminCreated.Keypair.PrivateKey
+
+	// 2. IAM user in a group granted DEW KeypairFullAccess only in projectID.
+	u, err := admin5.CreateUserV5(&v5.CreateUserV5Request{Body: &v5.CreateUserReqBody{
+		Name: "sdk-kps-dew-" + suffix, Enabled: true,
+	}})
+	if err != nil {
+		t.Fatalf("CreateUserV5: %v", err)
+	}
+	uid := u.User.UserId
+	t.Cleanup(func() {
+		_, _ = admin5.DeleteUserV5(&v5.DeleteUserV5Request{UserId: uid})
+	})
+
+	userKey, err := admin.CreatePermanentAccessKey(&iam.CreatePermanentAccessKeyRequest{Body: &iam.CreatePermanentAccessKeyRequestBody{
+		Credential: &iam.CreateCredentialOption{UserId: uid},
+	}})
+	if err != nil {
+		t.Fatalf("CreatePermanentAccessKey: %v", err)
+	}
+
+	grp, err := admin.KeystoneCreateGroup(&iam.KeystoneCreateGroupRequest{Body: &iam.KeystoneCreateGroupRequestBody{
+		Group: &iam.KeystoneCreateGroupOption{Name: "sdk-kps-dew-grp-" + suffix},
+	}})
+	if err != nil {
+		t.Fatalf("KeystoneCreateGroup: %v", err)
+	}
+	gid := grp.Group.Id
+	t.Cleanup(func() {
+		_, _ = admin.KeystoneDeleteGroup(&iam.KeystoneDeleteGroupRequest{GroupId: gid})
+	})
+
+	if _, err := admin.KeystoneAddUserToGroup(&iam.KeystoneAddUserToGroupRequest{GroupId: gid, UserId: uid}); err != nil {
+		t.Fatalf("KeystoneAddUserToGroup: %v", err)
+	}
+	if _, err := admin.KeystoneAssociateGroupWithProjectPermission(&iam.KeystoneAssociateGroupWithProjectPermissionRequest{
+		ProjectId: projectID, GroupId: gid, RoleId: roleID("DEW KeypairFullAccess"),
+	}); err != nil {
+		t.Fatalf("KeystoneAssociateGroupWithProjectPermission(DEW KeypairFullAccess): %v", err)
+	}
+
+	userKPS := kpsAs(t, userKey.Credential.Access, userKey.Credential.Secret)
+	cleanupUserKP := func(name string) {
+		t.Cleanup(func() {
+			_, _ = userKPS.DeleteKeypair(&kps.DeleteKeypairRequest{KeypairName: name})
+		})
+	}
+
+	// 3a. Allowed with DEW KeypairFullAccess only: default vault protection.
+	userDefName := "sdk-kps-user-def-" + suffix
+	cleanupUserKP(userDefName)
+	userDefCreated, err := userKPS.CreateKeypair(&kps.CreateKeypairRequest{Body: &kps.CreateKeypairRequestBody{
+		Keypair: &kps.CreateKeypairAction{
+			Name: userDefName,
+			KeyProtection: &kps.KeyProtection{
+				Encryption: &kps.Encryption{Type: encEnum.DEFAULT},
+			},
+		},
+	}})
+	if err != nil || userDefCreated.Keypair == nil || userDefCreated.Keypair.PublicKey == nil ||
+		userDefCreated.Keypair.PrivateKey == nil || *userDefCreated.Keypair.PrivateKey == "" {
+		t.Fatalf("user CreateKeypair(default): %v", err)
+	}
+	samplePub := *userDefCreated.Keypair.PublicKey
+	samplePriv := *userDefCreated.Keypair.PrivateKey
+
+	expDef, err := userKPS.ExportPrivateKey(&kps.ExportPrivateKeyRequest{Body: &kps.ExportPrivateKeyRequestBody{
+		Keypair: &kps.KeypairBean{Name: userDefName},
+	}})
+	if err != nil || expDef.Keypair == nil || expDef.Keypair.PrivateKey != samplePriv {
+		t.Fatalf("user ExportPrivateKey(default): %v", err)
+	}
+
+	batchExpDef, err := userKPS.BatchExportPrivateKey(&kps.BatchExportPrivateKeyRequest{
+		Body: &[]kps.Keypairs{{Keypair: &kps.Keypair{Name: ptr(userDefName)}}},
+	})
+	if err != nil {
+		t.Fatalf("user BatchExportPrivateKey(default): %v", err)
+	}
+	if got := readZipEntries(batchExpDef.Body); got[userDefName+".pem"] != samplePriv {
+		t.Fatalf("user BatchExportPrivateKey(default) zip entry mismatch")
+	}
+
+	userImpName := "sdk-kps-user-imp-" + suffix
+	cleanupUserKP(userImpName)
+	if _, err := userKPS.CreateKeypair(&kps.CreateKeypairRequest{Body: &kps.CreateKeypairRequestBody{
+		Keypair: &kps.CreateKeypairAction{
+			Name:      userImpName,
+			PublicKey: ptr(samplePub),
+		},
+	}}); err != nil {
+		t.Fatalf("user CreateKeypair(import unprotected): %v", err)
+	}
+	if _, err := userKPS.ImportPrivateKey(&kps.ImportPrivateKeyRequest{Body: &kps.ImportPrivateKeyRequestBody{
+		Keypair: &kps.ImportPrivateKeyKeypairBean{
+			Name: userImpName,
+			KeyProtection: &kps.ImportPrivateKeyProtection{
+				PrivateKey: samplePriv,
+				Encryption: &kps.Encryption{Type: encEnum.DEFAULT},
+			},
+		},
+	}}); err != nil {
+		t.Fatalf("user ImportPrivateKey(default): %v", err)
+	}
+
+	userBatchDefName := "sdk-kps-user-bdef-" + suffix
+	cleanupUserKP(userBatchDefName)
+	batchDefItems := []kps.CreateKeypairRequestBody{{
+		Keypair: &kps.CreateKeypairAction{
+			Name:      userBatchDefName,
+			PublicKey: ptr(samplePub),
+			KeyProtection: &kps.KeyProtection{
+				PrivateKey: ptr(samplePriv),
+				Encryption: &kps.Encryption{Type: encEnum.DEFAULT},
+			},
+		},
+	}}
+	batchImpDef, err := userKPS.BatchImportKeypair(&kps.BatchImportKeypairRequest{Body: &batchDefItems})
+	if err != nil {
+		t.Fatalf("user BatchImportKeypair(default): %v", err)
+	}
+	if batchImpDef.SucceededKeypairs == nil || len(*batchImpDef.SucceededKeypairs) != len(batchDefItems) ||
+		(batchImpDef.FailedKeypairs != nil && len(*batchImpDef.FailedKeypairs) != 0) {
+		t.Fatalf("user BatchImportKeypair(default) unexpected counts")
+	}
+
+	// 3b. Denied with DEW KeypairFullAccess only: kms protection -> 403 KPS.9003.
+	deniedKMSName := "sdk-kps-denied-kms-" + suffix
+	cleanupUserKP(deniedKMSName)
+	_, err = userKPS.CreateKeypair(&kps.CreateKeypairRequest{Body: &kps.CreateKeypairRequestBody{
+		Keypair: &kps.CreateKeypairAction{
+			Name: deniedKMSName,
+			KeyProtection: &kps.KeyProtection{
+				Encryption: &kps.Encryption{
+					Type:     encEnum.KMS,
+					KmsKeyId: ptr(kmsKeyID),
+				},
+			},
+		},
+	}})
+	createEncoded := denialOf(t, err, "KPS.9003")
+	if msg := decodeDenial(createEncoded); !strings.Contains(msg, `"kms:cmk:createDataKey"`) {
+		t.Fatalf("decoded CreateKeypair(kms) denial lacks kms:cmk:createDataKey: %s", msg)
+	}
+
+	deniedKMSDefName := "sdk-kps-denied-kmsdef-" + suffix
+	cleanupUserKP(deniedKMSDefName)
+	_, err = userKPS.CreateKeypair(&kps.CreateKeypairRequest{Body: &kps.CreateKeypairRequestBody{
+		Keypair: &kps.CreateKeypairAction{
+			Name: deniedKMSDefName,
+			KeyProtection: &kps.KeyProtection{
+				Encryption: &kps.Encryption{
+					Type:       encEnum.KMS,
+					KmsKeyName: ptr("kps/default"),
+				},
+			},
+		},
+	}})
+	denialOf(t, err, "KPS.9003")
+
+	_, err = userKPS.ImportPrivateKey(&kps.ImportPrivateKeyRequest{Body: &kps.ImportPrivateKeyRequestBody{
+		Keypair: &kps.ImportPrivateKeyKeypairBean{
+			Name: userImpName,
+			KeyProtection: &kps.ImportPrivateKeyProtection{
+				PrivateKey: samplePriv,
+				Encryption: &kps.Encryption{
+					Type:     encEnum.KMS,
+					KmsKeyId: ptr(kmsKeyID),
+				},
+			},
+		},
+	}})
+	denialOf(t, err, "KPS.9003")
+
+	userBatchKMSName := "sdk-kps-user-bkms-" + suffix
+	cleanupUserKP(userBatchKMSName)
+	batchKMSItems := []kps.CreateKeypairRequestBody{{
+		Keypair: &kps.CreateKeypairAction{
+			Name:      userBatchKMSName,
+			PublicKey: ptr(samplePub),
+			KeyProtection: &kps.KeyProtection{
+				PrivateKey: ptr(samplePriv),
+				Encryption: &kps.Encryption{
+					Type:     encEnum.KMS,
+					KmsKeyId: ptr(kmsKeyID),
+				},
+			},
+		},
+	}}
+	_, err = userKPS.BatchImportKeypair(&kps.BatchImportKeypairRequest{Body: &batchKMSItems})
+	denialOf(t, err, "KPS.9003")
+
+	_, err = userKPS.ExportPrivateKey(&kps.ExportPrivateKeyRequest{Body: &kps.ExportPrivateKeyRequestBody{
+		Keypair: &kps.KeypairBean{Name: adminKMSName},
+	}})
+	exportEncoded := denialOf(t, err, "KPS.9003")
+	if msg := decodeDenial(exportEncoded); !strings.Contains(msg, `"kms:cmk:decryptDataKey"`) {
+		t.Fatalf("decoded ExportPrivateKey(kms) denial lacks kms:cmk:decryptDataKey: %s", msg)
+	}
+
+	_, err = userKPS.BatchExportPrivateKey(&kps.BatchExportPrivateKeyRequest{
+		Body: &[]kps.Keypairs{{Keypair: &kps.Keypair{Name: ptr(adminKMSName)}}},
+	})
+	denialOf(t, err, "KPS.9003")
+
+	// 3c. Partial IAM 5.0 check: kms:cmk:createDataKey without kms:cmk:list.
+	u2, err := admin5.CreateUserV5(&v5.CreateUserV5Request{Body: &v5.CreateUserReqBody{
+		Name: "sdk-kps-nolist-" + suffix, Enabled: true,
+	}})
+	if err != nil {
+		t.Fatalf("CreateUserV5(nolist): %v", err)
+	}
+	u2ID := u2.User.UserId
+	t.Cleanup(func() {
+		_, _ = admin5.DeleteUserV5(&v5.DeleteUserV5Request{UserId: u2ID})
+	})
+	u2AKResp, err := admin5.CreateAccessKeyV5(&v5.CreateAccessKeyV5Request{UserId: u2ID})
+	if err != nil {
+		t.Fatalf("CreateAccessKeyV5(nolist): %v", err)
+	}
+	noListDoc := `{"Version":"5.0","Statement":[{"Effect":"Allow","Action":["kps:SSHKeyPair:create","kms:cmk:createDataKey"]}]}`
+	noListPol, err := admin5.CreatePolicyV5(&v5.CreatePolicyV5Request{Body: &v5.CreatePolicyReqBody{
+		PolicyName:     "sdk-kps-nolist-" + suffix,
+		PolicyDocument: noListDoc,
+	}})
+	if err != nil {
+		t.Fatalf("CreatePolicyV5(nolist): %v", err)
+	}
+	noListPID := noListPol.Policy.PolicyId
+	t.Cleanup(func() {
+		_, _ = admin5.DeletePolicyV5(&v5.DeletePolicyV5Request{PolicyId: noListPID})
+	})
+	if _, err := admin5.AttachUserPolicyV5(&v5.AttachUserPolicyV5Request{
+		PolicyId: noListPID,
+		Body:     &v5.AttachUserPolicyReqBody{UserId: u2ID},
+	}); err != nil {
+		t.Fatalf("AttachUserPolicyV5(nolist): %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = admin5.DetachUserPolicyV5(&v5.DetachUserPolicyV5Request{
+			PolicyId: noListPID,
+			Body:     &v5.DetachUserPolicyReqBody{UserId: u2ID},
+		})
+	})
+
+	noListKPS := kpsAs(t, u2AKResp.AccessKey.AccessKeyId, u2AKResp.AccessKey.SecretAccessKey)
+	_, err = noListKPS.CreateKeypair(&kps.CreateKeypairRequest{Body: &kps.CreateKeypairRequestBody{
+		Keypair: &kps.CreateKeypairAction{
+			Name: "sdk-kps-nolist-kp-" + suffix,
+			KeyProtection: &kps.KeyProtection{
+				Encryption: &kps.Encryption{
+					Type:     encEnum.KMS,
+					KmsKeyId: ptr(kmsKeyID),
+				},
+			},
+		},
+	}})
+	noListEncoded := denialOf(t, err, "KPS.9003")
+	if msg := decodeDenial(noListEncoded); !strings.Contains(msg, `"kms:cmk:list"`) {
+		t.Fatalf("decoded CreateKeypair(no kms:cmk:list) denial lacks kms:cmk:list: %s", msg)
+	}
+
+	// 4. Grant KMS Administrator to the first user's group in projectID; the
+	// same userKPS client now succeeds at every KMS-protected operation.
+	if _, err := admin.KeystoneAssociateGroupWithProjectPermission(&iam.KeystoneAssociateGroupWithProjectPermissionRequest{
+		ProjectId: projectID, GroupId: gid, RoleId: roleID("KMS Administrator"),
+	}); err != nil {
+		t.Fatalf("KeystoneAssociateGroupWithProjectPermission(KMS Administrator): %v", err)
+	}
+
+	userKMSName := "sdk-kps-user-kms-" + suffix
+	cleanupUserKP(userKMSName)
+	userKMSCreated, err := userKPS.CreateKeypair(&kps.CreateKeypairRequest{Body: &kps.CreateKeypairRequestBody{
+		Keypair: &kps.CreateKeypairAction{
+			Name: userKMSName,
+			KeyProtection: &kps.KeyProtection{
+				Encryption: &kps.Encryption{
+					Type:     encEnum.KMS,
+					KmsKeyId: ptr(kmsKeyID),
+				},
+			},
+		},
+	}})
+	if err != nil || userKMSCreated.Keypair == nil || userKMSCreated.Keypair.PrivateKey == nil || *userKMSCreated.Keypair.PrivateKey == "" {
+		t.Fatalf("user CreateKeypair(kms) with KMS Administrator: %v", err)
+	}
+	userKMSPriv := *userKMSCreated.Keypair.PrivateKey
+
+	expUserKMS, err := userKPS.ExportPrivateKey(&kps.ExportPrivateKeyRequest{Body: &kps.ExportPrivateKeyRequestBody{
+		Keypair: &kps.KeypairBean{Name: userKMSName},
+	}})
+	if err != nil || expUserKMS.Keypair == nil || expUserKMS.Keypair.PrivateKey != userKMSPriv {
+		t.Fatalf("user ExportPrivateKey(user kms) with KMS Administrator: %v", err)
+	}
+
+	if _, err := userKPS.ImportPrivateKey(&kps.ImportPrivateKeyRequest{Body: &kps.ImportPrivateKeyRequestBody{
+		Keypair: &kps.ImportPrivateKeyKeypairBean{
+			Name: userImpName,
+			KeyProtection: &kps.ImportPrivateKeyProtection{
+				PrivateKey: samplePriv,
+				Encryption: &kps.Encryption{
+					Type:     encEnum.KMS,
+					KmsKeyId: ptr(kmsKeyID),
+				},
+			},
+		},
+	}}); err != nil {
+		t.Fatalf("user ImportPrivateKey(kms) with KMS Administrator: %v", err)
+	}
+
+	batchImpKMS, err := userKPS.BatchImportKeypair(&kps.BatchImportKeypairRequest{Body: &batchKMSItems})
+	if err != nil {
+		t.Fatalf("user BatchImportKeypair(kms) with KMS Administrator: %v", err)
+	}
+	if batchImpKMS.SucceededKeypairs == nil || len(*batchImpKMS.SucceededKeypairs) != len(batchKMSItems) ||
+		(batchImpKMS.FailedKeypairs != nil && len(*batchImpKMS.FailedKeypairs) != 0) {
+		t.Fatalf("user BatchImportKeypair(kms) unexpected counts")
+	}
+
+	expAdminKMS, err := userKPS.ExportPrivateKey(&kps.ExportPrivateKeyRequest{Body: &kps.ExportPrivateKeyRequestBody{
+		Keypair: &kps.KeypairBean{Name: adminKMSName},
+	}})
+	if err != nil || expAdminKMS.Keypair == nil || expAdminKMS.Keypair.PrivateKey != adminKMSPriv {
+		t.Fatalf("user ExportPrivateKey(admin domain kms) with KMS Administrator: %v", err)
+	}
+
+	batchExpAdminKMS, err := userKPS.BatchExportPrivateKey(&kps.BatchExportPrivateKeyRequest{
+		Body: &[]kps.Keypairs{{Keypair: &kps.Keypair{Name: ptr(adminKMSName)}}},
+	})
+	if err != nil {
+		t.Fatalf("user BatchExportPrivateKey(admin domain kms) with KMS Administrator: %v", err)
+	}
+	if got := readZipEntries(batchExpAdminKMS.Body); got[adminKMSName+".pem"] != adminKMSPriv {
+		t.Fatalf("user BatchExportPrivateKey(admin domain kms) zip entry mismatch")
+	}
 }

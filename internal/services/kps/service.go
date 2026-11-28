@@ -187,6 +187,16 @@ func (s *Service) callerUserID(ctx context.Context) string {
 	return "00000000000000000000000000000000"
 }
 
+func (s *Service) accountID(ctx context.Context) string {
+	if id := auth.FromContext(ctx); id.Known && id.Principal.AccountID != "" {
+		return id.Principal.AccountID
+	}
+	if s.dir != nil {
+		return s.dir.Account().ID
+	}
+	return ""
+}
+
 // isVisible reports whether the caller may see kp: domain-scoped key pairs are
 // visible to everyone in the project; user-scoped key pairs belong to their
 // owner.

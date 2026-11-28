@@ -173,6 +173,12 @@ var systemRoles = []systemRole{
 	{"csms_readonly", "CSMS ReadOnlyAccess", "Read-only permissions of CSMS in DEW Users with this permission can only view CSMS data.", "CSMS", typeProject, true, allow(
 		"csms:secret:get", "csms:secret:list", "csms:secretVersion:get", "csms:secretVersion:list", "csms:secretStage:get",
 		"csms:tag:getAll", "csms:tag:getSecretByTag", "csms:tag:getBySecret")},
+	// Nor for KPS's (DEW's Table 5): full access is every KPS action;
+	// read-only is the key pair and task reads, by their classic names.
+	{"kps_full", "DEW KeypairFullAccess", "All permissions of KPS in DEW Users with these permissions can perform all the operations allowed by policies.", "KPS", typeProject, true, allow("kps:*:*")},
+	{"kps_readonly", "DEW KeypairReadOnlyAccess", "Read-only permissions of KPS in DEW Users with this permission can only view KPS data.", "KPS", typeProject, true, allow(
+		"kps:domainKeypairs:get", "kps:domainKeypairs:list", "kps:domainKeypairs:gettask",
+		"kps:domainKeypairs:getrunningtask", "kps:domainKeypairs:getfailtask")},
 	{"system_all_10", "EPS FullAccess", "All operations on the Enterprise Project Management service", "EPS", typeGlobal, true, allow("eps:*:*")},
 }
 
