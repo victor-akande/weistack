@@ -78,17 +78,17 @@ Download the release, check it, and install it:
 
 ```bash
 cd /tmp
-curl -fsSLO https://github.com/victor-akande/weistack/releases/download/v0.3.0/weistack_0.3.0_linux_amd64.tar.gz
-curl -fsSLO https://github.com/victor-akande/weistack/releases/download/v0.3.0/checksums.txt
+curl -fsSLO https://github.com/victor-akande/weistack/releases/download/v0.4.1/weistack_0.4.1_linux_amd64.tar.gz
+curl -fsSLO https://github.com/victor-akande/weistack/releases/download/v0.4.1/checksums.txt
 sha256sum --check --ignore-missing checksums.txt
-tar -xzf weistack_0.3.0_linux_amd64.tar.gz weistack
+tar -xzf weistack_0.4.1_linux_amd64.tar.gz weistack
 sudo install -m 0755 weistack /usr/local/bin/weistack
 weistack version
 ```
 
 With the [GitHub CLI](https://cli.github.com/), also check that the
 archive was built by the project's release workflow:
-`gh attestation verify weistack_0.3.0_linux_amd64.tar.gz --repo victor-akande/weistack`.
+`gh attestation verify weistack_0.4.1_linux_amd64.tar.gz --repo victor-akande/weistack`.
 
 Run it as its own user, under systemd, with [`weistack.service`](weistack.service):
 
@@ -501,7 +501,7 @@ repository that holds these files. On each pull request it starts
 WeiStack inside the job with the [GitHub Action](../../docs/github-action.md):
 
 ```yaml
-- uses: victor-akande/weistack@v0.3.0
+- uses: victor-akande/weistack@v0.4.1
   id: weistack
   with:
     iam: enforce

@@ -205,7 +205,7 @@ they combine.
 | See every resource and how they relate | `weistack admin GET inventory` | [Inventory](docs/inventory.md) |
 | Script it, or let an agent drive it | `weistack admin GET inventory -output json` | [Configuration, Output and exit codes](docs/configuration.md#output-and-exit-codes) |
 | Back up and restore the data | `weistack backup`, `weistack restore` | [Getting started](docs/getting-started.md#5-keep-state-across-restarts) |
-| Run it in a GitHub Actions job | `uses: victor-akande/weistack@v0.4.0` | [In GitHub Actions](docs/github-action.md) |
+| Run it in a GitHub Actions job | `uses: victor-akande/weistack@v0.4.1` | [In GitHub Actions](docs/github-action.md) |
 | Run it as a service for a team | the hardened systemd unit | [Web-app example, step 1](examples/web-app/README.md#1-the-cloud-machine-weistack-as-a-service) |
 
 In a workflow:
@@ -213,7 +213,7 @@ In a workflow:
 ```yaml
 steps:
   - uses: actions/checkout@v4
-  - uses: victor-akande/weistack@v0.4.0
+  - uses: victor-akande/weistack@v0.4.1
     with:
       iam: enforce
   - run: terraform init && terraform apply -auto-approve
